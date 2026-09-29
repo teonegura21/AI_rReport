@@ -4,6 +4,7 @@ add_subdirectory(core)
 add_subdirectory(log)
 add_subdirectory(config)
 add_subdirectory(json)
+add_subdirectory(blob)
 
 if(RR_BUILD_HUB)
     add_subdirectory(db)

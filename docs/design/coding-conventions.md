@@ -22,6 +22,10 @@ These rules exist so that any file in the repository reads like every other file
 | Macros | `RR_UPPER_CASE` | `RR_TRY` |
 | Files | `snake_case.hpp/.cpp` | `thread_pool.hpp` |
 
+## Aggregates and designated initializers
+
+Option and record structs are aggregates meant for designated initializers: `Command{.argv = {"ffprobe", path}}`. For that, **every member gets a default member initializer**, using `{}` when there is no better value. The caller then names only what it needs, the struct documents which fields are optional, and GCC's `-Wmissing-field-initializers` stays quiet. (clang-tidy's `readability-redundant-member-init` would flag the `{}`, so it is disabled.)
+
 ## Errors (ADR-0007)
 
 - Fallible functions return `rr::Result<T>` and are `[[nodiscard]]`.

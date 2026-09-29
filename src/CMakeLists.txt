@@ -6,6 +6,7 @@ add_subdirectory(core)
 add_subdirectory(log)
 add_subdirectory(config)
 add_subdirectory(json)
+add_subdirectory(blob)
 
 # --- Hub only ------------------------------------------------------------------
 # The runtime keeps no durable state of its own (the hub is the source of

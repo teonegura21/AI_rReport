@@ -53,8 +53,8 @@ Modules marked *(M0)* exist now; the rest arrive in the milestone shown.
 | `rr_log` *(M0)* | Structured logging (console + rotating JSONL) with per-thread context | core, nlohmann_json |
 | `rr_config` *(M0)* | Layered TOML config with value origins and secrets | core, toml++ |
 | `rr_json` *(M0)* | JSON parse/dump, canonical form, JSON-Schema validation, portable-schema lint | core, nlohmann_json, jsoncons |
-| `rr_db` *(M0)* | SQLite wrapper (WAL, writer + reader pool), migrations | core, SQLite |
-| `rr_blob` *(M0)* | Content-addressed blob store | core |
+| `rr_db` *(M0)* | SQLite wrapper (WAL, writer + reader pool), migrations ([design](design/database.md)) | core, SQLite |
+| `rr_blob` *(M0)* | Content-addressed, crash-safe blob store (BLAKE3 names, atomic publish) | core |
 | `rr_proc` *(M0)* | Subprocesses: run-to-completion and supervised children | core, reproc |
 | `rr_net` *(M0)* | HTTP client (libcurl), SSE parser, retry policy, HTTP server (cpp-httplib) | core, libcurl, cpp-httplib |
 | `rr_runtime_api` *(M0)* | Hub↔runtime protocol types | core, json |
