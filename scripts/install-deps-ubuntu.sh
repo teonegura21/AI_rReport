@@ -3,7 +3,7 @@
 #
 # This file is the single source of truth for the apt package list: the README,
 # the CI workflow and the Docker build all call it. Libraries that are not
-# packaged here (cpp-httplib >= 0.20, jsoncons, reproc, BLAKE3) are fetched at
+# packaged here (cpp-httplib >= 0.20, jsoncons, BLAKE3) are fetched at
 # pinned versions by CMake (cmake/RrDependencies.cmake, ADR-0012).
 #
 # Usage: sudo scripts/install-deps-ubuntu.sh [--with-clang] [--minimal]

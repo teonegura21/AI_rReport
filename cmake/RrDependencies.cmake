@@ -80,19 +80,6 @@ FetchContent_Declare(jsoncons
     SYSTEM
     FIND_PACKAGE_ARGS 1.3 CONFIG)
 
-# Portable subprocess management (rr_proc).
-set(REPROC++ ON CACHE BOOL "" FORCE)
-set(REPROC_TEST OFF CACHE BOOL "" FORCE)
-set(REPROC_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(REPROC_INSTALL OFF CACHE BOOL "" FORCE)
-set(REPROC_MULTITHREADED ON CACHE BOOL "" FORCE)
-FetchContent_Declare(reproc
-    GIT_REPOSITORY https://github.com/DaanDeMeyer/reproc.git
-    GIT_TAG v14.2.7
-    GIT_SHALLOW TRUE
-    SYSTEM
-    FIND_PACKAGE_ARGS 14 NAMES reproc++ CONFIG)
-
 # BLAKE3: fast cryptographic content hashing (cache keys, blob addresses).
 FetchContent_Declare(BLAKE3
     GIT_REPOSITORY https://github.com/BLAKE3-team/BLAKE3.git
@@ -102,7 +89,7 @@ FetchContent_Declare(BLAKE3
     SYSTEM
     FIND_PACKAGE_ARGS 1.5 CONFIG)
 
-set(_rr_dependencies nlohmann_json tomlplusplus CLI11 httplib jsoncons reproc BLAKE3)
+set(_rr_dependencies nlohmann_json tomlplusplus CLI11 httplib jsoncons BLAKE3)
 
 if(RR_BUILD_TESTS)
     set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
@@ -123,16 +110,13 @@ FetchContent_MakeAvailable(${_rr_dependencies})
 if(TARGET jsoncons AND NOT TARGET jsoncons::jsoncons)
     add_library(jsoncons::jsoncons ALIAS jsoncons)
 endif()
-if(TARGET reproc++ AND NOT TARGET reproc::reproc++)
-    add_library(reproc::reproc++ ALIAS reproc++)
-endif()
 if(TARGET blake3 AND NOT TARGET BLAKE3::blake3)
     add_library(BLAKE3::blake3 ALIAS blake3)
 endif()
 
 foreach(_rr_required_target IN ITEMS
         nlohmann_json::nlohmann_json tomlplusplus::tomlplusplus CLI11::CLI11
-        httplib::httplib jsoncons::jsoncons reproc::reproc++ BLAKE3::blake3
+        httplib::httplib jsoncons::jsoncons BLAKE3::blake3
         OpenSSL::Crypto CURL::libcurl SQLite::SQLite3)
     if(NOT TARGET ${_rr_required_target})
         message(FATAL_ERROR "Dependency target ${_rr_required_target} is missing after resolution")

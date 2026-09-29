@@ -19,6 +19,7 @@ decision, write a new ADR that supersedes the old one and link them both ways.
 | 0010 | [Threads and stop tokens, not coroutines](0010-threads-not-coroutines.md) | Accepted |
 | 0011 | [Commander and infantry: a native sub-agent environment](0011-commander-infantry.md) | Accepted |
 | 0012 | [Dependencies: system packages first, pinned git fallback](0012-dependency-acquisition.md) | Accepted |
+| 0013 | [Subprocesses run through posix_spawn, each in its own process group](0013-subprocesses-posix-spawn.md) | Accepted |
 
 Template for new ADRs:
 
