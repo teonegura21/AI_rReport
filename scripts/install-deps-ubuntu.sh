@@ -30,7 +30,7 @@ packages=(
 
 if [[ $minimal -eq 0 ]]; then
     packages+=(
-        nlohmann-json3-dev libspdlog-dev libfmt-dev libtomlplusplus-dev libcli11-dev
+        nlohmann-json3-dev libtomlplusplus-dev libcli11-dev
         libgtest-dev libgmock-dev
     )
 fi

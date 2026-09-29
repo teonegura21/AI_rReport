@@ -3,3 +3,6 @@
 
 # --- Shared by the hub and the runtime ---------------------------------------
 add_subdirectory(core)
+add_subdirectory(log)
+add_subdirectory(config)
+add_subdirectory(json)

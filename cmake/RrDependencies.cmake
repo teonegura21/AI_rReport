@@ -39,22 +39,6 @@ FetchContent_Declare(nlohmann_json
     SYSTEM
     FIND_PACKAGE_ARGS 3.11 CONFIG)
 
-# Formatting backend of spdlog. Our own code formats with std::format.
-FetchContent_Declare(fmt
-    GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-    GIT_TAG 11.1.4
-    GIT_SHALLOW TRUE
-    SYSTEM
-    FIND_PACKAGE_ARGS 9 CONFIG)
-
-set(SPDLOG_FMT_EXTERNAL ON CACHE BOOL "spdlog: use the resolved fmt" FORCE)
-FetchContent_Declare(spdlog
-    GIT_REPOSITORY https://github.com/gabime/spdlog.git
-    GIT_TAG v1.15.3
-    GIT_SHALLOW TRUE
-    SYSTEM
-    FIND_PACKAGE_ARGS 1.12 CONFIG)
-
 # TOML parser for layered configuration (rr_config).
 FetchContent_Declare(tomlplusplus
     GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
@@ -118,7 +102,7 @@ FetchContent_Declare(BLAKE3
     SYSTEM
     FIND_PACKAGE_ARGS 1.5 CONFIG)
 
-set(_rr_dependencies nlohmann_json fmt spdlog tomlplusplus CLI11 httplib jsoncons reproc BLAKE3)
+set(_rr_dependencies nlohmann_json tomlplusplus CLI11 httplib jsoncons reproc BLAKE3)
 
 if(RR_BUILD_TESTS)
     set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
@@ -147,7 +131,7 @@ if(TARGET blake3 AND NOT TARGET BLAKE3::blake3)
 endif()
 
 foreach(_rr_required_target IN ITEMS
-        nlohmann_json::nlohmann_json spdlog::spdlog tomlplusplus::tomlplusplus CLI11::CLI11
+        nlohmann_json::nlohmann_json tomlplusplus::tomlplusplus CLI11::CLI11
         httplib::httplib jsoncons::jsoncons reproc::reproc++ BLAKE3::blake3
         OpenSSL::Crypto CURL::libcurl SQLite::SQLite3)
     if(NOT TARGET ${_rr_required_target})

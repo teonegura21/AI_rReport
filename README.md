@@ -54,8 +54,8 @@ Libraries missing from the system are fetched at pinned versions automatically (
 ```bash
 # Ubuntu 24.04: the fastest path installs most dependencies from apt
 sudo apt-get install -y build-essential cmake ninja-build pkg-config \
-  libcurl4-openssl-dev libssl-dev libsqlite3-dev nlohmann-json3-dev libspdlog-dev \
-  libfmt-dev libgtest-dev libgmock-dev libcli11-dev libtomlplusplus-dev
+  libcurl4-openssl-dev libssl-dev libsqlite3-dev nlohmann-json3-dev \
+  libgtest-dev libgmock-dev libcli11-dev libtomlplusplus-dev
 
 cmake --preset dev             # GCC, debug, warnings as errors
 cmake --build --preset dev
