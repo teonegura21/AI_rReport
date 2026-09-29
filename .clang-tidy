@@ -55,6 +55,11 @@ HeaderFilterRegex: '.*/src/[a-z_]+/include/rr/.*'
 FormatStyle: file
 
 CheckOptions:
+  # An explicit (void) is how this codebase discards a [[nodiscard]] Result on
+  # purpose: visible, greppable, and what the compiler itself accepts. The
+  # check still catches every *silent* discard.
+  - key: bugprone-unused-return-value.AllowCastToVoid
+    value: true
   - key: readability-function-cognitive-complexity.Threshold
     value: '30'
   - key: misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic
@@ -74,6 +79,10 @@ CheckOptions:
     value: CamelCase
   - key: readability-identifier-naming.TypeAliasCase
     value: CamelCase
+  # Names the standard library's protocols require verbatim (heterogeneous
+  # lookup, iterator and container traits).
+  - key: readability-identifier-naming.TypeAliasIgnoredRegexp
+    value: '^(is_transparent|value_type|size_type|difference_type|reference|const_reference|pointer|element_type|iterator|const_iterator|iterator_category|iterator_concept)$'
   - key: readability-identifier-naming.TemplateParameterCase
     value: CamelCase
   - key: readability-identifier-naming.FunctionCase
@@ -98,6 +107,10 @@ CheckOptions:
     value: CamelCase
   - key: readability-identifier-naming.ConstexprVariablePrefix
     value: k
+  # Type-trait variable templates keep the standard library's spelling
+  # (std::is_same_v -> rr::is_result_v); nothing else may end in _v.
+  - key: readability-identifier-naming.ConstexprVariableIgnoredRegexp
+    value: '^[a-z][a-z0-9_]*_v$'
   - key: readability-identifier-naming.GlobalConstantCase
     value: CamelCase
   - key: readability-identifier-naming.GlobalConstantPrefix

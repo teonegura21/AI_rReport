@@ -1,10 +1,10 @@
 #include <rr/config/config.hpp>
 
 #include <filesystem>
-#include <fstream>
-#include <random>
 
 #include <gtest/gtest.h>
+
+#include <rr/testkit/temp_dir.hpp>
 
 namespace rr::config {
 namespace {
@@ -27,29 +27,6 @@ library = "~/rreport/library"
 languages = ["en"]
 )toml";
 
-class TempDir {
-public:
-    TempDir()
-        : path_(std::filesystem::temp_directory_path() /
-                ("rr_config_test_" + std::to_string(std::random_device{}()))) {
-        std::filesystem::create_directories(path_);
-    }
-    TempDir(const TempDir&) = delete;
-    TempDir& operator=(const TempDir&) = delete;
-    TempDir(TempDir&&) = delete;
-    TempDir& operator=(TempDir&&) = delete;
-    ~TempDir() { std::filesystem::remove_all(path_); }
-
-    [[nodiscard]] std::filesystem::path write(const std::string& name, std::string_view content) const {
-        const auto file = path_ / name;
-        std::ofstream(file) << content;
-        return file;
-    }
-
-private:
-    std::filesystem::path path_;
-};
-
 LoadOptions base_options() {
     LoadOptions options;
     options.defaults_toml = kDefaults;
@@ -69,9 +46,9 @@ TEST(Config, DefaultsProvideTypedValues) {
 }
 
 TEST(Config, LayersOverrideInOrder_FileThenEnvThenCommandLine) {
-    const TempDir dir;
+    const testkit::TempDir dir{"rr_config_test"};
     LoadOptions options = base_options();
-    options.file = dir.write("config.toml", "[runtime]\nurl = \"https://file\"\nslots = 8\n");
+    options.file = dir.write_file("config.toml", "[runtime]\nurl = \"https://file\"\nslots = 8\n");
     options.environment = std::vector<std::pair<std::string, std::string>>{
         {"RREPORT_RUNTIME__SLOTS", "16"},
         {"RREPORT_CAPTURE__LANGUAGES", "en, ro"},
@@ -90,9 +67,9 @@ TEST(Config, LayersOverrideInOrder_FileThenEnvThenCommandLine) {
 }
 
 TEST(Config, UnknownKeyInFile_FailsWithSuggestion) {
-    const TempDir dir;
+    const testkit::TempDir dir{"rr_config_test"};
     LoadOptions options = base_options();
-    options.file = dir.write("config.toml", "[runtime]\nulr = \"https://typo\"\n");
+    options.file = dir.write_file("config.toml", "[runtime]\nulr = \"https://typo\"\n");
     const auto result = Config::load(options);
     ASSERT_FALSE(result.has_value());
     EXPECT_NE(result.error().message().find("did you mean 'runtime.url'"), std::string::npos)
@@ -100,9 +77,9 @@ TEST(Config, UnknownKeyInFile_FailsWithSuggestion) {
 }
 
 TEST(Config, TypeMismatch_NamesKeyAndSource) {
-    const TempDir dir;
+    const testkit::TempDir dir{"rr_config_test"};
     LoadOptions options = base_options();
-    const auto file = dir.write("config.toml", "[runtime]\nslots = \"many\"\n");
+    const auto file = dir.write_file("config.toml", "[runtime]\nslots = \"many\"\n");
     options.file = file;
     const auto result = Config::load(options);
     ASSERT_FALSE(result.has_value());
@@ -149,18 +126,18 @@ TEST(Config, MissingOptionalFileIsSkipped_MissingRequiredFileFails) {
 }
 
 TEST(Config, TomlSyntaxErrors_IncludeLineAndColumn) {
-    const TempDir dir;
+    const testkit::TempDir dir{"rr_config_test"};
     LoadOptions options = base_options();
-    options.file = dir.write("config.toml", "[runtime\nurl = 1\n");
+    options.file = dir.write_file("config.toml", "[runtime\nurl = 1\n");
     const auto result = Config::load(options);
     ASSERT_FALSE(result.has_value());
     EXPECT_NE(result.error().message().find("config.toml:1:"), std::string::npos) << result.error().message();
 }
 
 TEST(Config, SecretsAreMaskedAndPermissionsEnforced) {
-    const TempDir dir;
+    const testkit::TempDir dir{"rr_config_test"};
     LoadOptions options = base_options();
-    const auto secrets = dir.write("secrets.toml", "[runtime]\ntoken = \"tk-123\"\n");
+    const auto secrets = dir.write_file("secrets.toml", "[runtime]\ntoken = \"tk-123\"\n");
     options.secrets_file = secrets;
 
     std::filesystem::permissions(secrets, std::filesystem::perms::owner_read |

@@ -61,14 +61,16 @@ endfunction()
 
 # rr_add_test_suite(<module> SOURCES <files...> [DEPS <targets...>])
 #   One GoogleTest executable per module (`rr_<module>_tests`), registered with
-#   CTest and labelled with the module name (`ctest -L core`).
+#   CTest and labelled with the module name (`ctest -L core`). Every suite links
+#   rr::testkit (tests/testkit), the helpers shared by all tests.
 #   DISCOVERY_MODE PRE_TEST lists tests when CTest runs, not at build time, which
 #   keeps sanitizer builds and cross builds working.
 function(rr_add_test_suite module)
     cmake_parse_arguments(PARSE_ARGV 1 ARG "" "" "SOURCES;DEPS")
     set(target rr_${module}_tests)
     add_executable(${target} ${ARG_SOURCES})
-    target_link_libraries(${target} PRIVATE ${ARG_DEPS} GTest::gmock GTest::gtest GTest::gtest_main)
+    target_link_libraries(${target}
+        PRIVATE ${ARG_DEPS} rr::testkit GTest::gmock GTest::gtest GTest::gtest_main)
     target_compile_features(${target} PRIVATE cxx_std_23)
     rr_target_warnings(${target})
     _rr_apply_clang_tidy(${target})

@@ -1,5 +1,6 @@
 #include <rr/core/result.hpp>
 
+#include <functional>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -67,6 +68,34 @@ TEST(WithContext, AddsContextOnlyOnFailure) {
     ASSERT_FALSE(bad.has_value());
     ASSERT_EQ(bad.error().context().size(), 1U);
     EXPECT_EQ(bad.error().context()[0], "while parsing");
+}
+
+// Regression: RR_TRY around an expression whose lambda uses RR_TRY again.
+// With a fixed temporary name this failed to compile under -Wshadow -Werror.
+Result<void> run_callback(const std::function<Result<void>()>& callback) {
+    return callback();
+}
+
+Result<void> nested(bool inner_fails) {
+    RR_TRY(run_callback([&]() -> Result<void> {
+        RR_TRY(inner_fails ? Result<void>{fail(Errc::conflict, "inner")} : ok());
+        return ok();
+    }));
+    return ok();
+}
+
+TEST(ResultMacros, TryNestsInsideLambdasInItsOwnArgument) {
+    EXPECT_TRUE(nested(false).has_value());
+    ASSERT_FALSE(nested(true).has_value());
+    EXPECT_EQ(nested(true).error().code(), Errc::conflict);
+}
+
+TEST(IsResult, RecognizesOnlyResultTypes) {
+    static_assert(is_result_v<Result<int>>);
+    static_assert(is_result_v<Result<void>>);
+    static_assert(!is_result_v<int>);
+    static_assert(!is_result_v<std::expected<int, int>>);  // an expected with a foreign error type
+    SUCCEED();
 }
 
 }  // namespace

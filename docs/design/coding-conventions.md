@@ -17,6 +17,7 @@ These rules exist so that any file in the repository reads like every other file
 | Functions, methods, variables, parameters | `snake_case` | `put_file()`, `retry_after` |
 | Private/protected data members | `snake_case_` | `root_` |
 | Constants (`constexpr`, globals) | `kCamelCase` | `kDefaultTimeout` |
+| Type-trait variable templates | `snake_case_v`, like the standard library | `is_result_v<T>` |
 | Enumerators | `snake_case` (like `std::errc`) | `Errc::not_found` |
 | Macros | `RR_UPPER_CASE` | `RR_TRY` |
 | Files | `snake_case.hpp/.cpp` | `thread_pool.hpp` |

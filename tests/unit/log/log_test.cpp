@@ -2,12 +2,13 @@
 
 #include <filesystem>
 #include <fstream>
-#include <random>
 #include <string>
 #include <thread>
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
+
+#include <rr/testkit/temp_dir.hpp>
 
 namespace rr::log {
 namespace {
@@ -93,26 +94,8 @@ TEST(Levels, ParseNames) {
     EXPECT_EQ(to_string(Level::error), "error");
 }
 
-class TempDir {
-public:
-    TempDir()
-        : path_(std::filesystem::temp_directory_path() /
-                ("rr_log_test_" + std::to_string(std::random_device{}()))) {
-        std::filesystem::create_directories(path_);
-    }
-    TempDir(const TempDir&) = delete;
-    TempDir& operator=(const TempDir&) = delete;
-    TempDir(TempDir&&) = delete;
-    TempDir& operator=(TempDir&&) = delete;
-    ~TempDir() { std::filesystem::remove_all(path_); }
-    [[nodiscard]] const std::filesystem::path& path() const { return path_; }
-
-private:
-    std::filesystem::path path_;
-};
-
 TEST(JsonlSink, WritesOneJsonObjectPerLineWithContext) {
-    const TempDir dir;
+    const testkit::TempDir dir{"rr_log_test"};
     const auto file = dir.path() / "logs" / "hub.jsonl";
     auto sink = make_jsonl_file_sink(file).value();
     const std::vector<Field> fields{{"job", "01J"}, {"msg", "collides with the envelope"}};
@@ -134,7 +117,7 @@ TEST(JsonlSink, WritesOneJsonObjectPerLineWithContext) {
 }
 
 TEST(JsonlSink, RotatesWhenTheFileGrowsTooLarge) {
-    const TempDir dir;
+    const testkit::TempDir dir{"rr_log_test"};
     const auto file = dir.path() / "rt.jsonl";
     auto sink = make_jsonl_file_sink(file, /*max_bytes=*/200, /*max_files=*/2).value();
     for (int index = 0; index < 20; ++index) {

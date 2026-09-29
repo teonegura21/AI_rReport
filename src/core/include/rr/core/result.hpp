@@ -33,6 +33,13 @@ namespace rr {
 template <class T>
 using Result = std::expected<T, Error>;
 
+// True for Result<T> (any T). Lets a template insist that a callback returns a
+// Result, with a readable static_assert instead of a wall of template errors.
+template <class T>
+inline constexpr bool is_result_v = false;
+template <class T>
+inline constexpr bool is_result_v<std::expected<T, Error>> = true;
+
 // The error value to return from a function returning Result<T>.
 // The source location defaults to the *caller* of fail().
 [[nodiscard]] inline std::unexpected<Error> fail(
@@ -71,12 +78,19 @@ template <class T>
 
 // Evaluates `expr` (a Result<...>); on failure, returns its error from the
 // enclosing function. The value, if any, is discarded.
-#define RR_TRY(expr)                                                       \
-    do {                                                                   \
-        auto&& rr_try_result_ = (expr);                                    \
-        if (!rr_try_result_.has_value()) [[unlikely]] {                    \
-            return ::std::unexpected(::std::move(rr_try_result_).error()); \
-        }                                                                  \
+//
+// Each expansion names its temporary uniquely (__COUNTER__), so RR_TRY may
+// wrap an expression whose lambda uses RR_TRY itself — the natural shape of
+// `RR_TRY(db.write([&](WriteTx& tx) { RR_TRY(...); ... }))`. A fixed name
+// would be shadowed inside the lambda, which -Wshadow rejects.
+#define RR_TRY(expr) RR_DETAIL_TRY(RR_DETAIL_CONCAT(rr_try_result_, __COUNTER__), expr)
+
+#define RR_DETAIL_TRY(tmp, expr)                                \
+    do {                                                        \
+        auto&& tmp = (expr);                                    \
+        if (!tmp.has_value()) [[unlikely]] {                    \
+            return ::std::unexpected(::std::move(tmp).error()); \
+        }                                                       \
     } while (false)
 
 // Evaluates `expr` (a Result<T>); on failure, returns its error; on success,
