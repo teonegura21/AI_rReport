@@ -92,6 +92,9 @@ CheckOptions:
     value: CamelCase
   - key: readability-identifier-naming.FunctionCase
     value: lower_case
+  # GoogleTest finds value printers by this exact name (argument-dependent lookup).
+  - key: readability-identifier-naming.FunctionIgnoredRegexp
+    value: '^PrintTo$'
   - key: readability-identifier-naming.MethodCase
     value: lower_case
   - key: readability-identifier-naming.VariableCase

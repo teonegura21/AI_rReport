@@ -56,7 +56,7 @@ Modules marked *(M0)* exist now; the rest arrive in the milestone shown.
 | `rr_db` *(M0)* | SQLite wrapper (WAL, writer + reader pool), migrations ([design](design/database.md)) | core, SQLite |
 | `rr_blob` *(M0)* | Content-addressed, crash-safe blob store (BLAKE3 names, atomic publish) | core |
 | `rr_proc` *(M0)* | Subprocesses: run-to-completion and supervised children, each in its own process group (ADR-0013) | core (posix_spawn) |
-| `rr_net` *(M0)* | HTTP client (libcurl), SSE parser, retry policy, HTTP server (cpp-httplib) | core, libcurl, cpp-httplib |
+| `rr_net` *(M0)* | HTTP client (libcurl), SSE parser, retry policy, HTTP server (cpp-httplib) ([design](design/networking.md)) | core, json, libcurl, cpp-httplib |
 | `rr_runtime_api` *(M0)* | Hub↔runtime protocol types | core, json |
 | `rr_supervisor` *(M0)* | Runtime: auth, health, engines, proxy, blobs, idle/dead-man stop | api, net, proc, blob, config, log |
 | `rr_llm` *(M0)* | Providers, streaming, structured calls, record/replay, accounting | core, json, net, db |

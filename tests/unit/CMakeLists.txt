@@ -6,6 +6,7 @@ add_subdirectory(config)
 add_subdirectory(json)
 add_subdirectory(blob)
 add_subdirectory(proc)
+add_subdirectory(net)
 
 if(RR_BUILD_HUB)
     add_subdirectory(db)
