@@ -1,0 +1,42 @@
+# Build trees (CMake presets put everything under build/<preset>).
+/build/
+/out/
+/cmake-build-*/
+CMakeUserPresets.json
+compile_commands.json
+.cache/
+
+# Editors and OS noise.
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Secrets and local configuration: never commit credentials.
+.env
+.env.*
+secrets.toml
+*.secrets.toml
+
+# Local data produced by running the hub or the runtime.
+*.db
+*.db-wal
+*.db-shm
+/library/
+/workspace/
+
+# Model weights and large media are fetched, never committed.
+*.gguf
+*.onnx
+*.safetensors
+/models/
+
+# Web / TypeScript artifacts (web/, mcp/, extension/).
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Python tooling caches (eval scripts may use Python later).
+__pycache__/
+*.pyc

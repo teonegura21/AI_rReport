@@ -1,0 +1,101 @@
+# rReport static-analysis rules (clang-tidy >= 19).
+#
+# Philosophy: enable whole families that catch real bugs (bugprone, performance,
+# concurrency, clang-analyzer, modernize), then switch off only the checks that
+# are pure noise for this codebase. Every disabled check has a reason below.
+#
+# Disabled on purpose:
+#   modernize-use-trailing-return-type ....... style preference, not a bug class
+#   readability-identifier-length ............ `i`, `n`, `db` are clear in context
+#   readability-magic-numbers /
+#   cppcoreguidelines-avoid-magic-numbers ..... protocol constants are named where it helps
+#   bugprone-easily-swappable-parameters ..... fires on nearly every (string, string) API
+#   misc-include-cleaner ..................... noisy with umbrella third-party headers
+#   cppcoreguidelines-pro-bounds-pointer-arithmetic,
+#   cppcoreguidelines-pro-type-reinterpret-cast,
+#   cppcoreguidelines-pro-type-vararg ........ unavoidable at C-API boundaries (sqlite, curl);
+#                                              those spots are isolated in adapter .cpp files
+#   cppcoreguidelines-avoid-do-while ......... RR_TRY-style macros need do { } while (false)
+#   readability-function-cognitive-complexity  kept, but with a realistic threshold (see below)
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  cert-err33-c,
+  cert-err34-c,
+  cert-err58-cpp,
+  clang-analyzer-*,
+  concurrency-*,
+  cppcoreguidelines-*,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-pro-type-vararg,
+  -cppcoreguidelines-avoid-do-while,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  misc-*,
+  -misc-include-cleaner,
+  -misc-no-recursion,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  performance-*,
+  portability-*,
+  readability-*,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-redundant-access-specifiers
+
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*/src/[a-z_]+/include/rr/.*'
+FormatStyle: file
+
+CheckOptions:
+  - key: readability-function-cognitive-complexity.Threshold
+    value: '30'
+  - key: misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic
+    value: 'true'
+  - key: cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor
+    value: 'true'
+  # Naming conventions (documented in docs/design/coding-conventions.md):
+  #   Types CamelCase; functions/variables snake_case; private members snake_case_;
+  #   constants kCamelCase; enumerators snake_case (like std::errc); macros RR_UPPER.
+  - key: readability-identifier-naming.NamespaceCase
+    value: lower_case
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumCase
+    value: CamelCase
+  - key: readability-identifier-naming.TypeAliasCase
+    value: CamelCase
+  - key: readability-identifier-naming.TemplateParameterCase
+    value: CamelCase
+  - key: readability-identifier-naming.FunctionCase
+    value: lower_case
+  - key: readability-identifier-naming.MethodCase
+    value: lower_case
+  - key: readability-identifier-naming.VariableCase
+    value: lower_case
+  - key: readability-identifier-naming.ParameterCase
+    value: lower_case
+  - key: readability-identifier-naming.PrivateMemberCase
+    value: lower_case
+  - key: readability-identifier-naming.PrivateMemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.ProtectedMemberCase
+    value: lower_case
+  - key: readability-identifier-naming.ProtectedMemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.EnumConstantCase
+    value: lower_case
+  - key: readability-identifier-naming.ConstexprVariableCase
+    value: CamelCase
+  - key: readability-identifier-naming.ConstexprVariablePrefix
+    value: k
+  - key: readability-identifier-naming.GlobalConstantCase
+    value: CamelCase
+  - key: readability-identifier-naming.GlobalConstantPrefix
+    value: k
+  - key: readability-identifier-naming.MacroDefinitionCase
+    value: UPPER_CASE

@@ -1,0 +1,55 @@
+# rReport C++ formatting rules (clang-format >= 18).
+#
+# Why these choices:
+#   * 4-space indentation and a 110-column limit keep dense template code readable
+#     on a laptop screen without forcing awkward line breaks.
+#   * InsertBraces: every if/for/while body gets braces, which removes a whole
+#     class of "added a second line to an unbraced if" bugs.
+#   * Includes are grouped: standard library, then third-party, then our own
+#     <rr/...> headers, so a reader sees the dependency layers at a glance.
+---
+Language: Cpp
+BasedOnStyle: Google
+Standard: Latest
+ColumnLimit: 110
+IndentWidth: 4
+ContinuationIndentWidth: 4
+AccessModifierOffset: -4
+IndentAccessModifiers: false
+PointerAlignment: Left
+DerivePointerAlignment: false
+ReferenceAlignment: Pointer
+AllowShortFunctionsOnASingleLine: InlineOnly
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortLambdasOnASingleLine: Inline
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: false
+AlwaysBreakTemplateDeclarations: Yes
+BreakBeforeBraces: Attach
+BreakConstructorInitializers: BeforeComma
+PackConstructorInitializers: CurrentLine
+InsertBraces: true
+SeparateDefinitionBlocks: Always
+NamespaceIndentation: None
+FixNamespaceComments: true
+SpaceBeforeCpp11BracedList: false
+Cpp11BracedListStyle: true
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  # Our own headers last, so they are visibly "above" their dependencies.
+  - Regex: '^<rr/'
+    Priority: 4
+  # Standard library headers (no extension, no slash) first.
+  - Regex: '^<[a-z_]+>$'
+    Priority: 1
+  # C system headers (<unistd.h>, <sys/wait.h>, ...).
+  - Regex: '^<(sys/)?[a-z_0-9]+\.h>$'
+    Priority: 2
+  # Everything else in angle brackets: third-party libraries.
+  - Regex: '^<'
+    Priority: 3
+  - Regex: '.*'
+    Priority: 5
