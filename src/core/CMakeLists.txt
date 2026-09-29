@@ -16,6 +16,7 @@ configure_file(version.hpp.in "${CMAKE_CURRENT_BINARY_DIR}/include/rr/core/versi
 rr_add_module(core
     SOURCES
         assert.cpp
+        environment.cpp
         error.cpp
         hash.cpp
         limiter.cpp

@@ -8,18 +8,10 @@
 #include <fstream>
 #include <sstream>
 
-#include <unistd.h>
-
 #include <toml++/toml.hpp>
 
+#include <rr/core/environment.hpp>
 #include <rr/core/strings.hpp>
-
-#if defined(__APPLE__)
-#include <crt_externs.h>
-#define RR_ENVIRON (*_NSGetEnviron())
-#else
-#define RR_ENVIRON environ  // declared by <unistd.h> (glibc, with _GNU_SOURCE)
-#endif
 
 namespace rr::config {
 namespace {
@@ -223,18 +215,6 @@ Result<std::string> read_file(const std::filesystem::path& path) {
     return content.str();
 }
 
-std::vector<std::pair<std::string, std::string>> process_environment() {
-    std::vector<std::pair<std::string, std::string>> variables;
-    for (char** entry = RR_ENVIRON; entry != nullptr && *entry != nullptr; ++entry) {
-        const std::string_view text{*entry};
-        const auto equals = text.find('=');
-        if (equals != std::string_view::npos) {
-            variables.emplace_back(std::string{text.substr(0, equals)}, std::string{text.substr(equals + 1)});
-        }
-    }
-    return variables;
-}
-
 }  // namespace
 
 std::string_view to_string(Layer layer) noexcept {
@@ -300,7 +280,7 @@ Result<Config> Config::load(const LoadOptions& options) {
     if (options.secrets_file) {
         RR_TRY(config.apply_secrets_file(*options.secrets_file));
     }
-    RR_TRY(config.apply_environment(options.environment ? *options.environment : process_environment(),
+    RR_TRY(config.apply_environment(options.environment ? *options.environment : environment_snapshot(),
                                     options.env_prefix));
     RR_TRY(config.apply_overrides(options.overrides));
     return config;

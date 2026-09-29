@@ -384,7 +384,7 @@ std::string Row::get_text(int column) const {
     if (text == nullptr) {
         return {};
     }
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — SQLite returns UTF-8 as unsigned char.
+    // SQLite returns UTF-8 text as unsigned char.
     return std::string{reinterpret_cast<const char*>(text), static_cast<std::size_t>(size)};
 }
 

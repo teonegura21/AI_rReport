@@ -1,5 +1,6 @@
 rr_add_test_suite(core
     SOURCES
+        environment_test.cpp
         error_test.cpp
         hash_test.cpp
         limiter_test.cpp
