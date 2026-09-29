@@ -15,6 +15,8 @@ Each user's library (videos, analyses, research, conversations) is independent. 
 - **Our own wrapper.** A small SQLite wrapper (no exceptions, ADR-0007) instead of an ORM. Repositories are concrete classes over a transaction.
 - **Migrations.** Numbered SQL files applied in one transaction each, tracked with `PRAGMA user_version`. Downgrades are refused.
 
+How the wrapper implements this (leases, nested-transaction detection, the statement cache, error mapping) is described in [docs/design/database.md](../design/database.md).
+
 ## Consequences
 
 - Tenant isolation, backup, export and deletion are file operations: ideal for privacy and GDPR requests.

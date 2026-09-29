@@ -6,3 +6,10 @@ add_subdirectory(core)
 add_subdirectory(log)
 add_subdirectory(config)
 add_subdirectory(json)
+
+# --- Hub only ------------------------------------------------------------------
+# The runtime keeps no durable state of its own (the hub is the source of
+# truth, ADR-0001), so it never links SQLite.
+if(RR_BUILD_HUB)
+    add_subdirectory(db)
+endif()
