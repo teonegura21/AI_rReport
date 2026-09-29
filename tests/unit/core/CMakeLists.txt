@@ -1,0 +1,16 @@
+rr_add_test_suite(core
+    SOURCES
+        error_test.cpp
+        hash_test.cpp
+        limiter_test.cpp
+        random_test.cpp
+        result_test.cpp
+        scope_exit_test.cpp
+        secret_test.cpp
+        strings_test.cpp
+        strong_id_test.cpp
+        thread_pool_test.cpp
+        time_span_test.cpp
+        ulid_test.cpp
+    DEPS
+        rr::core)
