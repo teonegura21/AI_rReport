@@ -1,0 +1,12 @@
+# Test code inherits the project rules, minus checks that GoogleTest's macros
+# violate by construction (TEST() defines global objects and classes).
+InheritParentConfig: true
+Checks: >
+  -cppcoreguidelines-avoid-non-const-global-variables,
+  -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-special-member-functions,
+  -cert-err58-cpp,
+  -misc-use-internal-linkage,
+  -readability-function-cognitive-complexity,
+  -modernize-use-designated-initializers,
+  -bugprone-unchecked-optional-access

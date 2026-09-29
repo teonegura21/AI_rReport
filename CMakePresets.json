@@ -1,0 +1,111 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 28, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "RR_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "gcc",
+      "hidden": true,
+      "cacheVariables": { "CMAKE_C_COMPILER": "gcc", "CMAKE_CXX_COMPILER": "g++" }
+    },
+    {
+      "name": "clang",
+      "hidden": true,
+      "description": "Clang >= 19 is required (ADR-0007). Ubuntu 24.04 names it clang-20; override in CMakeUserPresets.json if yours differs.",
+      "cacheVariables": { "CMAKE_C_COMPILER": "clang-20", "CMAKE_CXX_COMPILER": "clang++-20" }
+    },
+    {
+      "name": "dev",
+      "displayName": "GCC · Debug",
+      "inherits": ["base", "gcc"],
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "dev-clang",
+      "displayName": "Clang · Debug · AddressSanitizer + UBSan",
+      "inherits": ["base", "clang"],
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "RR_SANITIZE": "address;undefined" }
+    },
+    {
+      "name": "tsan",
+      "displayName": "Clang · ThreadSanitizer",
+      "inherits": ["base", "clang"],
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "RR_SANITIZE": "thread" }
+    },
+    {
+      "name": "tidy",
+      "displayName": "Clang · clang-tidy on every translation unit",
+      "inherits": ["base", "clang"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "RR_CLANG_TIDY": "clang-tidy-20;--quiet;--warnings-as-errors=*"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "GCC · Release",
+      "inherits": ["base", "gcc"],
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "runtime-release",
+      "displayName": "Runtime supervisor only · Release (used by the Docker image)",
+      "inherits": ["base", "gcc"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "RR_BUILD_HUB": "OFF",
+        "RR_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "ci-fetch",
+      "displayName": "GCC · Debug · ignore system packages (proves the git fallback)",
+      "inherits": ["base", "gcc"],
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "RR_FORCE_FETCH": "ON" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "dev", "configurePreset": "dev" },
+    { "name": "dev-clang", "configurePreset": "dev-clang" },
+    { "name": "tsan", "configurePreset": "tsan" },
+    { "name": "tidy", "configurePreset": "tidy" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "runtime-release", "configurePreset": "runtime-release" },
+    { "name": "ci-fetch", "configurePreset": "ci-fetch" }
+  ],
+  "testPresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error", "stopOnFailure": false, "timeout": 120 }
+    },
+    { "name": "dev", "inherits": "base", "configurePreset": "dev" },
+    {
+      "name": "dev-clang",
+      "inherits": "base",
+      "configurePreset": "dev-clang",
+      "environment": {
+        "ASAN_OPTIONS": "detect_leaks=1:detect_stack_use_after_return=1:strict_string_checks=1:check_initialization_order=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    },
+    {
+      "name": "tsan",
+      "inherits": "base",
+      "configurePreset": "tsan",
+      "environment": { "TSAN_OPTIONS": "halt_on_error=1:second_deadlock_stack=1" }
+    },
+    { "name": "release", "inherits": "base", "configurePreset": "release" },
+    { "name": "ci-fetch", "inherits": "base", "configurePreset": "ci-fetch" }
+  ]
+}

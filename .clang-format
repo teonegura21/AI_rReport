@@ -5,8 +5,9 @@
 #     on a laptop screen without forcing awkward line breaks.
 #   * InsertBraces: every if/for/while body gets braces, which removes a whole
 #     class of "added a second line to an unbraced if" bugs.
-#   * Includes are grouped: standard library, then third-party, then our own
-#     <rr/...> headers, so a reader sees the dependency layers at a glance.
+#   * Includes are grouped: the file's own header first, then the standard
+#     library, third-party libraries and our own <rr/...> headers, so a reader
+#     sees the dependency layers at a glance.
 ---
 Language: Cpp
 BasedOnStyle: Google
@@ -19,10 +20,10 @@ IndentAccessModifiers: false
 PointerAlignment: Left
 DerivePointerAlignment: false
 ReferenceAlignment: Pointer
-AllowShortFunctionsOnASingleLine: InlineOnly
+AllowShortFunctionsOnASingleLine: Inline
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
-AllowShortLambdasOnASingleLine: Inline
+AllowShortLambdasOnASingleLine: All
 AllowShortBlocksOnASingleLine: Never
 AllowShortCaseLabelsOnASingleLine: false
 AllowShortEnumsOnASingleLine: false
@@ -31,13 +32,16 @@ BreakBeforeBraces: Attach
 BreakConstructorInitializers: BeforeComma
 PackConstructorInitializers: CurrentLine
 InsertBraces: true
-SeparateDefinitionBlocks: Always
+SeparateDefinitionBlocks: Leave
 NamespaceIndentation: None
 FixNamespaceComments: true
 SpaceBeforeCpp11BracedList: false
 Cpp11BracedListStyle: true
 SortIncludes: CaseSensitive
 IncludeBlocks: Regroup
+# A .cpp file includes its own header first (with <rr/...> angle brackets), which
+# proves every header compiles on its own.
+MainIncludeChar: Any
 IncludeCategories:
   # Our own headers last, so they are visibly "above" their dependencies.
   - Regex: '^<rr/'
