@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 
 #include <rr/core/hash.hpp>
+#include <rr/fakes/fake_runpod.hpp>
 #include <rr/net/http_client.hpp>
 #include <rr/proc/process.hpp>
 #include <rr/testkit/ports.hpp>
@@ -71,17 +72,23 @@ name = "test"
     [[nodiscard]] int engine_port() const { return engine_port_; }
 
     // A runtime command line: `command`, then settings pointing it at these
-    // files, the fake engine and free ports.
-    [[nodiscard]] std::vector<std::string> argv(std::vector<std::string> command) const {
+    // files, the fake engine and free ports, then `extra` settings (the last
+    // value of a setting wins).
+    [[nodiscard]] std::vector<std::string> argv(std::vector<std::string> command,
+                                                const std::vector<std::string>& extra = {}) const {
         std::vector<std::string> argv{RR_RUNTIME_BINARY};
         argv.insert(argv.end(), command.begin(), command.end());
-        for (const std::string& setting :
-             {std::string{"server.host=127.0.0.1"}, std::string{"server.port=0"},
-              std::format("models.catalog={}", (dir_ / "catalog.toml").string()),
-              std::format("models.dir={}", (dir_ / "models").string()), std::string{"models.profile=test"},
-              std::format("blobs.dir={}", (dir_ / "blobs").string()),
-              std::format("engines.llama_server={}", RR_FAKE_ENGINE),
-              std::format("engines.first_port={}", engine_port_), std::string{"idle.stop_after=0s"}}) {
+        std::vector<std::string> settings{"server.host=127.0.0.1",
+                                          "server.port=0",
+                                          std::format("models.catalog={}", (dir_ / "catalog.toml").string()),
+                                          std::format("models.dir={}", (dir_ / "models").string()),
+                                          "models.profile=test",
+                                          std::format("blobs.dir={}", (dir_ / "blobs").string()),
+                                          std::format("engines.llama_server={}", RR_FAKE_ENGINE),
+                                          std::format("engines.first_port={}", engine_port_),
+                                          "idle.stop_after=0s"};
+        settings.insert(settings.end(), extra.begin(), extra.end());
+        for (const std::string& setting : settings) {
             argv.emplace_back("--set");
             argv.push_back(setting);
         }
@@ -149,6 +156,31 @@ TEST(RuntimeApp, ServesUntilSigtermThenStopsItsEngines) {
     const proc::ExitStatus status = unwrap(runtime.wait(15s));
     EXPECT_TRUE(status.success()) << status.describe() << "\n" << seen().second;
     EXPECT_FALSE(testkit::can_connect(pod.engine_port())) << "the engine went down with it";
+}
+
+// On RunPod, an idle runtime stops its pod through RunPod's API, with the
+// key RunPod gives every pod: REST refuses that key, GraphQL takes it.
+TEST(RuntimeApp, OnRunpodAnIdleRuntimeStopsItsPod) {
+    fakes::FakeRunpod runpod;
+    runpod.add_pod("pod123", "RUNNING");
+    const Pod pod;
+    std::vector<EnvironmentVariable> environment = Pod::environment(true);
+    environment.emplace_back("RUNPOD_POD_ID", "pod123");
+    environment.emplace_back("RUNPOD_API_KEY", std::string{fakes::FakeRunpod::kPodKey});
+    auto runtime = unwrap(proc::ChildProcess::start(
+        proc::Command{
+            .argv = pod.argv({"serve"}, {"idle.stop_after=1s", "idle.check_every=100ms",
+                                         std::format("idle.runpod_api_url={}", runpod.api_url()),
+                                         std::format("idle.runpod_graphql_url={}", runpod.graphql_url())}),
+            .environment = std::move(environment),
+            .inherit_environment = false},
+        proc::ChildProcess::Options{}));
+    EXPECT_TRUE(eventually([&] { return runpod.status("pod123") == "EXITED"; }, 20s))
+        << "the pod was stopped";
+    EXPECT_EQ(runpod.graphql_stops(), 1);
+
+    ASSERT_EQ(::kill(runtime.pid(), SIGTERM), 0);  // what RunPod does to a stopping pod
+    EXPECT_TRUE(unwrap(runtime.wait(15s)).success());
 }
 
 TEST(RuntimeApp, RefusesToServeWithoutAToken) {

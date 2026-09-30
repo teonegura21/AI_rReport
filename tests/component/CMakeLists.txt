@@ -5,6 +5,7 @@ if(RR_BUILD_RUNTIME)
             runtime_app_test.cpp
         DEPS
             rr::core
+            rr::fakes
             rr::net
             rr::proc)
     # The binary under test, and the llama-server stand-in it runs.

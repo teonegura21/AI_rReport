@@ -45,8 +45,11 @@ retention = "24h"            # blobs unused for this long are deleted
 
 [idle]
 stop_after = "15m"           # stop the pod after this long without activity ("0s": never)
-stop_command = []            # empty: on RunPod, `runpodctl stop pod $RUNPOD_POD_ID`
+stop_command = []            # a command that stops the machine; empty: on RunPod, RunPod's API
 check_every = "15s"
+runpod_api_key = ""          # empty: the pod's own key (RUNPOD_API_KEY, which RunPod provides)
+runpod_api_url = "https://api.runpod.io/v2"
+runpod_graphql_url = "https://api.runpod.io/graphql"
 
 [log]
 level = "info"               # trace, debug, info, warn, error

@@ -259,18 +259,24 @@ struct Supervisor::Impl {
         stop_command_attempted = now;
         stop_decided = true;
         log::warn("idle for {} s with nothing running: stopping the pod", whole_seconds(watchdog.idle_for()));
-        if (settings.stop_command.empty()) {
-            log::warn("no stop command is configured; the pod keeps running (and billing)");
+        if (!settings.stop_command.empty()) {
+            const auto result =
+                proc::run(proc::Command{.argv = settings.stop_command}, proc::RunOptions{.timeout = 2min});
+            if (!result.has_value()) {
+                log::error("the stop command could not run: {}", result.error().describe());
+            } else if (!result->status.success()) {
+                log::error("the stop command failed ({}): {}", result->status.describe(),
+                           result->stderr_tail(500));
+            }
             return;
         }
-        const auto result =
-            proc::run(proc::Command{.argv = settings.stop_command}, proc::RunOptions{.timeout = 2min});
-        if (!result.has_value()) {
-            log::error("the stop command could not run: {}", result.error().describe());
-        } else if (!result->status.success()) {
-            log::error("the stop command failed ({}): {}", result->status.describe(),
-                       result->stderr_tail(500));
+        if (settings.stop_pod) {
+            if (const auto stopped = settings.stop_pod(); !stopped.has_value()) {
+                log::error("the pod could not stop itself: {}", stopped.error().describe());
+            }
+            return;
         }
+        log::warn("no way to stop the pod is configured; it keeps running (and billing)");
     }
 
     void collect_garbage() {

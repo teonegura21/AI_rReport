@@ -8,6 +8,7 @@ add_subdirectory(blob)
 add_subdirectory(proc)
 add_subdirectory(net)
 add_subdirectory(runtime_api)
+add_subdirectory(runpod)
 
 if(RR_BUILD_RUNTIME)
     add_subdirectory(supervisor)

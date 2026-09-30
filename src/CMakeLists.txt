@@ -10,6 +10,7 @@ add_subdirectory(blob)
 add_subdirectory(proc)
 add_subdirectory(net)
 add_subdirectory(runtime_api)
+add_subdirectory(runpod)       # RunPod's API: the hub starts and stops the pod, the pod stops itself
 
 # --- Runtime only (the GPU pod) -------------------------------------------------
 if(RR_BUILD_RUNTIME)

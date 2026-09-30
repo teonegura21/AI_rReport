@@ -2,6 +2,7 @@
 // processes behind it, driven over HTTP like the hub drives it.
 #include <rr/supervisor/supervisor.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -673,6 +674,23 @@ TEST(Supervisor, HeartbeatsKeepThePodAliveAndIdlenessStopsIt) {
     pod.clock.advance(11min);
     EXPECT_TRUE(eventually([&] { return std::filesystem::exists(marker); })) << "the stop command ran";
     EXPECT_TRUE(pod.supervisor->stop_requested());
+}
+
+TEST(Supervisor, WithoutACommandAnIdlePodStopsItselfAndRetries) {
+    std::atomic<int> calls{0};
+    Pod pod{"test", [&calls](SupervisorSettings& settings) {
+                settings.idle_stop = 10min;
+                settings.stop_pod = [&calls]() -> Result<void> {
+                    ++calls;
+                    return fail(Errc::unavailable, "RunPod is having a moment");
+                };
+            }};
+    pod.clock.advance(11min);
+    EXPECT_TRUE(eventually([&] { return calls.load() == 1; })) << "RunPod's API is asked";
+    std::this_thread::sleep_for(200ms);  // ten watchdog ticks
+    EXPECT_EQ(calls.load(), 1) << "not on every tick";
+    pod.clock.advance(6min);
+    EXPECT_TRUE(eventually([&] { return calls.load() == 2; })) << "a pod still up is asked again";
 }
 
 TEST(Supervisor, ACrashedEngineIsRestarted) {

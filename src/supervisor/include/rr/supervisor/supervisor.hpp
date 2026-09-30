@@ -9,9 +9,9 @@
 //     * the OpenAI-compatible proxy, routing by the request's "model";
 //     * content-addressed blob uploads, verified against their hash and kept
 //       in one store per library;
-//     * the Watchdog: when idle long enough, it runs the configured stop
-//       command (on RunPod, `runpodctl stop pod $RUNPOD_POD_ID`), and it
-//       clears blobs that have not been used for `blob_retention`.
+//     * the Watchdog: when idle long enough, it stops the pod (on RunPod,
+//       through RunPod's API), and it clears blobs that have not been used
+//       for `blob_retention`.
 //   Protocol details: rr/runtime_api/protocol.hpp.
 //
 // Thread-safety: start() and stop() from one thread; the server's handlers
@@ -66,9 +66,12 @@ struct SupervisorSettings {
     std::uint64_t max_upload_bytes = std::uint64_t{8} << 30U;
     std::chrono::milliseconds blob_retention{std::chrono::hours{24}};
 
-    // Stopping the pod
+    // Stopping the pod once idle: `stop_command` if set, else `stop_pod` (on
+    // RunPod: its API, see runtime_config.hpp); with neither, idleness is
+    // only logged. Retried while the pod stays up and idle.
     std::optional<std::chrono::milliseconds> idle_stop{};  // std::nullopt: never
-    std::vector<std::string> stop_command{};               // run once idle; empty: only log
+    std::vector<std::string> stop_command{};
+    std::function<Result<void>()> stop_pod{};
     std::chrono::milliseconds watchdog_interval{std::chrono::seconds{15}};
 
     // Seams for tests

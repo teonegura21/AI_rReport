@@ -18,10 +18,13 @@
 //   * profile = "auto" picks the catalog profile for the smallest GPU
 //     present: a profile describes one GPU's layout, so a pod with unequal
 //     GPUs runs what the weakest one holds.
-//   * On RunPod (RUNPOD_POD_ID set) with no stop command configured, idle
-//     stop runs `runpodctl stop pod <id>`: RunPod's documented form, still
-//     accepted by the current CLI (whose own form is `pod stop`) and the one
-//     older runpodctl builds shipped inside pods understand.
+//   * On RunPod (RUNPOD_POD_ID set) with no stop command configured, an
+//     idle pod stops itself through RunPod's API (rr/runpod/runpod.hpp,
+//     stop_self()), with idle.runpod_api_key if set, else the key RunPod
+//     gives every pod (RUNPOD_API_KEY). Not through runpodctl: custom images
+//     may lack it, and its two generations disagree on the command's form.
+//     RUNPOD_API_KEY is not an alias of idle.runpod_api_key: RunPod always
+//     sets it, so a key of one's own must be able to differ from it.
 //   * A duration of "0s" turns idle stop and stream keep-alives off.
 //
 // Thread-safety: pure functions.
@@ -61,7 +64,8 @@ using Environment = std::vector<std::pair<std::string, std::string>>;
 // What the configuration is applied to.
 struct RuntimeFacts {
     std::vector<runtime_api::GpuInfo> gpus{};
-    std::optional<std::string> runpod_pod_id{};  // RUNPOD_POD_ID
+    std::optional<std::string> runpod_pod_id{};   // RUNPOD_POD_ID
+    std::optional<std::string> runpod_api_key{};  // RUNPOD_API_KEY: the pod-scoped key
     std::string version = "dev";
 };
 

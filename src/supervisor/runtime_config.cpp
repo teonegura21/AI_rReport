@@ -3,8 +3,14 @@
 #include <algorithm>
 #include <array>
 #include <format>
+#include <functional>
+#include <memory>
+#include <utility>
 
 #include <rr/embedded/runtime_defaults.hpp>
+#include <rr/log/log.hpp>
+#include <rr/net/http_client.hpp>
+#include <rr/runpod/runpod.hpp>
 
 namespace rr::supervisor {
 
@@ -37,6 +43,34 @@ Result<std::int64_t> positive_setting(const config::Config& config, std::string_
         return fail(Errc::invalid_argument, std::format("{} must be positive, not {}", key, value));
     }
     return value;
+}
+
+// What a pod stopping itself needs, kept alive by the function that uses it.
+// Built once and never moved: the API client points at its HttpClient.
+struct SelfStop {
+    net::HttpClient http;
+    runpod::RunpodApi api;
+    explicit SelfStop(runpod::Options options) : api(http, std::move(options)) {}
+};
+
+// How the pod stops itself on RunPod: nothing (logged) without a key.
+Result<std::function<Result<void>()>> runpod_self_stop(const config::Config& config,
+                                                       const std::string& pod_id,
+                                                       const std::optional<std::string>& pod_key) {
+    RR_TRY(runpod::validate_pod_id(pod_id));
+    RR_TRY_ASSIGN(Secret key, config.get_secret("idle.runpod_api_key"));
+    if (key.empty() && pod_key.has_value()) {
+        key = Secret{*pod_key};
+    }
+    if (key.empty()) {
+        log::warn("on RunPod without RUNPOD_API_KEY or idle.runpod_api_key: an idle pod cannot stop itself");
+        return std::function<Result<void>()>{};
+    }
+    RR_TRY_ASSIGN(std::string api_url, config.get_string("idle.runpod_api_url"));
+    RR_TRY_ASSIGN(std::string graphql_url, config.get_string("idle.runpod_graphql_url"));
+    auto self_stop = std::make_shared<const SelfStop>(runpod::Options{
+        .api_key = std::move(key), .api_url = std::move(api_url), .graphql_url = std::move(graphql_url)});
+    return std::function<Result<void>()>{[self_stop, pod_id] { return self_stop->api.stop_self(pod_id); }};
 }
 
 // A duration where "0s" means "off".
@@ -132,7 +166,8 @@ Result<SupervisorSettings> settings_from_config(const config::Config& config, Ca
     RR_TRY_ASSIGN(settings.idle_stop, optional_duration(config, "idle.stop_after"));
     RR_TRY_ASSIGN(settings.stop_command, config.get_string_list("idle.stop_command"));
     if (settings.stop_command.empty() && facts.runpod_pod_id.has_value() && !facts.runpod_pod_id->empty()) {
-        settings.stop_command = {"runpodctl", "stop", "pod", *facts.runpod_pod_id};
+        RR_TRY_ASSIGN(settings.stop_pod,
+                      runpod_self_stop(config, *facts.runpod_pod_id, facts.runpod_api_key));
     }
     RR_TRY_ASSIGN(settings.watchdog_interval, config.get_duration("idle.check_every"));
     if (settings.watchdog_interval.count() == 0) {

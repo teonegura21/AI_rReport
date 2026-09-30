@@ -122,7 +122,9 @@ Result<Setup> setup(const Global& global) {
     RR_TRY(start_logging(config));
     RR_TRY_ASSIGN(const std::filesystem::path catalog_path, config.get_path("models.catalog"));
     RR_TRY_ASSIGN(Catalog catalog, load_catalog(catalog_path));
-    RuntimeFacts facts{.runpod_pod_id = environment_variable("RUNPOD_POD_ID"), .version = version_string()};
+    RuntimeFacts facts{.runpod_pod_id = environment_variable("RUNPOD_POD_ID"),
+                       .runpod_api_key = environment_variable("RUNPOD_API_KEY"),
+                       .version = version_string()};
     RR_TRY_ASSIGN(const std::string configured, config.get_string("models.profile"));
     if (configured == "auto") {
         auto gpus = query_gpus();

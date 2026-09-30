@@ -99,10 +99,13 @@ A pod bills every minute it runs, so it must stop on its own when nobody needs i
 - **What doesn't count.** `/ping` and `/v1/health` are not activity: monitoring must not keep a pod alive.
 - **In-flight requests.** A request in flight is never idle, however long it runs. The relay's `Exchange` holds the `InFlight` guard until the stream ends.
 - **The idle period.** It starts when the last request *ends*.
-- **The stop.** After `idle_stop` of idleness the watcher runs the stop command once, and retries it after 5 minutes if the pod is still up.
-  - RunPod's documented form is `runpodctl stop pod $RUNPOD_POD_ID`. It is legacy but still supported by the current CLI, whose own form is `runpodctl pod stop <id>`, and it is the form the older runpodctl copy inside pods understands.
-  - Pods ship runpodctl with a pod-scoped API key. Which forms that copy accepts must be checked on a real pod (M0).
-- **No stop command configured.** The runtime only logs, loudly.
+- **The stop.** After `idle_stop` of idleness the watcher stops the pod, and tries again every 5 minutes while the pod is still up (ADR-0015).
+  - On RunPod the runtime calls RunPod's API itself (`rr_runpod`, `stop_self()`): REST v2 first, then GraphQL's `podStop` if REST refuses the key. Reports say the pod-scoped key RunPod provides (`RUNPOD_API_KEY`) is refused by REST and accepted by GraphQL.
+  - The key is `idle.runpod_api_key` if set, else `RUNPOD_API_KEY`. A key of the owner's own, passed as a RunPod secret, works either way.
+  - `runpodctl` is not used: custom images may lack it, and its two generations disagree on the command's form and the API behind it.
+  - A configured `idle.stop_command` wins (for machines other than RunPod).
+- **Nothing to stop with** (no command, no key). The runtime only logs, loudly.
+- **What a stop keeps.** A stopped pod keeps its `/workspace` volume (models, blobs) and loses its container disk, so nothing the runtime needs lives outside `/workspace`. It resumes on the same machine only: when that machine's GPUs are taken, RunPod refuses the start, and the hub says so (`rr_runpod` classifies it as `unavailable`).
 
 ## Model files: verified before use, fetched when missing
 
@@ -151,7 +154,7 @@ Engines load multi-gigabyte GGUF files from the pod's network volume. A missing,
   - Two aliases are accepted: `RR_RUNTIME_TOKEN` (`server.token`) and `HF_TOKEN` (`models.hub_token`). An alias that disagrees with its canonical variable is an error, never a silent choice.
 - **Profiles and the stop command.**
   - `models.profile = "auto"` runs the profile the smallest GPU holds; a profile lays models out on one GPU.
-  - On RunPod (`RUNPOD_POD_ID` set) with no stop command configured, idle stop runs `runpodctl stop pod <id>`.
+  - On RunPod (`RUNPOD_POD_ID` set) with no stop command configured, an idle pod stops itself through RunPod's API (see "Idle stop" above).
   - `"0s"` turns idle stop and keep-alives off.
 - **Signals (`rr::proc::TerminationSignals`).**
   - SIGINT, SIGTERM and SIGHUP are blocked in the first line of `main()`, before any thread exists, so every thread inherits the mask. One thread takes them with `sigtimedwait()`, which turns them into an ordinary stop request. No signal handler runs, so nothing has to be async-signal-safe.
@@ -246,7 +249,11 @@ Each mechanism was removed on purpose, and the named end-to-end test was confirm
 | Environment aliases | `TheBuiltInDefaultsAreAWorkingConfiguration` |
 | Conflicting aliases refused | `AliasesAgreeWithTheirCanonicalNamesOrFail` |
 | `auto` sizes for the smallest GPU | `AutoPicksWhatTheSmallestGpuHolds` |
-| RunPod's stop command by default | `OnRunpodIdleStopStopsThePod` |
+| On RunPod, an idle pod stops itself through RunPod's API | `OnRunpodAnIdlePodStopsItselfThroughTheApi` |
+| The supervisor calls it, and again if the pod is still up | `WithoutACommandAnIdlePodStopsItselfAndRetries` |
+| A configured stop command wins | `AKeyOrACommandOfOnesOwnWins` |
+| The operator's key wins over the pod's own | `AKeyOrACommandOfOnesOwnWins` |
+| Without a key, idleness is only logged | `AKeyOrACommandOfOnesOwnWins` |
 | `"0s"` turns a timer off | `ZeroTurnsIdleStopAndKeepAlivesOff` |
 
 The mutation runs found four things, all corrected before they counted:

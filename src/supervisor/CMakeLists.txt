@@ -28,5 +28,6 @@ rr_add_module(supervisor
     PRIVATE_DEPS
         rr::embedded_runtime_defaults
         rr::json
+        rr::runpod
         rr::log
         tomlplusplus::tomlplusplus)

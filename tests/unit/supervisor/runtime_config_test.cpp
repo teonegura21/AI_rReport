@@ -6,12 +6,14 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <rr/fakes/fake_runpod.hpp>
 #include <rr/testkit/result.hpp>
 
 namespace rr::supervisor {
 namespace {
 
 using namespace std::chrono_literals;
+using fakes::FakeRunpod;
 using ::testing::HasSubstr;
 using testkit::unwrap;
 
@@ -73,7 +75,7 @@ TEST(RuntimeConfig, TheBuiltInDefaultsAreAWorkingConfiguration) {
     EXPECT_EQ(loaded.stream_keep_alive, 15s);
     EXPECT_EQ(loaded.stream_head_patience, 1s);
     EXPECT_EQ(loaded.idle_stop, 15min);
-    EXPECT_TRUE(loaded.stop_command.empty()) << "off RunPod, idleness is only logged";
+    EXPECT_TRUE(loaded.stop_command.empty() && !loaded.stop_pod) << "off RunPod, idleness is only logged";
     EXPECT_EQ(loaded.max_upload_bytes, std::uint64_t{8} << 30U);
 }
 
@@ -103,16 +105,52 @@ TEST(RuntimeConfig, AutoPicksWhatTheSmallestGpuHolds) {
     EXPECT_ERRC(resolve_profile(catalog, "12gb", {}), Errc::not_found);
 }
 
-TEST(RuntimeConfig, OnRunpodIdleStopStopsThePod) {
-    const SupervisorSettings on_runpod =
-        unwrap(settings({{"RR_RUNTIME_TOKEN", "t"}}, {}, {.gpus = {gpu(24'576)}, .runpod_pod_id = "pod123"}));
-    EXPECT_EQ(on_runpod.stop_command, (std::vector<std::string>{"runpodctl", "stop", "pod", "pod123"}));
+// A pod on RunPod, as the runtime sees it: its id, and the key RunPod gives it.
+RuntimeFacts on_runpod() {
+    return {
+        .gpus = {gpu(24'576)}, .runpod_pod_id = "pod123", .runpod_api_key = std::string{FakeRunpod::kPodKey}};
+}
+
+std::vector<std::string> aimed_at(const FakeRunpod& runpod) {
+    return {std::format("idle.runpod_api_url={}", runpod.api_url()),
+            std::format("idle.runpod_graphql_url={}", runpod.graphql_url())};
+}
+
+TEST(RuntimeConfig, OnRunpodAnIdlePodStopsItselfThroughTheApi) {
+    FakeRunpod runpod;
+    runpod.add_pod("pod123", "RUNNING");
+    const SupervisorSettings loaded =
+        unwrap(settings({{"RR_RUNTIME_TOKEN", "t"}}, aimed_at(runpod), on_runpod()));
+    EXPECT_TRUE(loaded.stop_command.empty()) << "not runpodctl";
+    ASSERT_TRUE(loaded.stop_pod);
+    ASSERT_OK(loaded.stop_pod());
+    EXPECT_EQ(runpod.status("pod123"), "EXITED");
+    EXPECT_EQ(runpod.graphql_stops(), 1) << "REST refuses the pod's own key; GraphQL takes it";
+}
+
+TEST(RuntimeConfig, AKeyOrACommandOfOnesOwnWins) {
+    FakeRunpod runpod;
+    runpod.add_pod("pod123", "RUNNING");
+    std::vector<std::string> overrides = aimed_at(runpod);
+    overrides.push_back(std::format("idle.runpod_api_key={}", FakeRunpod::kAccountKey));
+    const SupervisorSettings own_key = unwrap(settings({{"RR_RUNTIME_TOKEN", "t"}}, overrides, on_runpod()));
+    ASSERT_OK(own_key.stop_pod());
+    EXPECT_EQ(runpod.status("pod123"), "EXITED");
+    EXPECT_EQ(runpod.graphql_stops(), 0) << "the owner's key needs no fallback";
 
     const SupervisorSettings configured =
         unwrap(settings({{"RR_RUNTIME_TOKEN", "t"}, {"RR_RUNTIME_IDLE__STOP_COMMAND", "systemctl,poweroff"}},
-                        {}, {.gpus = {gpu(24'576)}, .runpod_pod_id = "pod123"}));
-    EXPECT_EQ(configured.stop_command, (std::vector<std::string>{"systemctl", "poweroff"}))
-        << "a configured command wins";
+                        aimed_at(runpod), on_runpod()));
+    EXPECT_EQ(configured.stop_command, (std::vector<std::string>{"systemctl", "poweroff"}));
+    EXPECT_FALSE(configured.stop_pod) << "a configured command wins";
+
+    RuntimeFacts keyless = on_runpod();
+    keyless.runpod_api_key.reset();
+    EXPECT_FALSE(unwrap(settings({{"RR_RUNTIME_TOKEN", "t"}}, {}, keyless)).stop_pod)
+        << "without a key, idleness is only logged";
+    RuntimeFacts bad_id = on_runpod();
+    bad_id.runpod_pod_id = "pod/../123";
+    EXPECT_ERRC(settings({{"RR_RUNTIME_TOKEN", "t"}}, {}, bad_id), Errc::invalid_argument);
 }
 
 TEST(RuntimeConfig, ZeroTurnsIdleStopAndKeepAlivesOff) {
