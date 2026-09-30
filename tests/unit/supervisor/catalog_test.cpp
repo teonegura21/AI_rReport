@@ -98,46 +98,30 @@ TEST(Catalog, RefusesInvalidDefinitions) {
         EXPECT_EQ(result.error().code(), Errc::invalid_argument);
         EXPECT_THAT(result.error().message(), HasSubstr(message));
     };
-    const std::string model = std::format(R"([[model]]
-id = "m"
-role = "commander"
-file = "m.gguf"
-sha256 = "{}"
-)",
-                                          kSha);
-    const std::string profile = "[[profile]]\nname = \"p\"\n  [[profile.engine]]\n  model = \"m\"\n";
+    // Each case below changes one thing in a valid catalog of these parts.
+    const auto model_entry = [](std::string_view role, std::string_view file, std::string_view sha) {
+        return std::format("[[model]]\nid = \"m\"\nrole = \"{}\"\nfile = \"{}\"\nsha256 = \"{}\"\n", role,
+                           file, sha);
+    };
+    const auto engine = [](std::string_view model_id, std::string_view settings = "") {
+        return std::format("  [[profile.engine]]\n  model = \"{}\"\n{}", model_id, settings);
+    };
+    const std::string model = model_entry("commander", "m.gguf", kSha);
+    const std::string profile_head = "[[profile]]\nname = \"p\"\n";
+    const std::string profile = profile_head + engine("m");
 
     fails_with("[[model]\n", "test.toml: line 1");
     fails_with(model, "defines no [[profile]]");
     fails_with(model + model + profile, "model id 'm' appears twice");
-    fails_with(
-        std::format("[[model]]\nid = \"m\"\nrole = \"chef\"\nfile = \"m.gguf\"\nsha256 = \"{}\"\n", kSha) +
-            profile,
-        "unknown role 'chef'");
-    fails_with(
-        std::format("[[model]]\nid = \"m\"\nrole = \"infantry\"\nfile = \"../etc/passwd\"\nsha256 = \"{}\"\n",
-                    kSha) +
-            profile,
-        "relative path without '..'");
-    fails_with(
-        std::format("[[model]]\nid = \"m\"\nrole = \"infantry\"\nfile = \"/abs.gguf\"\nsha256 = \"{}\"\n",
-                    kSha) +
-            profile,
-        "relative path without '..'");
-    fails_with("[[model]]\nid = \"m\"\nrole = \"infantry\"\nfile = \"m.gguf\"\nsha256 = \"ABC\"\n" + profile,
-               "64 lowercase hex");
-    fails_with(model + "[[profile]]\nname = \"p\"\n", "needs at least one [[profile.engine]]");
-    fails_with(model + "[[profile]]\nname = \"p\"\n  [[profile.engine]]\n  model = \"ghost\"\n",
-               "unknown model 'ghost'");
-    fails_with(model +
-                   "[[profile]]\nname = \"p\"\n  [[profile.engine]]\n  model = \"m\"\n  [[profile.engine]]\n "
-                   " model = \"m\"\n",
-               "already served");
-    fails_with(model + "[[profile]]\nname = \"p\"\n  [[profile.engine]]\n  model = \"m\"\n  slots = 0\n",
-               "slots must be");
-    fails_with(model +
-                   "[[profile]]\nname = \"p\"\n  [[profile.engine]]\n  model = \"m\"\n  slots = 64\n  "
-                   "context = 1024\n",
+    fails_with(model_entry("chef", "m.gguf", kSha) + profile, "unknown role 'chef'");
+    fails_with(model_entry("infantry", "../etc/passwd", kSha) + profile, "relative path without '..'");
+    fails_with(model_entry("infantry", "/abs.gguf", kSha) + profile, "relative path without '..'");
+    fails_with(model_entry("infantry", "m.gguf", "ABC") + profile, "64 lowercase hex");
+    fails_with(model + profile_head, "needs at least one [[profile.engine]]");
+    fails_with(model + profile_head + engine("ghost"), "unknown model 'ghost'");
+    fails_with(model + profile_head + engine("m") + engine("m"), "already served");
+    fails_with(model + profile_head + engine("m", "  slots = 0\n"), "slots must be");
+    fails_with(model + profile_head + engine("m", "  slots = 64\n  context = 1024\n"),
                "under 256 tokens per slot");
     fails_with(model + profile + profile, "profile name 'p' appears twice");
 }
