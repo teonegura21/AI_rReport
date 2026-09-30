@@ -18,6 +18,7 @@ rr_add_module(core
         assert.cpp
         environment.cpp
         error.cpp
+        file_io.cpp
         hash.cpp
         limiter.cpp
         random.cpp

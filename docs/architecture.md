@@ -49,7 +49,7 @@ Modules marked *(M0)* exist now; the rest arrive in the milestone shown.
 
 | Module | Responsibility | Depends on |
 |---|---|---|
-| `rr_core` *(M0)* | `Result`/`Error`, strong IDs + ULIDs, time spans + clocks, BLAKE3/SHA-256, `Secret`, `RR_ASSERT`, `ThreadPool`, `Limiter` | std, BLAKE3, OpenSSL (crypto) |
+| `rr_core` *(M0)* | `Result`/`Error`, strong IDs + ULIDs, time spans + clocks, BLAKE3/SHA-256, `Secret`, `RR_ASSERT`, `ThreadPool`, `Limiter`, careful POSIX file I/O (EINTR, short writes, fsync of files and directories) | std, BLAKE3, OpenSSL (crypto) |
 | `rr_log` *(M0)* | Structured logging (console + rotating JSONL) with per-thread context | core, nlohmann_json |
 | `rr_config` *(M0)* | Layered TOML config with value origins and secrets | core, toml++ |
 | `rr_json` *(M0)* | JSON parse/dump, canonical form, JSON-Schema validation, portable-schema lint | core, nlohmann_json, jsoncons |

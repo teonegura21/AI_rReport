@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <rr/core/file_io.hpp>
 #include <rr/core/scope_exit.hpp>
 #include <rr/core/ulid.hpp>
 #include <rr/core/unique_fd.hpp>
@@ -22,81 +23,11 @@ constexpr std::size_t kCopyChunk = std::size_t{1} << 20U;  // 1 MiB: large enoug
 constexpr mode_t kFileMode = 0600;
 constexpr mode_t kDirectoryMode = 0700;
 
-// Maps an errno value to an error class and a readable message.
-std::unexpected<Error> os_error(std::string_view what, const std::filesystem::path& path, int error_number,
-                                std::source_location where = std::source_location::current()) {
-    Errc code = Errc::io;
-    if (error_number == ENOENT) {
-        code = Errc::not_found;
-    } else if (error_number == EACCES || error_number == EPERM) {
-        code = Errc::permission_denied;
-    }
-    return fail(code,
-                std::format("{} '{}': {}", what, path.string(), std::system_category().message(error_number)),
-                where);
-}
-
 std::unexpected<Error> fs_error(std::string_view what, const std::filesystem::path& path,
                                 const std::error_code& ec,
                                 std::source_location where = std::source_location::current()) {
     // On POSIX, std::filesystem reports errno values in the generic category.
     return os_error(what, path, ec.value(), where);
-}
-
-Result<UniqueFd> open_file(const std::filesystem::path& path, int flags, mode_t mode = 0) {
-    int fd = -1;
-    do {
-        fd = ::open(path.c_str(), flags | O_CLOEXEC, mode);
-    } while (fd < 0 && errno == EINTR);
-    if (fd < 0) {
-        return os_error("cannot open", path, errno);
-    }
-    return UniqueFd{fd};
-}
-
-Result<void> write_all(int fd, std::span<const std::byte> bytes, const std::filesystem::path& path) {
-    while (!bytes.empty()) {
-        const ssize_t written = ::write(fd, bytes.data(), bytes.size());
-        if (written < 0) {
-            if (errno == EINTR) {
-                continue;
-            }
-            return os_error("cannot write", path, errno);
-        }
-        bytes = bytes.subspan(static_cast<std::size_t>(written));
-    }
-    return ok();
-}
-
-// Reads up to buffer.size() bytes; 0 means end of file.
-Result<std::size_t> read_some(int fd, std::span<std::byte> buffer, const std::filesystem::path& path) {
-    while (true) {
-        const ssize_t count = ::read(fd, buffer.data(), buffer.size());
-        if (count >= 0) {
-            return static_cast<std::size_t>(count);
-        }
-        if (errno != EINTR) {
-            return os_error("cannot read", path, errno);
-        }
-    }
-}
-
-Result<void> sync_file(int fd, const std::filesystem::path& path) {
-    if (::fsync(fd) != 0) {
-        return os_error("cannot fsync", path, errno);
-    }
-    return ok();
-}
-
-// Makes a completed rename durable: the new directory entry is only on disk
-// once the directory itself has been synced.
-Result<void> sync_directory(const std::filesystem::path& directory) {
-    RR_TRY_ASSIGN(UniqueFd fd, open_file(directory, O_RDONLY | O_DIRECTORY));
-    RR_TRY(sync_file(fd.get(), directory));
-    if (const int error_number = fd.close(); error_number != 0) {
-        return os_error("cannot close", directory, error_number);
-    }
-    return ok();
 }
 
 // Creates one directory with private permissions; an existing one is fine.
