@@ -10,6 +10,7 @@
 | `src/supervisor/catalog.*` | The model catalog (TOML): models with file, sha256 and URL, and GPU profiles that say which engines run with which slots and context |
 | `src/supervisor/gpu.*` | `nvidia-smi` CSV parsing: name, memory, utilization, driver |
 | `src/supervisor/engine.*` | One engine = one `llama-server` child process, kept alive (lifecycle below) |
+| `src/supervisor/models.*` | Model files: verified against the catalog's sha256 (with a safe cache), downloaded and resumed when missing |
 | `src/supervisor/proxy.*` | The relay: an OpenAI-compatible call in, the engine's answer streamed out (ADR-0014) |
 | `src/supervisor/watchdog.*` | When the pod should stop itself |
 | `src/supervisor/supervisor.*` | The wiring: routes, the auth guard, blobs, engines, and the watcher thread |
@@ -101,6 +102,30 @@ A pod bills every minute it runs, so it must stop on its own when nobody needs i
   - Pods ship runpodctl with a pod-scoped API key. Which forms that copy accepts must be checked on a real pod (M0).
 - **No stop command configured.** The runtime only logs, loudly.
 
+## Model files: verified before use, fetched when missing
+
+Engines load multi-gigabyte GGUF files from the pod's network volume. A missing, truncated or corrupted file makes llama-server fail minutes into loading, or load garbage. So before the engines start, every file the chosen profile needs is checked against the catalog's sha256 (`src/supervisor/models.*`).
+
+- **Verification is cached, safely.** Hashing tens of gigabytes on a network volume takes minutes, and pods restart often.
+  - After hashing, a sidecar `<file>.verified` records size, mtime, **ctime** and inode with the hash.
+  - A later check trusts the record only while all four still match. ctime changes on every write and cannot be set from user space, unlike mtime, which `cp -p` and `rsync -t` preserve.
+  - The file is stat'ed before and after hashing. A file that changed meanwhile is `Errc::conflict`, and nothing is recorded.
+  - `models verify --full` ignores the records.
+- **Downloads resume.**
+  - The bytes collect in `<file>.<first 16 hex of the sha256>.partial`. The expected hash is in the name, so a partial of an older version is never continued into a newer one.
+  - A resume first re-hashes the bytes it has, then asks for `Range: bytes=N-`:
+    - `206` must start exactly at N (checked against `Content-Range`); anything else is never spliced in.
+    - `200` means the range was ignored, so the download starts over.
+    - `416` means nothing is left, so what is there is verified.
+  - Compression is declined, so offsets always refer to the stored bytes.
+- **Only verified content is published.**
+  - The data is hashed while it is written, so a finished download needs no second read.
+  - Then fsync, rename, directory fsync, and the record.
+  - A mismatch deletes the partial and downloads again from the start, once: the source may have moved between attempts. A second mismatch is `integrity`, and nothing is stored.
+- **Tokens stay with their host.** `HF_TOKEN` goes only to the Hub's own hosts (`huggingface.co`, `hf.co`, exact match). The Hub redirects downloads to a CDN with a signed URL, and libcurl drops `Authorization` on redirects to another host. A catalog URL not pinned to a commit (`/resolve/<40 hex>/`) is warned about, since its content can change under the sha256.
+- **Retrying is patient with progress.** Only transient failures are retried, with full-jitter backoff. Any transfer that brings new bytes resets the budget of attempts without progress (5 by default), so a 20 GB download that stalls now and then completes, while one that fails repeatedly without a byte gives up.
+- **Free space is checked first**, against the size the server announces, before any byte is written.
+
 ## The fake engine
 
 `rr_fake_engine` speaks the part of llama-server's interface the supervisor uses:
@@ -151,6 +176,17 @@ Each mechanism was removed on purpose, and the named end-to-end test was confirm
 | Error events only between events | `ABreakInsideAnEventLeavesNoGarbage` |
 | Shutdown ends waiting relays | `StoppingEndsWaitsForSlowEnginesPromptly` |
 | Header allowlist | `ForwardsOnlyContentTypeAndAccept` |
+| Re-hashing a partial before resuming | `ResumesWhereAPartialDownloadEnded` |
+| Publishing only verified content | `NeverPublishesContentWithAnotherHash` |
+| One fresh start after a mismatch | `NeverPublishesContentWithAnotherHash` |
+| Token only for the Hub's hosts | `SendsTheTokenOnlyToTheHub` |
+| Progress resets the retry budget | `KeepsGoingWhileEachAttemptMakesProgress` |
+| A 206 must start where we asked | `AResumeThatStartsElsewhereIsNeverAppended` |
+| ctime in the verification record | `AnyChangeToTheFileInvalidatesTheRecord` |
+| Declining compression | `DeclinesCompressionSoRangesMeanStoredBytes` |
+| Free-space check | `ChecksFreeSpaceBeforeWriting` |
+| Starting over when the range is ignored | `StartsOverWhenTheServerIgnoresTheRange` |
+| Refusing a file that changed while hashed | `AFileThatChangesWhileHashedIsNotTrusted` |
 
 The mutation run found three things, all corrected before it counted:
 - **`in-flight-ignored` removed one of two copies of the rule.** Removing only `stops_in()`'s in-flight check would have "survived" because `idle_for()` also reports zero while a request runs.

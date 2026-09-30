@@ -92,6 +92,13 @@ Other client rules:
 
 Keep in mind: httplib dedicates **one worker thread per connection for the connection's whole life**, idle keep-alive time included. `max_worker_threads` therefore bounds concurrent connections, not concurrent requests.
 
+**`rr_net` servers do not serve byte ranges.** cpp-httplib takes over any request that carries `Range`:
+- It slices a buffered body itself.
+- For a streamed body, `range_error()` clears the ranges and silently turns a handler's `206` into `200`.
+- A handler therefore cannot answer `Range` honestly with a streamed body.
+
+A client that trusts status codes, as rReport's model sync does, would then restart every resume. Nothing in rReport serves ranges. The model-download tests use a small hand-written HTTP server instead (`tests/unit/supervisor/models_test.cpp`), which streams partial content the way CDNs do. Found when the resume tests failed against an httplib-based test server.
+
 ## Server: limits and the guard
 
 - **The guard runs before any body is read.** It runs before routing (httplib's pre-routing hook), so an unauthenticated client cannot make the server buffer an upload.

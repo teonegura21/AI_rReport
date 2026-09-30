@@ -2,6 +2,7 @@ rr_add_test_suite(supervisor
     SOURCES
         catalog_test.cpp
         gpu_test.cpp
+        models_test.cpp
         supervisor_test.cpp
         watchdog_test.cpp
     DEPS
