@@ -1,12 +1,15 @@
 #include <rr/core/file_io.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <filesystem>
 #include <span>
 #include <string>
+#include <vector>
 
 #include <fcntl.h>
+#include <sys/stat.h>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -63,6 +66,55 @@ TEST(FileIo, ReportsWritesToABadDescriptor) {
     std::array<std::byte, 4> buffer{};
     EXPECT_ERRC(read_some(-1, buffer, "/nowhere"), Errc::io);
     EXPECT_ERRC(sync_file(-1, "/nowhere"), Errc::io);
+}
+
+// The names in `dir`, hidden ones included.
+std::vector<std::string> names_in(const std::filesystem::path& dir) {
+    std::vector<std::string> names;
+    for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+        names.push_back(entry.path().filename().string());
+    }
+    std::ranges::sort(names);
+    return names;
+}
+
+TEST(FileIo, ReadsWholeFilesWithinALimit) {
+    const testkit::TempDir dir;
+    const std::string bytes(100'000, 'x');  // more than one read() buffer
+    dir.write_file("data.txt", bytes);
+    EXPECT_EQ(unwrap(read_file(dir / "data.txt")), bytes);
+    EXPECT_EQ(unwrap(read_file(dir / "data.txt", bytes.size())), bytes) << "exactly the limit is fine";
+    const auto too_big = read_file(dir / "data.txt", bytes.size() - 1);
+    ASSERT_ERRC(too_big, Errc::invalid_argument);
+    EXPECT_THAT(too_big.error().message(), HasSubstr("larger than 99999 bytes"));
+    EXPECT_ERRC(read_file(dir / "absent"), Errc::not_found);
+}
+
+TEST(FileIo, ReplacesFilesAtomically) {
+    const testkit::TempDir dir;
+    const std::filesystem::path file = dir / "report.json";
+    ASSERT_OK(write_file_atomically(file, "first", 0600));
+    EXPECT_EQ(unwrap(read_file(file)), "first");
+    struct stat status{};
+    ASSERT_EQ(::stat(file.c_str(), &status), 0);
+    EXPECT_EQ(status.st_mode & 0777U, 0600U);
+
+    ASSERT_OK(write_file_atomically(file, "second, and longer"));
+    EXPECT_EQ(unwrap(read_file(file)), "second, and longer");
+    EXPECT_EQ(names_in(dir.path()), std::vector<std::string>{"report.json"}) << "no temporary file is left";
+}
+
+TEST(FileIo, AFailedReplaceLeavesNothingBehind) {
+    const testkit::TempDir dir;
+    // rename() cannot put a file where a non-empty directory is.
+    dir.write_file("taken/inside", "x");
+    const auto replaced = write_file_atomically(dir / "taken", "content");
+    ASSERT_FALSE(replaced.has_value());
+    EXPECT_THAT(replaced.error().message(), HasSubstr("cannot replace"));
+    EXPECT_EQ(names_in(dir.path()), std::vector<std::string>{"taken"}) << "the temporary file is removed";
+    EXPECT_TRUE(std::filesystem::is_directory(dir / "taken")) << "and what was there is untouched";
+
+    EXPECT_ERRC(write_file_atomically(dir / "absent" / "file", "content"), Errc::not_found);
 }
 
 }  // namespace

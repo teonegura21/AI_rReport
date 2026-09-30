@@ -10,5 +10,8 @@ namespace rr {
 
 inline constexpr std::string_view kVersion = "@PROJECT_VERSION@";
 inline constexpr std::string_view kGitRevision = "@RR_GIT_REVISION@";
+// "0.1.0 (1a2b3c4d5e6f)": how the hub and the runtime name their release to
+// each other (health reports, doctor), so it is written in one place.
+inline constexpr std::string_view kFullVersion = "@PROJECT_VERSION@ (@RR_GIT_REVISION@)";
 
 }  // namespace rr

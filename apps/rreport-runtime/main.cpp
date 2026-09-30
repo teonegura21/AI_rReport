@@ -62,7 +62,7 @@ struct Global {
 };
 
 std::string version_string() {
-    return std::format("{} ({})", kVersion, kGitRevision);
+    return std::string{kFullVersion};
 }
 
 // Prints an error for people (and the log, if it is up) and returns `code`.

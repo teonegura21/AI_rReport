@@ -1,11 +1,15 @@
 #include <rr/core/file_io.hpp>
 
+#include <array>
 #include <cerrno>
+#include <cstdio>
 #include <format>
 #include <system_error>
 
 #include <fcntl.h>
 #include <unistd.h>
+
+#include <rr/core/random.hpp>
 
 namespace rr {
 
@@ -77,6 +81,56 @@ Result<void> sync_directory(const std::filesystem::path& directory) {
         return os_error("cannot close", directory, error_number);
     }
     return ok();
+}
+
+Result<std::string> read_file(const std::filesystem::path& path, std::size_t max_bytes) {
+    RR_TRY_ASSIGN(const UniqueFd in, open_file(path, O_RDONLY));
+    std::string content;
+    std::array<std::byte, 65536> buffer{};
+    while (true) {
+        RR_TRY_ASSIGN(const std::size_t count, read_some(in.get(), buffer, path));
+        if (count == 0) {
+            return content;
+        }
+        if (count > max_bytes - content.size()) {
+            return fail(Errc::invalid_argument,
+                        std::format("'{}' is larger than {} bytes", path.string(), max_bytes));
+        }
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — bytes to chars
+        content.append(reinterpret_cast<const char*>(buffer.data()), count);
+    }
+}
+
+Result<void> write_file_atomically(const std::filesystem::path& path, std::string_view content, mode_t mode) {
+    const std::filesystem::path directory = path.has_parent_path() ? path.parent_path() : ".";
+    RR_TRY_ASSIGN(const std::string suffix, random_hex(8));
+    // Hidden, so nothing that lists the directory mistakes it for a finished file.
+    const std::filesystem::path temporary =
+        directory / std::format(".{}.{}.tmp", path.filename().string(), suffix);
+    const auto discard = [&temporary] {
+        std::error_code ignored;
+        std::filesystem::remove(temporary, ignored);
+    };
+
+    RR_TRY_ASSIGN(UniqueFd out, open_file(temporary, O_WRONLY | O_CREAT | O_EXCL, mode));
+    auto written = [&]() -> Result<void> {
+        RR_TRY(write_all(out.get(), content, temporary));
+        RR_TRY(sync_file(out.get(), temporary));
+        if (const int error_number = out.close(); error_number != 0) {
+            return os_error("cannot close", temporary, error_number);
+        }
+        return ok();
+    }();
+    if (!written.has_value()) {
+        discard();
+        return written;
+    }
+    if (std::rename(temporary.c_str(), path.c_str()) != 0) {
+        const int error_number = errno;
+        discard();
+        return os_error("cannot replace", path, error_number);
+    }
+    return sync_directory(directory);
 }
 
 }  // namespace rr

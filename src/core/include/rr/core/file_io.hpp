@@ -5,7 +5,9 @@
 //   crash either whole or not at all. Each step has a trap: open() and read()
 //   can be interrupted (EINTR), write() can write less than asked, and a
 //   rename() is durable only once the *directory* has been fsync'ed too. Doing
-//   each step right once, here, beats doing it almost right twice.
+//   each step right once, here, beats doing it almost right twice. Small
+//   files (recordings, reports) are replaced whole with
+//   write_file_atomically(), which puts those steps together.
 //
 //   Errors carry the path and the system's message, and map errno to an error
 //   class: ENOENT → not_found, EACCES/EPERM → permission_denied, else io.
@@ -17,6 +19,7 @@
 #include <filesystem>
 #include <source_location>
 #include <span>
+#include <string>
 #include <string_view>
 
 #include <sys/types.h>
@@ -49,5 +52,20 @@ namespace rr {
 // Makes a completed rename (or a new file) durable: the new directory entry
 // only reaches the disk once the directory itself has been synced.
 [[nodiscard]] Result<void> sync_directory(const std::filesystem::path& directory);
+
+// The whole file. Errc::invalid_argument when it holds more than `max_bytes`:
+// a guard against reading something unexpected (a device, a huge log) into
+// memory.
+[[nodiscard]] Result<std::string> read_file(const std::filesystem::path& path,
+                                            std::size_t max_bytes = std::size_t{64} << 20U);
+
+// Replaces the file at `path` with `content`, so that readers see the old
+// file or the new one, never a mix, and a crash leaves one of the two on
+// disk. The bytes go to a hidden temporary file in the same directory, reach
+// the disk, and are renamed over `path`; then the directory is synced. The
+// new file has `mode` (less the umask), whatever the old one had. The
+// directory must exist.
+[[nodiscard]] Result<void> write_file_atomically(const std::filesystem::path& path, std::string_view content,
+                                                 mode_t mode = 0644);
 
 }  // namespace rr
