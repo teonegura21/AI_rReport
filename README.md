@@ -67,6 +67,16 @@ cmake --build --preset dev-clang && ctest --preset dev-clang
 
 Other presets: `tsan` (ThreadSanitizer), `release`, `runtime-release` (the supervisor only).
 
+**Before you push**, run what CI runs (`.github/workflows/ci.yml`). The formatting check covers every file, not only the ones you touched:
+
+```bash
+git ls-files '*.hpp' '*.cpp' | xargs clang-format-20 --dry-run --Werror
+cmake --preset tidy && cmake --build --preset tidy     # clang-tidy, warnings as errors
+for preset in dev dev-clang tsan; do     # stops at the first failure
+    cmake --preset $preset && cmake --build --preset $preset && ctest --preset $preset || break
+done
+```
+
 ## Repository map
 
 ```
