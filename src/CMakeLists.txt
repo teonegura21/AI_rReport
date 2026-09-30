@@ -22,4 +22,6 @@ endif()
 # truth, ADR-0001), so it never links SQLite.
 if(RR_BUILD_HUB)
     add_subdirectory(db)
+    add_subdirectory(llm)       # calling models
+    add_subdirectory(library)   # a library's database: schema and repositories
 endif()

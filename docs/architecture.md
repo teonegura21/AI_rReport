@@ -60,7 +60,8 @@ Modules marked *(M0)* exist now; the rest arrive in the milestone shown.
 | `rr_runtime_api` *(M0)* | Hub↔runtime protocol v1: paths, the health report, the streamed-call contract | core, json |
 | `rr_runpod` *(M0)* | RunPod's pod API (REST v2): read, start and stop a pod; a pod stopping itself (ADR-0015) | core, net, json |
 | `rr_supervisor` *(M0)* | Runtime: auth, health, engines, the streaming relay (ADR-0014), model files (verified, resumable downloads), blobs, idle/dead-man stop through RunPod's API (ADR-0015), the runtime's configuration ([design](design/runtime.md)) | runtime_api, net, proc, blob, config, runpod, json, log, toml++ |
-| `rr_llm` *(M0)* | Providers, streaming, structured calls, record/replay, accounting | core, json, net, db |
+| `rr_llm` *(M0)* | Calling models: one chat vocabulary, the OpenAI-compatible streaming provider, retries, accounting, record/replay, schema-validated answers ([design](design/llm.md)) | core, json, net, log |
+| `rr_library` *(M0)* | A library's database (ADR-0008): its schema (`migrations/`, compiled in) and repositories, starting with the model-call log | core, db, json, llm |
 | `rr_runtime_client` *(M0)* | Hub-side runtime client, `PodManager` | api, net, llm |
 | `rr_agents` (M1) | Missions, squads, dispatcher, escalation, battle log | llm, db |
 | `rr_media`, `rr_text`, `rr_transcript` (M1) | Capture sources, captions, frames, alignment | proc, blob |

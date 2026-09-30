@@ -1,0 +1,10 @@
+rr_add_test_suite(llm
+    SOURCES
+        accounting_test.cpp
+        chat_test.cpp
+        openai_provider_test.cpp
+        provider_test.cpp
+        replay_test.cpp
+        structured_test.cpp
+    DEPS
+        rr::llm)
