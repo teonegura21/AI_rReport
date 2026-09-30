@@ -110,6 +110,14 @@ TEST(Run, ReportsDeathBySignal) {
     EXPECT_EQ(result.status.describe(), "killed by SIGKILL");
 }
 
+TEST(SignalName, NamesTheSignalsProcessesDieOrStopBy) {
+    EXPECT_EQ(signal_name(SIGTERM), "SIGTERM");
+    EXPECT_EQ(signal_name(SIGINT), "SIGINT");
+    EXPECT_EQ(signal_name(SIGHUP), "SIGHUP");
+    EXPECT_EQ(signal_name(SIGKILL), "SIGKILL");
+    EXPECT_EQ(signal_name(0), "") << "no such signal: no name";
+}
+
 TEST(Run, CannotRunWhatDoesNotExist) {
     EXPECT_ERRC(run(Command{.argv = {"rr-no-such-tool-4f2a"}}), Errc::not_found);
     EXPECT_ERRC(run(Command{.argv = {"/nonexistent/tool"}}), Errc::not_found);

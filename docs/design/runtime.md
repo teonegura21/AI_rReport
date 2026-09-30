@@ -14,6 +14,8 @@
 | `src/supervisor/proxy.*` | The relay: an OpenAI-compatible call in, the engine's answer streamed out (ADR-0014) |
 | `src/supervisor/watchdog.*` | When the pod should stop itself |
 | `src/supervisor/supervisor.*` | The wiring: routes, the auth guard, blobs, engines, and the watcher thread |
+| `src/supervisor/runtime_config.*` | From configuration to `SupervisorSettings`: aliases, the `auto` profile, RunPod defaults |
+| `apps/rreport-runtime/` | The executable: commands, signals, exit codes |
 | `tests/fake_engine/` | `rr_fake_engine`: a scriptable llama-server stand-in, so every behaviour is tested end to end without a GPU |
 
 ## The door
@@ -126,6 +128,50 @@ Engines load multi-gigabyte GGUF files from the pod's network volume. A missing,
 - **Retrying is patient with progress.** Only transient failures are retried, with full-jitter backoff. Any transfer that brings new bytes resets the budget of attempts without progress (5 by default), so a 20 GB download that stalls now and then completes, while one that fails repeatedly without a byte gives up.
 - **Free space is checked first**, against the size the server announces, before any byte is written.
 
+## The executable: `rreport-runtime`
+
+`apps/rreport-runtime/main.cpp` only parses arguments and wires modules together. The rules live in `src/supervisor/runtime_config.*` and are unit-tested.
+
+| Command | What it does | Exit codes |
+|---|---|---|
+| `serve` | Verifies the profile's model files, starts the engines and the server, prints `listening on <host>:<port>`, and stops cleanly on SIGTERM, SIGINT or SIGHUP | 0 after a clean stop; 1 when it cannot start (the port is taken, say); 3 when model files are missing or wrong |
+| `models verify [--full]` | Checks the profile's model files (`--full`: hash everything, ignoring the records) | 0 all verified; 3 otherwise |
+| `models sync` | Downloads what is missing or wrong, verifying everything | 0; 1 on failure |
+| `gpu` | Lists the GPUs `nvidia-smi` sees | 0; 1 without a GPU |
+| `config show [--origin]` | Every setting, secrets masked, optionally with where it came from | 0 |
+| `version` | Version and git revision | 0 |
+
+**Common exit codes.** For every command, 1 also means an unexpected error, and 2 a usage or configuration error. 128+N means signal N interrupted work in progress: a verification or a download. Once `serve` is serving, a signal is the normal way to stop it, and it exits 0.
+
+- **Configuration.**
+  - The built-in defaults, `config/runtime.default.toml`, are compiled in (`rr_add_embedded_library`) and are also the schema. A misspelt key or a wrong type fails at startup, with a suggestion.
+  - Layers, each overriding the ones before: defaults < `--config` (or `RR_RUNTIME_CONFIG`) < `--secrets` < `RR_RUNTIME_<SECTION>__<KEY>` < `--set section.key=value`.
+- **Environment names.**
+  - The prefix is `RR_RUNTIME_`, not `RREPORT_`. The hub owns `RREPORT_` and refuses keys it does not know, so the two programs must not share a prefix on one machine.
+  - Two aliases are accepted: `RR_RUNTIME_TOKEN` (`server.token`) and `HF_TOKEN` (`models.hub_token`). An alias that disagrees with its canonical variable is an error, never a silent choice.
+- **Profiles and the stop command.**
+  - `models.profile = "auto"` runs the profile the smallest GPU holds; a profile lays models out on one GPU.
+  - On RunPod (`RUNPOD_POD_ID` set) with no stop command configured, idle stop runs `runpodctl stop pod <id>`.
+  - `"0s"` turns idle stop and keep-alives off.
+- **Signals (`rr::proc::TerminationSignals`).**
+  - SIGINT, SIGTERM and SIGHUP are blocked in the first line of `main()`, before any thread exists, so every thread inherits the mask. One thread takes them with `sigtimedwait()`, which turns them into an ordinary stop request. No signal handler runs, so nothing has to be async-signal-safe.
+  - This works as PID 1 in a container, where a signal without a handler would be ignored: the kernel never ignores a blocked signal.
+  - Children get a clean mask (ADR-0013). SIGPIPE is ignored: a write to a closed pipe is an error to handle, not a reason to die.
+- **Unexpected exceptions.**
+  - Every failure the program expects travels as a `Result`. An exception that reaches `main()` is a bug, or the system running out of memory or threads.
+  - `main()` catches it, logs it (to the log file too, once logging is up; errors are flushed at once) and exits 1.
+  - Uncaught, it would call `std::terminate()`, which need not unwind the stack first. The supervisor's destructor, which takes the engines down, might then never run.
+- **Component tests.** `tests/component/runtime_app_test.cpp` runs the real binary against `rr_fake_engine`:
+  - it answers, and needs the token;
+  - SIGTERM gives exit 0 with the engine's port closed;
+  - no token gives exit 2 naming `RR_RUNTIME_TOKEN`;
+  - a tampered model file gives exit 3 pointing at `models sync`;
+  - a misspelt setting, given after the command, gives exit 2 with the configuration loader's suggestion;
+  - `config show` never prints the token.
+- **Two traps met on the way.**
+  - **CLI11's `fallthrough`** (global options after a command) is inherited only by commands created *after* it is set.
+  - **`rr_add_embedded_library`** wrote its header through a CMake bracket argument `[[…]]`, and the header's own `[[nodiscard]]` ended it early. It is now `[=[…]=]`. This was its first use.
+
 ## The fake engine
 
 `rr_fake_engine` speaks the part of llama-server's interface the supervisor uses:
@@ -187,11 +233,22 @@ Each mechanism was removed on purpose, and the named end-to-end test was confirm
 | Free-space check | `ChecksFreeSpaceBeforeWriting` |
 | Starting over when the range is ignored | `StartsOverWhenTheServerIgnoresTheRange` |
 | Refusing a file that changed while hashed | `AFileThatChangesWhileHashedIsNotTrusted` |
+| Termination signals blocked before any thread | `ServesUntilSigtermThenStopsItsEngines` |
+| Verifying model files before serving | `RefusesToServeWrongModelFiles` |
+| Global options after the command (`fallthrough`) | `CatchesMisspeltSettings` |
+| Environment aliases | `TheBuiltInDefaultsAreAWorkingConfiguration` |
+| Conflicting aliases refused | `AliasesAgreeWithTheirCanonicalNamesOrFail` |
+| `auto` sizes for the smallest GPU | `AutoPicksWhatTheSmallestGpuHolds` |
+| RunPod's stop command by default | `OnRunpodIdleStopStopsThePod` |
+| `"0s"` turns a timer off | `ZeroTurnsIdleStopAndKeepAlivesOff` |
 
-The mutation run found three things, all corrected before it counted:
+The mutation runs found four things, all corrected before they counted:
 - **`in-flight-ignored` removed one of two copies of the rule.** Removing only `stops_in()`'s in-flight check would have "survived" because `idle_for()` also reports zero while a request runs.
 - **`shutdown-ignored` would be caught by a different test than listed.** A stream producer also ends through `ChunkWriter::stopping()` when the server stops. Only a handler waiting for an engine's head depends on the shutdown token alone.
 - **Removing the probe survived at first: a weak test, not a useless probe.**
   - With the tests' 100 ms keep-alive, the keep-alive writes noticed the departed client by themselves.
   - With production's 15 s keep-alive, only the probe notices within a tick, instead of up to 15 s of GPU time later.
   - The test now runs with a 10 s keep-alive and requires the engine to be freed within 2 s.
+- **`CatchesMisspeltSettings` passed without `fallthrough`, for the wrong reason.**
+  - Without it, the argument parser refuses the `--set` after `serve`. Its error echoes the command line, which also holds `server.port=0`, so looking for "server.port" matched anyway.
+  - The test now requires the configuration loader's own words: the key it did not know, and its suggestion.

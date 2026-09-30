@@ -55,10 +55,10 @@ Modules marked *(M0)* exist now; the rest arrive in the milestone shown.
 | `rr_json` *(M0)* | JSON parse/dump, canonical form, JSON-Schema validation, portable-schema lint | core, nlohmann_json, jsoncons |
 | `rr_db` *(M0)* | SQLite wrapper (WAL, writer + reader pool), migrations ([design](design/database.md)) | core, SQLite |
 | `rr_blob` *(M0)* | Content-addressed, crash-safe blob store (BLAKE3 names, atomic publish) | core |
-| `rr_proc` *(M0)* | Subprocesses: run-to-completion and supervised children, each in its own process group (ADR-0013) | core (posix_spawn) |
+| `rr_proc` *(M0)* | Subprocesses: run-to-completion and supervised children, each in its own process group (ADR-0013); termination signals as a stop request | core (posix_spawn) |
 | `rr_net` *(M0)* | HTTP client (libcurl), SSE parser, retry policy, HTTP server (cpp-httplib) ([design](design/networking.md)) | core, json, libcurl, cpp-httplib |
 | `rr_runtime_api` *(M0)* | Hub↔runtime protocol v1: paths, the health report, the streamed-call contract | core, json |
-| `rr_supervisor` *(M0)* | Runtime: auth, health, engines, the streaming relay (ADR-0014), model files (verified, resumable downloads), blobs, idle/dead-man stop ([design](design/runtime.md)) | runtime_api, net, proc, blob, json, log, toml++ |
+| `rr_supervisor` *(M0)* | Runtime: auth, health, engines, the streaming relay (ADR-0014), model files (verified, resumable downloads), blobs, idle/dead-man stop, the runtime's configuration ([design](design/runtime.md)) | runtime_api, net, proc, blob, config, json, log, toml++ |
 | `rr_llm` *(M0)* | Providers, streaming, structured calls, record/replay, accounting | core, json, net, db |
 | `rr_runtime_client` *(M0)* | Hub-side runtime client, `PodManager` | api, net, llm |
 | `rr_agents` (M1) | Missions, squads, dispatcher, escalation, battle log | llm, db |

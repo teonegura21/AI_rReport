@@ -460,6 +460,8 @@ private:
     StopReason reason_ = StopReason::none;
 };
 
+}  // namespace
+
 std::string_view signal_name(int signal_number) noexcept {
     switch (signal_number) {
         case SIGHUP:
@@ -490,8 +492,6 @@ std::string_view signal_name(int signal_number) noexcept {
             return {};
     }
 }
-
-}  // namespace
 
 // ---------------------------------------------------------------------------
 // Public API

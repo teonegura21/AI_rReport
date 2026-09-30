@@ -9,25 +9,20 @@
 #include <functional>
 #include <latch>
 #include <optional>
-#include <random>
 #include <stdexcept>
 #include <stop_token>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include <sys/socket.h>
-#include <unistd.h>
-
-#include <arpa/inet.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include <netinet/in.h>
 
 #include <rr/core/hash.hpp>
 #include <rr/json/json.hpp>
 #include <rr/net/http_client.hpp>
 #include <rr/net/sse.hpp>
+#include <rr/testkit/ports.hpp>
 #include <rr/testkit/result.hpp>
 #include <rr/testkit/temp_dir.hpp>
 
@@ -41,46 +36,6 @@ using testkit::unwrap;
 using Clock = std::chrono::steady_clock;
 
 constexpr std::string_view kToken = "t0ken-for-tests";
-
-// Whether 127.0.0.1:`port` can be bound right now.
-bool can_bind(int port) {
-    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) {
-        return false;
-    }
-    sockaddr_in address{};
-    address.sin_family = AF_INET;
-    address.sin_port = htons(static_cast<std::uint16_t>(port));
-    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — the sockets API
-    const bool bound = ::bind(fd, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) == 0;
-    ::close(fd);
-    return bound;
-}
-
-// The first of `count` consecutive free ports, for the engines.
-//
-// The window is drawn at random from [20000, 32000): below Linux's ephemeral
-// range (32768–60999), where the kernel picks the local ports of outgoing
-// connections. Otherwise a client socket (this very test talks to the
-// supervisor constantly) could take an engine's port between this probe and
-// the engine's bind. The randomness keeps test processes running in
-// parallel out of each other's way.
-int free_port_range(int count) {
-    std::mt19937 random{std::random_device{}()};
-    std::uniform_int_distribution<int> base_of{20'000, 32'000 - count};
-    for (int attempt = 0; attempt < 200; ++attempt) {
-        const int base = base_of(random);
-        bool all_free = true;
-        for (int offset = 0; offset < count && all_free; ++offset) {
-            all_free = can_bind(base + offset);
-        }
-        if (all_free) {
-            return base;
-        }
-    }
-    throw std::runtime_error("no range of free ports");
-}
 
 std::string test_catalog() {
     return std::format(R"toml(
@@ -138,7 +93,7 @@ struct Pod {
     testkit::TempDir dir{"rr_supervisor_test"};
     FakeClock clock;
     net::HttpClient client;
-    int first_engine_port = free_port_range(4);  // engines listen here, in profile order
+    int first_engine_port = testkit::free_port_range(4);  // engines listen here, in profile order
     std::unique_ptr<Supervisor> supervisor;
 
     explicit Pod(const std::string& profile = "test",

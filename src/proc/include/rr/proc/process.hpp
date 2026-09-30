@@ -58,6 +58,9 @@ struct Command {
     bool inherit_environment = true;
 };
 
+// "SIGTERM" for SIGTERM; empty for a number without a name here.
+[[nodiscard]] std::string_view signal_name(int signal_number) noexcept;
+
 // How a process ended.
 struct ExitStatus {
     int code = 0;                 // the exit code, or 128 + signal when killed (the shell convention)

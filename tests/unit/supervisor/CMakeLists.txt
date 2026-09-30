@@ -3,6 +3,7 @@ rr_add_test_suite(supervisor
         catalog_test.cpp
         gpu_test.cpp
         models_test.cpp
+        runtime_config_test.cpp
         supervisor_test.cpp
         watchdog_test.cpp
     DEPS

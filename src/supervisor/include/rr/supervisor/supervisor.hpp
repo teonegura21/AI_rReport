@@ -10,12 +10,12 @@
 //     * content-addressed blob uploads, verified against their hash and kept
 //       in one store per library;
 //     * the Watchdog: when idle long enough, it runs the configured stop
-//       command (e.g. `runpodctl pod stop $RUNPOD_POD_ID`), and it clears
-//       blobs that have not been used for `blob_retention`.
+//       command (on RunPod, `runpodctl stop pod $RUNPOD_POD_ID`), and it
+//       clears blobs that have not been used for `blob_retention`.
 //   Protocol details: rr/runtime_api/protocol.hpp.
 //
 // Thread-safety: start() and stop() from one thread; the server's handlers
-//   run concurrently and are safe to.
+//   run concurrently, and everything they share is synchronized.
 #pragma once
 
 #include <chrono>

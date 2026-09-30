@@ -1,0 +1,53 @@
+# rreport-runtime — built-in defaults. Compiled into the binary.
+#
+# These defaults are also the schema: every settable key appears here with its
+# type, so a misspelt key or a wrong type fails at startup, with a suggestion,
+# instead of being ignored. Layers, each overriding the ones before:
+#
+#   these defaults
+#   < the config file          --config PATH, or RR_RUNTIME_CONFIG
+#   < the secrets file         --secrets PATH (must be chmod 600)
+#   < environment variables    RR_RUNTIME_<SECTION>__<KEY>, e.g. RR_RUNTIME_SERVER__PORT=9000;
+#                              lists are comma-separated. Aliases: RR_RUNTIME_TOKEN
+#                              (server.token) and HF_TOKEN (models.hub_token)
+#   < --set section.key=value
+#
+# `rreport-runtime config show --origin` prints every value and where it came from.
+# Durations are written with a unit: "250ms", "30s", "15m", "24h".
+
+[server]
+host = "0.0.0.0"             # the pod's one door; engines only ever listen on 127.0.0.1
+port = 8080
+token = ""                   # required: the hub's bearer token (RR_RUNTIME_TOKEN)
+worker_threads = 16
+
+[engines]
+llama_server = "llama-server"
+first_port = 18080           # engines listen on consecutive ports from here, in profile order
+startup_timeout = "15m"      # loading a large model from a network volume takes minutes
+stop_grace = "20s"           # SIGTERM, then SIGKILL after this long
+restart_backoff = "2s"       # doubles per consecutive failure, up to a minute
+idle_timeout = "10m"         # an engine that sends nothing for this long has failed the call
+stream_keep_alive = "15s"    # streamed calls: longest silence toward the hub ("0s": never)
+stream_head_patience = "1s"  # streamed calls: wait this long for the engine's status
+
+[models]
+catalog = "/opt/rreport/catalog.toml"
+dir = "/workspace/models"
+profile = "auto"             # "auto": the catalog profile that fits the smallest GPU
+verify_on_start = true       # refuse to serve models that are missing or corrupt
+hub_token = ""               # Hugging Face token for gated repositories (HF_TOKEN)
+
+[blobs]
+dir = "/workspace/blobs"
+max_upload_bytes = 8589934592  # 8 GiB
+retention = "24h"            # blobs unused for this long are deleted
+
+[idle]
+stop_after = "15m"           # stop the pod after this long without activity ("0s": never)
+stop_command = []            # empty: on RunPod, `runpodctl stop pod $RUNPOD_POD_ID`
+check_every = "15s"
+
+[log]
+level = "info"               # trace, debug, info, warn, error
+file = ""                    # JSON Lines, rotated; empty: the console only

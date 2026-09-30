@@ -69,25 +69,25 @@ using Value = std::variant<std::string, std::int64_t, double, bool, std::vector<
 
 struct LoadOptions {
     // Built-in defaults, as TOML text. They are also the schema: the set of keys and their types.
-    std::string_view defaults_toml;
+    std::string_view defaults_toml{};
 
     // Optional user configuration file. If `file_required` is false, a missing
     // file is skipped silently (the usual case for the default location).
-    std::optional<std::filesystem::path> file;
+    std::optional<std::filesystem::path> file{};
     bool file_required = false;
 
     // Optional secrets file (API keys, tokens). On POSIX it must not be
     // readable by group or others (chmod 600).
-    std::optional<std::filesystem::path> secrets_file;
+    std::optional<std::filesystem::path> secrets_file{};
 
     std::string env_prefix = "RREPORT_";
 
     // The environment to read. nullopt means the process environment; tests
     // pass an explicit list.
-    std::optional<std::vector<std::pair<std::string, std::string>>> environment;
+    std::optional<std::vector<std::pair<std::string, std::string>>> environment{};
 
     // "key=value" command-line overrides, applied last.
-    std::vector<std::string> overrides;
+    std::vector<std::string> overrides{};
 };
 
 class Config {
