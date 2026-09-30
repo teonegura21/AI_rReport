@@ -195,6 +195,7 @@ HttpServer::Request convert(const httplib::Request& in, bool with_body) {
         out.query.emplace_back(name, value);
     }
     out.remote_address = in.remote_addr;
+    out.client_gone = in.is_connection_closed;  // peeks at this connection's socket
     return out;
 }
 
@@ -261,20 +262,25 @@ void apply(HttpServer::Response response, httplib::Response& out, const std::ato
         out.headers.emplace(name, value);
     }
     if (response.stream) {
-        out.set_chunked_content_provider(response.content_type,
-                                         [produce = std::move(response.stream), &stopping](
-                                             std::size_t /*offset*/, httplib::DataSink& sink) {
-                                             SinkWriter writer{sink, stopping};
-                                             try {
-                                                 produce(writer);
-                                             } catch (...) {  // NOLINT(bugprone-empty-catch)
-                                                 // The status line is already on the wire; ending the body is
-                                                 // all that is left to do. The client sees a truncated
-                                                 // stream.
-                                             }
-                                             sink.done();
-                                             return true;
-                                         });
+        out.set_chunked_content_provider(
+            response.content_type, [produce = std::move(response.stream), &stopping](
+                                       std::size_t /*offset*/, httplib::DataSink& sink) {
+                SinkWriter writer{sink, stopping};
+                bool complete = false;
+                try {
+                    complete = produce(writer).has_value();
+                } catch (...) {
+                    complete = false;  // an escaped exception is a failure like any other
+                }
+                if (!complete) {
+                    // Returning false without done() makes httplib close the
+                    // connection before the final zero-length chunk, so the
+                    // client sees a truncated transfer, not a complete body.
+                    return false;
+                }
+                sink.done();
+                return true;
+            });
         return;
     }
     out.set_content(std::move(response.body), response.content_type);
@@ -338,7 +344,8 @@ HttpServer::Response HttpServer::Response::error(const Error& error) {
     return response;
 }
 
-HttpServer::Response HttpServer::Response::event_stream(std::function<void(ChunkWriter& writer)> producer) {
+HttpServer::Response HttpServer::Response::event_stream(
+    std::function<Result<void>(ChunkWriter& writer)> producer) {
     Response response{.status = 200, .content_type = "text/event-stream", .stream = std::move(producer)};
     response.headers.add("Cache-Control", "no-cache");
     response.headers.add("X-Accel-Buffering", "no");  // ask reverse proxies not to buffer the stream

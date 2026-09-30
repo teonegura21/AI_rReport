@@ -91,6 +91,33 @@ TEST(ErrorBodies, OtherApisAreClassifiedByStatusAndKeepTheirMessage) {
     EXPECT_THAT(html.message(), HasSubstr("HTTP 502: <html> <body>Bad Gateway"));
 }
 
+// Once a stream's 200 is on the wire, errors travel as events.
+TEST(ErrorEvents, DecodeOurShapeAndLlamaCpps) {
+    const auto ours =
+        error_from_event(error_body(Error{Errc::integrity, "hash mismatch"}.with_retry_after(3000ms)));
+    ASSERT_TRUE(ours.has_value());
+    EXPECT_EQ(ours->code(), Errc::integrity);
+    EXPECT_EQ(ours->message(), "hash mismatch");
+    EXPECT_EQ(ours->retry_after(), 3000ms);
+
+    // llama-server's shape: the HTTP status the error stands for, as an integer.
+    const auto too_long = error_from_event(
+        R"({"error":{"code":400,"message":"the request exceeds the available context size","type":"exceed_context_size_error"}})");
+    ASSERT_TRUE(too_long.has_value());
+    EXPECT_EQ(too_long->code(), Errc::invalid_argument) << "not retried: the same request fails the same way";
+    EXPECT_THAT(too_long->message(), HasSubstr("exceeds the available context size"));
+
+    const auto mid_stream =
+        error_from_event(R"({"error":{"code":500,"message":"boom","type":"server_error"}})");
+    ASSERT_TRUE(mid_stream.has_value());
+    EXPECT_TRUE(mid_stream->transient()) << "a server-side failure is retried, as a 5xx status would be";
+
+    for (const std::string_view other :
+         {"[DONE]", R"({"choices":[]})", R"({"error":"only a string"})", "not json", ""}) {
+        EXPECT_FALSE(error_from_event(other).has_value()) << other;
+    }
+}
+
 TEST(StatusMapping, ClassifiesCommonStatuses) {
     EXPECT_EQ(errc_for_http_status(400), Errc::invalid_argument);
     EXPECT_EQ(errc_for_http_status(401), Errc::permission_denied);

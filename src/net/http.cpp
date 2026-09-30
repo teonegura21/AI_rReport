@@ -231,6 +231,27 @@ Error error_from_response(int status, const Headers& headers, std::string_view b
     return error;
 }
 
+std::optional<Error> error_from_event(std::string_view data) {
+    const auto document = json::parse(data);
+    if (!document.has_value() || !document->is_object()) {
+        return std::nullopt;
+    }
+    const auto error = document->find("error");
+    if (error == document->end() || !error->is_object()) {
+        return std::nullopt;
+    }
+    // Foreign shapes carry the HTTP status the error would have had as an
+    // integer "code"; without one, the stream failed on the server's side.
+    int status = 500;
+    if (const auto code = error->find("code"); code != error->end() && code->is_number_integer()) {
+        const auto value = code->get<std::int64_t>();
+        if (value >= 400 && value <= 599) {
+            status = static_cast<int>(value);
+        }
+    }
+    return error_from_response(status, Headers{}, data);
+}
+
 // ---------------------------------------------------------------------------
 // Retry-After
 // ---------------------------------------------------------------------------

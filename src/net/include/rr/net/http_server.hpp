@@ -19,6 +19,12 @@
 //   * Streamed responses (SSE, proxied model output) write through a
 //     ChunkWriter, which reports when the client has gone away and when the
 //     server is stopping, so producers can quit early.
+//   * A streamed body that cannot be completed is never disguised as a
+//     complete one: when the producer fails (or throws), the connection is
+//     closed without the final chunk, and the client sees a truncated
+//     transfer (curl: CURLE_PARTIAL_FILE; our client: Errc::network).
+//   * A handler that waits (e.g. for a slow upstream) can ask whether its
+//     client is still connected: Request::client_gone.
 //   * An exception escaping a handler becomes a 500 with a structured body,
 //     not a dead process; a client that disconnects mid-stream produces a
 //     failed write (MSG_NOSIGNAL), never a SIGPIPE.
@@ -74,6 +80,11 @@ public:
         std::unordered_map<std::string, std::string> path_params{};  // "/v1/blobs/:hash" → "hash"
         std::vector<std::pair<std::string, std::string>> query{};
         std::string remote_address{};
+        // True once the client has closed the connection (it peeks at the
+        // socket). Call it only while the guard or handler runs: afterwards
+        // the socket may belong to another connection. Empty in requests
+        // not made by the server (tests); treat that as "still connected".
+        std::function<bool()> client_gone{};
 
         [[nodiscard]] std::optional<std::string_view> path_param(std::string_view name) const;
         [[nodiscard]] std::optional<std::string_view> query_param(std::string_view name) const;
@@ -84,6 +95,8 @@ public:
     public:
         virtual ~ChunkWriter() = default;
         // Sends bytes now. False once the client is gone: stop producing.
+        // An empty write sends nothing and only probes the connection, so a
+        // producer that is waiting can still notice a client that left.
         virtual bool write(std::string_view bytes) = 0;
         // True when the server is shutting down: finish up.
         [[nodiscard]] virtual bool stopping() const = 0;
@@ -120,7 +133,12 @@ public:
         std::string content_type = "text/plain; charset=utf-8";
         // When set, the body is produced by this function after the headers
         // are sent (chunked transfer encoding), and `body` is ignored.
-        std::function<void(ChunkWriter& writer)> stream{};
+        // Returning ok() ends the body normally. Returning an error (or
+        // throwing) means the body is incomplete: the connection is closed
+        // without the final chunk, so the client sees a truncated transfer
+        // instead of a short body that looks complete. The status line is
+        // already on the wire by then, so this is the only honest signal left.
+        std::function<Result<void>(ChunkWriter& writer)> stream{};
 
         [[nodiscard]] static Response json(int status, std::string body);
         [[nodiscard]] static Response text(int status, std::string body);
@@ -128,7 +146,7 @@ public:
         // The status for the error's class, and its structured JSON body.
         [[nodiscard]] static Response error(const Error& error);
         // A text/event-stream response (SSE), with caching disabled.
-        [[nodiscard]] static Response event_stream(std::function<void(ChunkWriter& writer)> producer);
+        [[nodiscard]] static Response event_stream(std::function<Result<void>(ChunkWriter& writer)> producer);
     };
 
     using Handler = std::function<Response(const Request& request)>;

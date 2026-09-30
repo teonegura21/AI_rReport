@@ -49,6 +49,9 @@ struct ServerState {
     std::atomic<int> private_uploads_run{0};
     std::atomic<int> flaky_calls{0};
     std::atomic<bool> slow_stream_ended{false};
+    std::atomic<bool> head_seen{false};
+    std::atomic<bool> waiting_for_leave{false};
+    std::atomic<bool> noticed_leave{false};
     std::atomic<int> logged{0};
     std::mutex log_mutex;
     std::vector<HttpServer::AccessLogEntry> log;
@@ -127,35 +130,87 @@ void ClientServer::add_routes(HttpServer& server, ServerState& state) {
         return Response::text(200, "ready");
     });
     server.route(Method::get, "/sse", [](const auto&) {
-        return Response::event_stream([](HttpServer::ChunkWriter& writer) {
+        return Response::event_stream([](HttpServer::ChunkWriter& writer) -> Result<void> {
             for (int index = 0; index < 5; ++index) {
                 if (!writer.write(format_sse_event(std::format(R"({{"n":{}}})", index)))) {
-                    return;
+                    return fail(Errc::cancelled, "the client went away");
                 }
                 std::this_thread::sleep_for(60ms);
             }
-            (void)writer.write(format_sse_event("[DONE]"));
+            if (!writer.write(format_sse_event("[DONE]"))) {
+                return fail(Errc::cancelled, "the client went away");
+            }
+            return ok();
         });
     });
     server.route(Method::get, "/slow-sse", [&state](const auto&) {
-        return Response::event_stream([&state](HttpServer::ChunkWriter& writer) {
+        return Response::event_stream([&state](HttpServer::ChunkWriter& writer) -> Result<void> {
+            const ScopeExit ended{[&state] { state.slow_stream_ended = true; }};
             (void)writer.write(format_sse_event("first"));
             while (!writer.stopping()) {
                 std::this_thread::sleep_for(20ms);
                 if (!writer.write(format_sse_comment("keep-alive"))) {
-                    break;  // the client went away
+                    return fail(Errc::cancelled, "the client went away");
                 }
             }
-            state.slow_stream_ended = true;
+            return ok();  // an endless stream, closed by the server: complete as far as it goes
         });
     });
     server.route(Method::get, "/stall", [](const auto&) {
-        return Response::event_stream([](HttpServer::ChunkWriter& writer) {
+        return Response::event_stream([](HttpServer::ChunkWriter& writer) -> Result<void> {
             (void)writer.write(format_sse_event("only one"));
             for (int tick = 0; tick < 300 && !writer.stopping(); ++tick) {
                 std::this_thread::sleep_for(10ms);  // silence: the client's idle timeout fires
             }
+            return ok();
         });
+    });
+    server.route(Method::get, "/fail-midway", [](const auto&) {
+        return Response::event_stream([](HttpServer::ChunkWriter& writer) -> Result<void> {
+            (void)writer.write(format_sse_event("first"));
+            return fail(Errc::network, "the upstream broke off");
+        });
+    });
+    server.route(Method::get, "/throw-midway", [](const auto&) {
+        return Response::event_stream([](HttpServer::ChunkWriter& writer) -> Result<void> {
+            (void)writer.write(format_sse_event("first"));
+            throw std::runtime_error("producer bug");
+        });
+    });
+    server.route(Method::get, "/head-first", [&state](const auto&) {
+        // Sends no body byte until the client has seen the head (or 5 s
+        // passed), then says which came first.
+        return Response::event_stream([&state](HttpServer::ChunkWriter& writer) -> Result<void> {
+            const auto deadline = Clock::now() + 5s;
+            while (!state.head_seen && Clock::now() < deadline) {
+                std::this_thread::sleep_for(5ms);
+            }
+            if (!writer.write(
+                    format_sse_event(state.head_seen ? "head came first" : "head waited for the body"))) {
+                return fail(Errc::cancelled, "the client went away");
+            }
+            return ok();
+        });
+    });
+    server.route(Method::get, "/wait-for-leave", [&state](const HttpServer::Request& request) {
+        state.waiting_for_leave = true;
+        const auto deadline = Clock::now() + 5s;
+        while (Clock::now() < deadline) {
+            if (request.client_gone && request.client_gone()) {
+                state.noticed_leave = true;
+                break;
+            }
+            std::this_thread::sleep_for(5ms);
+        }
+        return Response::text(200, "done waiting");
+    });
+    server.route(Method::get, "/accept-encoding", [](const HttpServer::Request& request) {
+        return Response::text(200, std::string{request.headers.get("Accept-Encoding").value_or("(none)")});
+    });
+    server.route(Method::get, "/redirect", [](const auto&) {
+        Response moved = Response::empty(302);
+        moved.headers.add("Location", "/hello");
+        return moved;
     });
     server.route(Method::get, "/private/data", [](const auto&) { return Response::text(200, "classified"); });
     server.route_streaming(Method::put, "/private/upload",
@@ -463,11 +518,94 @@ TEST_F(ClientServer, ErrorBodiesOfStreamsAreBufferedNotStreamed) {
     EXPECT_ERRC(expect_success(response), Errc::integrity);
 }
 
+// A producer that cannot finish must not produce a short body that looks
+// complete: the client sees what was sent, then a truncated transfer.
+TEST_F(ClientServer, AFailingProducerTruncatesTheBody) {
+    for (const std::string_view path : {"/fail-midway", "/throw-midway"}) {
+        SCOPED_TRACE(path);
+        std::string received;
+        const auto result =
+            client().stream({.url = url(path)}, {.on_chunk = [&](std::string_view chunk) -> Result<void> {
+                                received.append(chunk);
+                                return ok();
+                            }});
+        EXPECT_EQ(received, format_sse_event("first")) << "what was sent before the failure arrives";
+        EXPECT_ERRC(result, Errc::network) << "truncated, so the client retries instead of trusting it";
+        EXPECT_EQ(unwrap(get("/hello")).status, 200) << "the server carries on";
+    }
+}
+
+// A server that answers 200 and then thinks for a long time (a model reading
+// its prompt) has still answered: the head must not wait for the body.
+TEST_F(ClientServer, TheHeadArrivesBeforeTheFirstBodyByte) {
+    std::vector<std::string> events;
+    SseParser parser;
+    const auto response =
+        client().stream({.url = url("/head-first")},
+                        {.on_head = [&](int status, const Headers&) -> Result<void> {
+                             EXPECT_EQ(status, 200);
+                             state().head_seen = true;  // releases the producer
+                             return ok();
+                         },
+                         .on_chunk =
+                             [&](std::string_view chunk) {
+                                 return parser.feed(chunk, [&](const SseEvent& event) -> Result<void> {
+                                     events.push_back(event.data);
+                                     return ok();
+                                 });
+                             }});
+    ASSERT_OK(expect_success(response));
+    EXPECT_EQ(events, std::vector<std::string>{"head came first"});
+}
+
+TEST_F(ClientServer, TheHeadIsTheFinalResponses) {
+    std::vector<int> heads;
+    const HttpClient::StreamHandlers record{.on_head = [&](int status, const Headers&) -> Result<void> {
+        heads.push_back(status);
+        return ok();
+    }};
+    EXPECT_EQ(unwrap(client().stream({.url = url("/redirect"), .follow_redirects = true}, record)).status,
+              200);
+    EXPECT_EQ(heads, std::vector<int>{200}) << "a redirect that is followed is not the answer";
+    heads.clear();
+    EXPECT_EQ(unwrap(client().stream({.url = url("/redirect")}, record)).status, 302);
+    EXPECT_EQ(heads, std::vector<int>{302});
+}
+
+TEST_F(ClientServer, HandlersCanSeeTheirClientLeave) {
+    std::stop_source cancel;
+    std::jthread canceller{[&] {
+        const auto deadline = Clock::now() + 5s;
+        while (!state().waiting_for_leave && Clock::now() < deadline) {
+            std::this_thread::sleep_for(5ms);
+        }
+        cancel.request_stop();
+    }};
+    EXPECT_ERRC(client().send({.url = url("/wait-for-leave")}, cancel.get_token()), Errc::cancelled);
+    canceller.join();
+    const auto deadline = Clock::now() + 5s;
+    while (!state().noticed_leave && Clock::now() < deadline) {
+        std::this_thread::sleep_for(5ms);
+    }
+    EXPECT_TRUE(state().noticed_leave.load()) << "Request::client_gone reports the closed connection";
+}
+
+TEST_F(ClientServer, CompressionCanBeDeclinedForByteExactDownloads) {
+    EXPECT_NE(unwrap(get("/accept-encoding")).body, "(none)")
+        << "compressed encodings are accepted by default";
+    EXPECT_EQ(unwrap(client().send({.url = url("/accept-encoding"), .accept_compression = false})).body,
+              "(none)");
+}
+
 TEST_F(ClientServer, StopFinishesPromptlyWhileAStreamIsOpen) {
     std::latch streaming{1};
     const std::jthread reader{[&] {
+        bool counted = false;  // a latch must not be counted below zero
         (void)client().stream({.url = url("/slow-sse")}, {.on_chunk = [&](std::string_view) -> Result<void> {
-                                  streaming.count_down();
+                                  if (!counted) {
+                                      counted = true;
+                                      streaming.count_down();
+                                  }
                                   return ok();
                               }});
     }};

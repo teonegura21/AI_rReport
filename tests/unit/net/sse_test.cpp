@@ -165,6 +165,124 @@ TEST(SseFormat, RoundTripsThroughTheParser) {
             << "data: \"" << data << "\"";
     }
     EXPECT_EQ(parse({format_sse_comment("keep\nalive"), format_sse_event("x")}), (Events{message("x")}));
+    EXPECT_EQ(format_sse_comment("keep\nalive"), ": keep alive\n") << "one line, and no blank line after it";
+}
+
+TEST(SseLineTracker, OnlyALineFeedStartsALine) {
+    SseLineTracker tracker;
+    EXPECT_TRUE(tracker.at_line_start()) << "nothing sent yet";
+    tracker.feed("data: x");
+    EXPECT_FALSE(tracker.at_line_start());
+    tracker.feed("\r");
+    EXPECT_FALSE(tracker.at_line_start()) << "a CR may be the first half of a CRLF";
+    tracker.feed("\n");
+    EXPECT_TRUE(tracker.at_line_start());
+    tracker.feed("");
+    EXPECT_TRUE(tracker.at_line_start()) << "an empty write changes nothing";
+    tracker.feed("data: y\n\n");
+    EXPECT_TRUE(tracker.at_line_start());
+}
+
+// The property a relay relies on: comments inserted wherever the tracker
+// allows, with a pause (a chance to insert) after every single byte, never
+// change the events a client parses.
+TEST(SseLineTracker, CommentsWhereverItAllowsNeverChangeTheEvents) {
+    const std::vector<std::string_view> streams{
+        "data: a\n\ndata: b\n\n",
+        "event: delta\nid: 7\ndata: first\ndata: second\n\n",
+        "data: crlf\r\ndata: lines\r\n\r\ndata: next\r\n\r\n",
+        "data: mixed\r\n\ndata: ends\r\r",
+        ": an upstream comment\ndata: z\n\n",
+    };
+    const std::string ping = format_sse_comment("keep-alive");
+    for (const std::string_view stream : streams) {
+        std::string relayed;
+        SseLineTracker tracker;
+        int inserted = 0;
+        for (std::size_t at = 0; at <= stream.size(); ++at) {  // every position, the end included
+            if (tracker.at_line_start()) {
+                relayed += ping;
+                tracker.feed(ping);
+                ++inserted;
+            }
+            if (at < stream.size()) {
+                relayed.push_back(stream[at]);
+                tracker.feed(stream.substr(at, 1));
+            }
+        }
+        EXPECT_GT(inserted, 1) << stream;
+        EXPECT_EQ(parse({relayed}), parse({stream})) << "relayed: " << relayed;
+    }
+}
+
+TEST(SseLineTracker, AnEventFitsOnlyBetweenEvents) {
+    SseLineTracker tracker;
+    const auto state = [&](std::string_view bytes) {
+        tracker.feed(bytes);
+        return std::pair{tracker.at_line_start(), tracker.between_events()};
+    };
+    using State = std::pair<bool, bool>;
+    EXPECT_EQ(state(""), (State{true, true})) << "nothing sent yet";
+    EXPECT_EQ(state("data: x\n"), (State{true, false})) << "a comment fits, an event would merge";
+    EXPECT_EQ(state("\n"), (State{true, true}));
+    EXPECT_EQ(state(": comment\n"), (State{true, true})) << "comments leave nothing pending";
+    EXPECT_EQ(state("event: e\n"), (State{true, false}));
+    EXPECT_EQ(state("data: y\r\n\r\n"), (State{true, true}));
+    EXPECT_EQ(state("id: 7\n"), (State{true, false})) << "any field line counts: conservative";
+    EXPECT_EQ(state("\r"), (State{false, false})) << "a CR may be half of a CRLF";
+    EXPECT_EQ(state("\n"), (State{true, true})) << "it was: CR and LF made one blank line";
+    EXPECT_EQ(state("data: z\r\r"), (State{false, false})) << "a bare CR could still be followed by an LF";
+    EXPECT_EQ(state("data: z"), (State{false, false}));
+}
+
+// The same property for whole events: inserted wherever the tracker allows,
+// they arrive as events of their own, and every original event is unchanged.
+TEST(SseLineTracker, EventsWhereverItAllowsLeaveTheOthersIntact) {
+    const std::vector<std::string_view> streams{
+        "data: a\n\ndata: b\n\n",
+        "event: delta\nid: 7\ndata: first\ndata: second\n\n",
+        "data: crlf\r\ndata: lines\r\n\r\ndata: next\r\n\r\n",
+        "data: mixed\r\n\ndata: ends\r\r",
+        ": an upstream comment\ndata: z\n\n",
+    };
+    const std::string inserted = format_sse_event("inserted");
+    for (const std::string_view stream : streams) {
+        std::string relayed;
+        SseLineTracker tracker;
+        int insertions = 0;
+        for (std::size_t at = 0; at <= stream.size(); ++at) {  // every position, the end included
+            if (tracker.between_events()) {
+                relayed += inserted;
+                tracker.feed(inserted);
+                ++insertions;
+            }
+            if (at < stream.size()) {
+                relayed.push_back(stream[at]);
+                tracker.feed(stream.substr(at, 1));
+            }
+        }
+        Events originals;
+        int received = 0;
+        for (const SseEvent& event : parse({relayed})) {
+            if (event.data == "inserted") {
+                ++received;
+            } else {
+                originals.push_back(event);
+            }
+        }
+        EXPECT_GT(insertions, 1) << stream;
+        EXPECT_EQ(received, insertions) << "relayed: " << relayed;
+        EXPECT_EQ(originals, parse({stream})) << "relayed: " << relayed;
+    }
+}
+
+// Why a CR alone is not a line start: a comment between the CR and the LF of
+// a CRLF turns that LF into a blank line, and the event ends early.
+TEST(SseLineTracker, ACommentInsideACrlfWouldSplitTheEvent) {
+    const std::string_view stream = "data: a\r\ndata: b\r\n\r\n";
+    const std::string naive = "data: a\r" + format_sse_comment("keep-alive") + "\ndata: b\r\n\r\n";
+    EXPECT_EQ(parse({stream}), (Events{message("a\nb")}));
+    EXPECT_EQ(parse({naive}), (Events{message("a"), message("b")})) << "what the tracker prevents";
 }
 
 }  // namespace

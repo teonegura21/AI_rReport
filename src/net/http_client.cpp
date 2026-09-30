@@ -76,6 +76,7 @@ void unlock_share(CURL* /*handle*/, curl_lock_data data, void* user) {
 struct Exchange {
     const HttpClient::StreamHandlers* handlers = nullptr;  // null: buffer the whole body
     std::size_t max_body = 0;
+    bool follow_redirects = false;  // libcurl follows 3xx + Location itself
     HttpClient::Response response{};
     bool head_delivered = false;
     std::optional<Error> failure{};  // why a callback aborted the transfer
@@ -113,6 +114,33 @@ int parse_status_line(std::string_view line) {
     return status;
 }
 
+Result<void> deliver_head(Exchange& exchange) {
+    if (exchange.head_delivered || exchange.handlers == nullptr) {
+        return ok();
+    }
+    exchange.head_delivered = true;
+    if (!exchange.handlers->on_head) {
+        return ok();
+    }
+    return guarded(
+        [&] { return exchange.handlers->on_head(exchange.response.status, exchange.response.headers); });
+}
+
+// Whether the header block that just ended is the final response's: not an
+// interim 1xx ("100 Continue", "103 Early Hints") and not a redirect that
+// libcurl is about to follow. When in doubt it answers "not final", which only
+// delays the head until the first body byte or the end of the transfer (the
+// fallbacks in on_body() and perform()); it never loses it.
+bool is_final_head(const Exchange& exchange) {
+    const int status = exchange.response.status;
+    if (status >= 100 && status < 200) {
+        return false;
+    }
+    const bool followed_redirect = exchange.follow_redirects && status >= 300 && status < 400 &&
+                                   status != 304 && exchange.response.headers.contains("Location");
+    return !followed_redirect;
+}
+
 std::size_t on_header(char* buffer, std::size_t size, std::size_t count, void* user) {
     auto& exchange = *static_cast<Exchange*>(user);
     const std::size_t total = size * count;
@@ -128,23 +156,23 @@ std::size_t on_header(char* buffer, std::size_t size, std::size_t count, void* u
         exchange.response.headers = Headers{};
         return total;
     }
+    if (line.empty()) {
+        // The blank line that ends a header block. Hand the head over now:
+        // the body may not start for a long time (a model reading its prompt).
+        // Later blank lines (after trailers) find the head already delivered.
+        if (is_final_head(exchange)) {
+            if (auto head = deliver_head(exchange); !head.has_value()) {
+                exchange.failure = std::move(head).error();
+                return 0;  // anything but `total` aborts the transfer
+            }
+        }
+        return total;
+    }
     if (const std::size_t colon = line.find(':'); colon != std::string_view::npos) {
         exchange.response.headers.add(std::string{trim(line.substr(0, colon))},
                                       std::string{trim(line.substr(colon + 1))});
     }
     return total;
-}
-
-Result<void> deliver_head(Exchange& exchange) {
-    if (exchange.head_delivered || exchange.handlers == nullptr) {
-        return ok();
-    }
-    exchange.head_delivered = true;
-    if (!exchange.handlers->on_head) {
-        return ok();
-    }
-    return guarded(
-        [&] { return exchange.handlers->on_head(exchange.response.status, exchange.response.headers); });
 }
 
 std::size_t on_body(char* data, std::size_t size, std::size_t count, void* user) {
@@ -330,7 +358,11 @@ Result<void> configure(CURL* easy, const HttpClient::Request& request, const Htt
     set(CURLOPT_URL, request.url.c_str())(CURLOPT_SHARE, share)(CURLOPT_NOSIGNAL, 1L);
     set(CURLOPT_USERAGENT, options.user_agent.c_str())(CURLOPT_CONNECTTIMEOUT_MS,
                                                        to_long_ms(options.connect_timeout));
-    set(CURLOPT_ACCEPT_ENCODING, "");  // every encoding this libcurl can decode
+    if (request.accept_compression) {
+        set(CURLOPT_ACCEPT_ENCODING, "");  // every encoding this libcurl can decode
+    }
+    // An HTTPS proxy's "200 Connection established" is not the server's answer.
+    set(CURLOPT_SUPPRESS_CONNECT_HEADERS, 1L);
     set(CURLOPT_PROTOCOLS_STR, "http,https")(CURLOPT_REDIR_PROTOCOLS_STR, "http,https");
     set(CURLOPT_FOLLOWLOCATION, request.follow_redirects ? 1L : 0L)(CURLOPT_MAXREDIRS, 5L);
     set(CURLOPT_ERRORBUFFER, error_buffer)(CURLOPT_HTTPHEADER, headers);
@@ -395,7 +427,9 @@ Result<HttpClient::Response> HttpClient::Impl::perform(const Request& request, c
     CURL* easy = slot->easy.get();
     CURLM* multi = slot->multi.get();
 
-    Exchange exchange{.handlers = handlers, .max_body = options.max_response_bytes};
+    Exchange exchange{.handlers = handlers,
+                      .max_body = options.max_response_bytes,
+                      .follow_redirects = request.follow_redirects};
     RR_TRY_ASSIGN(const auto header_list, build_header_list(request));
     std::array<char, CURL_ERROR_SIZE> error_buffer{};
     RR_TRY(configure(easy, request, options, ca_bundle, share.get(), exchange, header_list.get(),

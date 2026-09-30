@@ -146,8 +146,33 @@ std::string format_sse_comment(std::string_view text) {
     for (const char c : text) {
         wire.push_back(c == '\n' || c == '\r' ? ' ' : c);  // a comment must stay on one line
     }
-    wire.append("\n\n");
+    // One line and no blank line after it: a blank line would end an event
+    // that the comment was inserted into (see SseLineTracker).
+    wire.push_back('\n');
     return wire;
+}
+
+void SseLineTracker::feed(std::string_view bytes) noexcept {
+    for (const char c : bytes) {
+        if (after_cr_ && c == '\n') {
+            after_cr_ = false;  // the LF of a CRLF: the line already ended at the CR
+            continue;
+        }
+        after_cr_ = c == '\r';
+        if (c == '\r' || c == '\n') {
+            if (!line_open_) {
+                fields_pending_ = false;  // a blank line: the event is dispatched, or dropped
+            } else if (!line_is_comment_) {
+                fields_pending_ = true;
+            }
+            line_open_ = false;
+            continue;
+        }
+        if (!line_open_) {
+            line_open_ = true;
+            line_is_comment_ = c == ':';
+        }
+    }
 }
 
 }  // namespace rr::net

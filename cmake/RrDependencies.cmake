@@ -25,7 +25,7 @@ endif()
 # ---------------------------------------------------------------------------
 find_package(Threads REQUIRED)
 find_package(OpenSSL 3.0 REQUIRED COMPONENTS Crypto)   # SHA-256 for model verification
-find_package(CURL 7.80 REQUIRED)                       # HTTP client (rr_net)
+find_package(CURL 7.85 REQUIRED)                       # HTTP client (rr_net); 7.85: CURLOPT_PROTOCOLS_STR
 find_package(SQLite3 3.38 REQUIRED)                    # library database (rr_db); FTS5 checked at runtime
 
 # ---------------------------------------------------------------------------

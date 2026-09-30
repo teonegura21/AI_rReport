@@ -82,6 +82,14 @@ private:
 // start of the body as detail. Retry-After is attached when present.
 [[nodiscard]] Error error_from_response(int status, const Headers& headers, std::string_view body);
 
+// The error carried by an SSE event's data, if it is an error event:
+// {"error": {...}} in our structured shape (a string "code", decoded exactly)
+// or in the llama.cpp/OpenAI shape, whose integer "code" is an HTTP status
+// (decoded as error_from_response() would decode that status). A stream can
+// only report errors this way once its own 200 is on the wire. std::nullopt
+// for every other event, "[DONE]" included.
+[[nodiscard]] std::optional<Error> error_from_event(std::string_view data);
+
 // Parses a Retry-After value: delay-seconds ("120") or an IMF-fixdate
 // ("Sun, 06 Nov 1994 08:49:37 GMT", relative to `now`). Past dates yield 0.
 [[nodiscard]] std::optional<std::chrono::milliseconds> parse_retry_after(

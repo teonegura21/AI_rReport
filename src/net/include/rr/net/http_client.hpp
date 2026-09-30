@@ -11,7 +11,10 @@
 //     the right Error (see rr/net/http.hpp), including Retry-After hints.
 //   * Streaming. stream() hands each piece of a 2xx body to a callback as it
 //     arrives: SSE token streams, proxied responses. Error responses are
-//     buffered instead, so they can be decoded into an Error.
+//     buffered instead, so they can be decoded into an Error. The status and
+//     headers are handed over as soon as the header block ends, not with the
+//     first body byte: a server that answers 200 and then thinks for a
+//     minute has still answered.
 //   * Timeouts that fit long streams: a total timeout, and an idle timeout
 //     (no bytes for N ms) that a slow but steady token stream never trips.
 //   * Instant cancellation. Every transfer runs on a curl "multi" handle,
@@ -22,8 +25,9 @@
 //     DNS and TLS sessions are shared between handles.
 //   * Safe defaults: TLS verification always on; http and https only (no
 //     file://, no gopher://); no redirects unless asked; no
-//     "Expect: 100-continue" round trip; transparent gzip/brotli/zstd; the
-//     standard proxy environment variables are honoured.
+//     "Expect: 100-continue" round trip; transparent gzip/brotli/zstd
+//     (unless a request opts out); the standard proxy environment variables
+//     are honoured.
 //
 // Thread-safety: HttpClient is thread-safe; any number of requests may run
 //   concurrently. Stream callbacks run on the calling thread.
@@ -67,6 +71,12 @@ public:
         std::optional<std::chrono::milliseconds> timeout{};       // the whole exchange
         std::optional<std::chrono::milliseconds> idle_timeout{};  // no bytes for this long
         bool follow_redirects = false;                            // at most 5, http(s) only
+        // Ask for compressed transfer encodings (decoded transparently). Set
+        // it to false for byte-exact downloads: without an Accept-Encoding
+        // header the server sends the stored bytes, so byte ranges (resuming)
+        // refer to the same offsets, and some CDNs ignore Range on encoded
+        // responses.
+        bool accept_compression = true;
     };
 
     struct Response {
@@ -78,7 +88,10 @@ public:
     };
 
     struct StreamHandlers {
-        // Called once with the status and headers, before any body bytes.
+        // Called once with the final status and headers, as soon as the
+        // header block has arrived (before any body bytes). Interim 1xx
+        // responses and redirects that are being followed are not reported.
+        // A failure aborts the transfer and becomes the result.
         std::function<Result<void>(int status, const Headers& headers)> on_head{};
         // Called with each piece of a 2xx body as it arrives. A failure aborts
         // the transfer and becomes the result.
