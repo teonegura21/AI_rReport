@@ -9,6 +9,12 @@ add_subdirectory(json)
 add_subdirectory(blob)
 add_subdirectory(proc)
 add_subdirectory(net)
+add_subdirectory(runtime_api)
+
+# --- Runtime only (the GPU pod) -------------------------------------------------
+if(RR_BUILD_RUNTIME)
+    add_subdirectory(supervisor)
+endif()
 
 # --- Hub only ------------------------------------------------------------------
 # The runtime keeps no durable state of its own (the hub is the source of

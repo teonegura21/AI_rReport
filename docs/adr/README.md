@@ -20,6 +20,7 @@ decision, write a new ADR that supersedes the old one and link them both ways.
 | 0011 | [Commander and infantry: a native sub-agent environment](0011-commander-infantry.md) | Accepted |
 | 0012 | [Dependencies: system packages first, pinned git fallback](0012-dependency-acquisition.md) | Accepted |
 | 0013 | [Subprocesses run through posix_spawn, each in its own process group](0013-subprocesses-posix-spawn.md) | Accepted |
+| 0014 | [The pod's relay keeps streams alive and never disguises a failure](0014-honest-streaming-relay.md) | Accepted |
 
 Template for new ADRs:
 

@@ -7,6 +7,11 @@ add_subdirectory(json)
 add_subdirectory(blob)
 add_subdirectory(proc)
 add_subdirectory(net)
+add_subdirectory(runtime_api)
+
+if(RR_BUILD_RUNTIME)
+    add_subdirectory(supervisor)
+endif()
 
 if(RR_BUILD_HUB)
     add_subdirectory(db)
