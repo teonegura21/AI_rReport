@@ -39,7 +39,8 @@ Result<std::vector<runtime_api::GpuInfo>> parse_nvidia_smi(std::string_view csv)
         std::vector<std::string_view> fields = split(line, ',');
         if (fields.size() != 6) {
             return fail(Errc::invalid_argument,
-                        std::format("nvidia-smi line {}: expected 6 fields, got {}: '{}'", line_number, fields.size(), line));
+                        std::format("nvidia-smi line {}: expected 6 fields, got {}: '{}'", line_number,
+                                    fields.size(), line));
         }
         for (std::string_view& field : fields) {
             field = trim(field);
@@ -48,7 +49,8 @@ Result<std::vector<runtime_api::GpuInfo>> parse_nvidia_smi(std::string_view csv)
         RR_TRY_ASSIGN(const std::int64_t index, parse_quantity(fields[0], "the index", line_number));
         RR_TRY_ASSIGN(gpu.memory_total_mib, parse_quantity(fields[2], "memory.total", line_number));
         RR_TRY_ASSIGN(gpu.memory_used_mib, parse_quantity(fields[3], "memory.used", line_number));
-        RR_TRY_ASSIGN(const std::int64_t utilization, parse_quantity(fields[4], "utilization.gpu", line_number));
+        RR_TRY_ASSIGN(const std::int64_t utilization,
+                      parse_quantity(fields[4], "utilization.gpu", line_number));
         gpu.index = static_cast<int>(index);
         gpu.name = std::string{fields[1]};
         gpu.utilization_percent = static_cast<int>(utilization);
@@ -58,11 +60,13 @@ Result<std::vector<runtime_api::GpuInfo>> parse_nvidia_smi(std::string_view csv)
     return gpus;
 }
 
-Result<std::vector<runtime_api::GpuInfo>> query_gpus(const std::string& executable, std::chrono::milliseconds timeout) {
+Result<std::vector<runtime_api::GpuInfo>> query_gpus(const std::string& executable,
+                                                     std::chrono::milliseconds timeout) {
     proc::RunOptions options;
     options.timeout = timeout;
-    auto result = proc::run(proc::Command{.argv = {executable, std::string{kNvidiaSmiQuery}, std::string{kNvidiaSmiFormat}}},
-                            options);
+    auto result = proc::run(
+        proc::Command{.argv = {executable, std::string{kNvidiaSmiQuery}, std::string{kNvidiaSmiFormat}}},
+        options);
     if (!result.has_value()) {
         return fail(Errc::unavailable, std::format("no GPU information: {}", result.error().describe()));
     }

@@ -6,7 +6,9 @@
 namespace rr::supervisor {
 
 Watchdog::Watchdog(const Clock& clock, std::optional<std::chrono::milliseconds> idle_stop) noexcept
-    : clock_(clock), idle_stop_(idle_stop), last_activity_ns_(clock.steady_now().time_since_epoch().count()) {}
+    : clock_(clock)
+    , idle_stop_(idle_stop)
+    , last_activity_ns_(clock.steady_now().time_since_epoch().count()) {}
 
 void Watchdog::activity() noexcept {
     last_activity_ns_.store(clock_.steady_now().time_since_epoch().count());
@@ -21,7 +23,8 @@ Watchdog::InFlight::InFlight(Watchdog& watchdog) noexcept : watchdog_(&watchdog)
     watchdog_->activity();
 }
 
-Watchdog::InFlight::InFlight(InFlight&& other) noexcept : watchdog_(std::exchange(other.watchdog_, nullptr)) {}
+Watchdog::InFlight::InFlight(InFlight&& other) noexcept
+    : watchdog_(std::exchange(other.watchdog_, nullptr)) {}
 
 Watchdog::InFlight::~InFlight() {
     if (watchdog_ != nullptr) {
@@ -31,14 +34,16 @@ Watchdog::InFlight::~InFlight() {
 }
 
 std::chrono::steady_clock::time_point Watchdog::last_activity() const noexcept {
-    return std::chrono::steady_clock::time_point{std::chrono::steady_clock::duration{last_activity_ns_.load()}};
+    return std::chrono::steady_clock::time_point{
+        std::chrono::steady_clock::duration{last_activity_ns_.load()}};
 }
 
 std::chrono::milliseconds Watchdog::idle_for() const noexcept {
     if (in_flight_.load() > 0) {
         return std::chrono::milliseconds{0};
     }
-    const auto idle = std::chrono::duration_cast<std::chrono::milliseconds>(clock_.steady_now() - last_activity());
+    const auto idle =
+        std::chrono::duration_cast<std::chrono::milliseconds>(clock_.steady_now() - last_activity());
     return std::max(idle, std::chrono::milliseconds{0});
 }
 

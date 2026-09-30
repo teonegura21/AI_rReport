@@ -21,7 +21,8 @@ HealthReport sample_report() {
                          .memory_used_mib = 41000,
                          .utilization_percent = 87,
                          .driver_version = "570.124.06"}},
-        .engines = {EngineInfo{.model = "qwen3.8-27b", .role = "commander", .state = EngineState::ready, .slots = 4},
+        .engines = {EngineInfo{
+                        .model = "qwen3.8-27b", .role = "commander", .state = EngineState::ready, .slots = 4},
                     EngineInfo{.model = "gemma-4-26b-a4b",
                                .role = "infantry",
                                .state = EngineState::failed,
@@ -51,7 +52,8 @@ TEST(HealthReport, ParsingIsStrictAndNamesThePath) {
 
     document = to_json(sample_report());
     document["engines"][1].erase("state");
-    EXPECT_THAT(health_report_from_json(document).error().message(), HasSubstr("'engines[1].state' is missing"));
+    EXPECT_THAT(health_report_from_json(document).error().message(),
+                HasSubstr("'engines[1].state' is missing"));
 
     document = to_json(sample_report());
     document["engines"][0]["state"] = "exploded";

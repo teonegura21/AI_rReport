@@ -82,10 +82,10 @@ struct Engine::State {
             }
             if (std::chrono::steady_clock::now() >= deadline) {
                 child->stop();
-                return Outcome{.failure = std::format("not ready after {} s",
-                                                      std::chrono::duration_cast<std::chrono::seconds>(
-                                                          settings.startup_timeout)
-                                                          .count())};
+                return Outcome{
+                    .failure = std::format(
+                        "not ready after {} s",
+                        std::chrono::duration_cast<std::chrono::seconds>(settings.startup_timeout).count())};
             }
             (void)pause(settings.poll_interval, stop);
         }
@@ -101,9 +101,10 @@ struct Engine::State {
             return Outcome{.failure = std::nullopt, .was_ready = ready};
         }
         const auto status = child->exit_status();
-        return Outcome{.failure = std::format("the process ended ({})",
-                                              status.has_value() ? status->describe() : std::string{"unknown"}),
-                       .was_ready = ready};
+        return Outcome{
+            .failure = std::format("the process ended ({})",
+                                   status.has_value() ? status->describe() : std::string{"unknown"}),
+            .was_ready = ready};
     }
 
     void manage(const std::stop_token& stop) {
@@ -125,8 +126,8 @@ struct Engine::State {
                 return;
             }
             set_state(EngineState::failed, outcome.failure);
-            const auto backoff = std::min(settings.restart_backoff * (1 << std::min(consecutive_failures - 1, 16)),
-                                          kMaxBackoff);
+            const auto backoff = std::min(
+                settings.restart_backoff * (1 << std::min(consecutive_failures - 1, 16)), kMaxBackoff);
             if (!pause(backoff, stop)) {
                 break;
             }
@@ -135,7 +136,8 @@ struct Engine::State {
     }
 };
 
-Engine::Engine(std::string model, std::string role, int slots, Settings settings) : state_(std::make_unique<State>()) {
+Engine::Engine(std::string model, std::string role, int slots, Settings settings)
+    : state_(std::make_unique<State>()) {
     state_->settings = std::move(settings);
     state_->info.model = std::move(model);
     state_->info.role = std::move(role);
@@ -150,7 +152,8 @@ void Engine::start() {
     if (state_->manager.joinable()) {
         return;
     }
-    state_->manager = std::jthread{[state = state_.get()](const std::stop_token& stop) { state->manage(stop); }};
+    state_->manager =
+        std::jthread{[state = state_.get()](const std::stop_token& stop) { state->manage(stop); }};
 }
 
 void Engine::stop() {

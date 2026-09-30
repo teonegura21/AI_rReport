@@ -110,22 +110,34 @@ sha256 = "{}"
     fails_with("[[model]\n", "test.toml: line 1");
     fails_with(model, "defines no [[profile]]");
     fails_with(model + model + profile, "model id 'm' appears twice");
-    fails_with(std::format("[[model]]\nid = \"m\"\nrole = \"chef\"\nfile = \"m.gguf\"\nsha256 = \"{}\"\n", kSha) + profile,
-               "unknown role 'chef'");
-    fails_with(std::format("[[model]]\nid = \"m\"\nrole = \"infantry\"\nfile = \"../etc/passwd\"\nsha256 = \"{}\"\n", kSha) +
-                   profile,
-               "relative path without '..'");
-    fails_with(std::format("[[model]]\nid = \"m\"\nrole = \"infantry\"\nfile = \"/abs.gguf\"\nsha256 = \"{}\"\n", kSha) +
-                   profile,
-               "relative path without '..'");
+    fails_with(
+        std::format("[[model]]\nid = \"m\"\nrole = \"chef\"\nfile = \"m.gguf\"\nsha256 = \"{}\"\n", kSha) +
+            profile,
+        "unknown role 'chef'");
+    fails_with(
+        std::format("[[model]]\nid = \"m\"\nrole = \"infantry\"\nfile = \"../etc/passwd\"\nsha256 = \"{}\"\n",
+                    kSha) +
+            profile,
+        "relative path without '..'");
+    fails_with(
+        std::format("[[model]]\nid = \"m\"\nrole = \"infantry\"\nfile = \"/abs.gguf\"\nsha256 = \"{}\"\n",
+                    kSha) +
+            profile,
+        "relative path without '..'");
     fails_with("[[model]]\nid = \"m\"\nrole = \"infantry\"\nfile = \"m.gguf\"\nsha256 = \"ABC\"\n" + profile,
                "64 lowercase hex");
     fails_with(model + "[[profile]]\nname = \"p\"\n", "needs at least one [[profile.engine]]");
-    fails_with(model + "[[profile]]\nname = \"p\"\n  [[profile.engine]]\n  model = \"ghost\"\n", "unknown model 'ghost'");
-    fails_with(model + "[[profile]]\nname = \"p\"\n  [[profile.engine]]\n  model = \"m\"\n  [[profile.engine]]\n  model = \"m\"\n",
+    fails_with(model + "[[profile]]\nname = \"p\"\n  [[profile.engine]]\n  model = \"ghost\"\n",
+               "unknown model 'ghost'");
+    fails_with(model +
+                   "[[profile]]\nname = \"p\"\n  [[profile.engine]]\n  model = \"m\"\n  [[profile.engine]]\n "
+                   " model = \"m\"\n",
                "already served");
-    fails_with(model + "[[profile]]\nname = \"p\"\n  [[profile.engine]]\n  model = \"m\"\n  slots = 0\n", "slots must be");
-    fails_with(model + "[[profile]]\nname = \"p\"\n  [[profile.engine]]\n  model = \"m\"\n  slots = 64\n  context = 1024\n",
+    fails_with(model + "[[profile]]\nname = \"p\"\n  [[profile.engine]]\n  model = \"m\"\n  slots = 0\n",
+               "slots must be");
+    fails_with(model +
+                   "[[profile]]\nname = \"p\"\n  [[profile.engine]]\n  model = \"m\"\n  slots = 64\n  "
+                   "context = 1024\n",
                "under 256 tokens per slot");
     fails_with(model + profile + profile, "profile name 'p' appears twice");
 }
@@ -139,17 +151,19 @@ TEST(Catalog, LoadsFromAFile) {
 TEST(LlamaServerCommand, ListensOnLocalhostAndCarriesTheProfile) {
     const Catalog catalog = unwrap(parse_catalog(catalog_text()));
     const Profile& big = *catalog.find_profile("48gb");
-    const auto commander = llama_server_command("llama-server", "/workspace/models", *catalog.find_model("commander"),
-                                                big.engines[0], 18080);
+    const auto commander = llama_server_command("llama-server", "/workspace/models",
+                                                *catalog.find_model("commander"), big.engines[0], 18080);
     EXPECT_THAT(commander,
-                ElementsAre("llama-server", "--model", "/workspace/models/qwen/Qwen3.8-27B-Q4_K_M.gguf", "--alias",
-                            "commander", "--host", "127.0.0.1", "--port", "18080", "--parallel", "4", "--ctx-size",
-                            "32768", "--flash-attn", "on"));
+                ElementsAre("llama-server", "--model", "/workspace/models/qwen/Qwen3.8-27B-Q4_K_M.gguf",
+                            "--alias", "commander", "--host", "127.0.0.1", "--port", "18080", "--parallel",
+                            "4", "--ctx-size", "32768", "--flash-attn", "on"));
 
-    const auto infantry = llama_server_command("llama-server", "/m", *catalog.find_model("infantry"), big.engines[1], 1);
+    const auto infantry =
+        llama_server_command("llama-server", "/m", *catalog.find_model("infantry"), big.engines[1], 1);
     EXPECT_THAT(infantry, ::testing::Contains("--mmproj"));
     EXPECT_THAT(infantry, ::testing::Contains("/m/gemma/mmproj.gguf"));
-    const auto embedder = llama_server_command("llama-server", "/m", *catalog.find_model("embedder"), big.engines[2], 1);
+    const auto embedder =
+        llama_server_command("llama-server", "/m", *catalog.find_model("embedder"), big.engines[2], 1);
     EXPECT_THAT(embedder, ::testing::Contains("--embedding"));
 }
 

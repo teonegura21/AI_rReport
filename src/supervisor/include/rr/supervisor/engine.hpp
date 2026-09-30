@@ -43,7 +43,8 @@ public:
         std::chrono::milliseconds startup_timeout{std::chrono::minutes{15}};
         std::chrono::milliseconds stop_grace{std::chrono::seconds{20}};
         std::chrono::milliseconds poll_interval{500};
-        std::chrono::milliseconds restart_backoff{std::chrono::seconds{2}};  // doubles per consecutive failure
+        std::chrono::milliseconds restart_backoff{
+            std::chrono::seconds{2}};  // doubles per consecutive failure
         int max_consecutive_failures = 4;
         std::function<void(std::string_view line)> on_output{};  // the process's log lines
     };

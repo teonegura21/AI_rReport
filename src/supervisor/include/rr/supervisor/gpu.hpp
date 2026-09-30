@@ -33,6 +33,7 @@ inline constexpr std::string_view kNvidiaSmiFormat = "--format=csv,noheader,noun
 // Runs nvidia-smi and parses its answer. Errc::unavailable when there is no
 // usable GPU (no nvidia-smi, no driver, or it fails).
 [[nodiscard]] Result<std::vector<runtime_api::GpuInfo>> query_gpus(
-    const std::string& executable = "nvidia-smi", std::chrono::milliseconds timeout = std::chrono::seconds{15});
+    const std::string& executable = "nvidia-smi",
+    std::chrono::milliseconds timeout = std::chrono::seconds{15});
 
 }  // namespace rr::supervisor
