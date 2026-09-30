@@ -62,7 +62,7 @@ Modules marked *(M0)* exist now; the rest arrive in the milestone shown.
 | `rr_supervisor` *(M0)* | Runtime: auth, health, engines, the streaming relay (ADR-0014), model files (verified, resumable downloads), blobs, idle/dead-man stop through RunPod's API (ADR-0015), the runtime's configuration ([design](design/runtime.md)) | runtime_api, net, proc, blob, config, runpod, json, log, toml++ |
 | `rr_llm` *(M0)* | Calling models: one chat vocabulary, the OpenAI-compatible streaming provider, retries, accounting, record/replay, schema-validated answers ([design](design/llm.md)) | core, json, net, log |
 | `rr_library` *(M0)* | A library's database (ADR-0008): its schema (`migrations/`, compiled in) and repositories, starting with the model-call log | core, db, json, llm |
-| `rr_runtime_client` *(M0)* | Hub-side runtime client, `PodManager` | api, net, llm |
+| `rr_runtime_client` *(M0)* | The hub's side of the pod: the runtime protocol, readiness, the runtime's model provider, `PodManager` | runtime_api, runpod, net, llm |
 | `rr_agents` (M1) | Missions, squads, dispatcher, escalation, battle log | llm, db |
 | `rr_media`, `rr_text`, `rr_transcript` (M1) | Capture sources, captions, frames, alignment | proc, blob |
 | `rr_pipeline`, `rr_fidelity`, `rr_report` (M1) | Stages + executor, ledger checks, rendering | all of the above |

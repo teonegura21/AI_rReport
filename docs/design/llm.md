@@ -110,6 +110,7 @@ Tokens and GPU time are the product's cost (plan §4.3). `AccountedProvider` han
 |---|---|
 | Unit, scripted provider | `tests/unit/llm/scripted_provider.hpp` plays answers and errors, and keeps every request it was given. It covers retries, restarts, accounting, record/replay and `structured<T>()`, repair conversation included |
 | Unit, scripted server | `openai_provider_test.cpp` serves exact bytes: llama-server's stream shape, keep-alive comments, a missing `[DONE]`, error events and statuses, silence and cancellation |
+| End to end | `runtime_client_test.cpp` calls through the real runtime's relay to fake engines. Tokens, reasoning, usage and timings arrive intact; a 400 stays a bad request; a crash mid-answer becomes a retried network error; an engine's error event keeps its class |
 | The library | `call_log_test.cpp` round-trips every field, NULLs included; covers filters, newest first, pruning, and a duplicate refused without a trace |
 
 ### How the tests were validated

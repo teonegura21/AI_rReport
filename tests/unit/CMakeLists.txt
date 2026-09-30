@@ -19,3 +19,8 @@ if(RR_BUILD_HUB)
     add_subdirectory(llm)
     add_subdirectory(library)
 endif()
+
+# The runtime client is tested against the real runtime: it needs both halves.
+if(RR_BUILD_HUB AND RR_BUILD_RUNTIME)
+    add_subdirectory(runtime_client)
+endif()
