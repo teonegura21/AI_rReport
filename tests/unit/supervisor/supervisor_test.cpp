@@ -607,6 +607,12 @@ TEST(Supervisor, AStreamInFlightKeepsThePodAwake) {
     std::this_thread::sleep_for(300ms);  // fifteen watchdog ticks
     EXPECT_FALSE(std::filesystem::exists(marker)) << "a generation in progress is not idleness";
     hub.join();
+    // The hub has read the whole stream, but the runtime records the end a
+    // moment later, when the relay lets go of the request on its own thread.
+    // Move the clock only then, or the idle period starts after the jump.
+    // (stops_in_s is reported only while no request is in flight.)
+    ASSERT_TRUE(eventually([&] { return pod.supervisor->health().stops_in_s.has_value(); }))
+        << "the runtime saw the stream end";
     pod.clock.advance(11min);
     EXPECT_TRUE(eventually([&] { return std::filesystem::exists(marker); }))
         << "after it ends, idleness counts";
