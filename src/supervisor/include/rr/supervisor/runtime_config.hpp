@@ -30,6 +30,7 @@
 // Thread-safety: pure functions.
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -73,5 +74,15 @@ struct RuntimeFacts {
 // (commands that only verify or sync models need it too).
 [[nodiscard]] Result<SupervisorSettings> settings_from_config(const config::Config& config, Catalog catalog,
                                                               const RuntimeFacts& facts);
+
+// How this pod stops itself through RunPod's API (ADR-0015), with
+// idle.runpod_api_key if set, else the pod's own key. The idle watchdog calls
+// it; so does `rreport-runtime stop-pod`, which the image's entry point runs
+// when the pod cannot start. It needs only the configuration's idle section:
+// no catalog, no GPU, no token. Errc::unavailable when not on RunPod
+// (RUNPOD_POD_ID unset) or when no key is known; Errc::invalid_argument for
+// a malformed pod ID.
+[[nodiscard]] Result<std::function<Result<void>()>> runpod_self_stop(const config::Config& config,
+                                                                     const RuntimeFacts& facts);
 
 }  // namespace rr::supervisor

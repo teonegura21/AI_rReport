@@ -7,6 +7,8 @@
 //   models verify      check the profile's model files (--full: ignore the cache)
 //   models sync        download what is missing or wrong, verifying everything
 //   gpu                list the GPUs nvidia-smi sees
+//   stop-pod           stop this pod through RunPod's API, as an idle pod does
+//                      (the image's entry point, when the pod cannot start)
 //   config show        print the configuration (--origin: where each value came from)
 //   version
 //
@@ -292,6 +294,35 @@ int gpu() {
     return kOk;
 }
 
+// Stops this pod through RunPod's API. The image's entry point runs it when
+// the pod cannot start (no GPU, no token, model files it cannot fetch), so it
+// needs none of those: only the configuration's idle section and RunPod's
+// variables. Nor does it need the log file: stopping a pod that bills for
+// nothing matters more.
+int stop_pod(const Global& global) {
+    const auto config = load_config(global);
+    if (!config.has_value()) {
+        return failed(kBadConfiguration, config.error());
+    }
+    if (const auto logging = start_logging(*config); !logging.has_value()) {
+        (void)std::fprintf(stderr, "rreport-runtime: logging to the console only: %s\n",
+                           logging.error().describe().c_str());
+    }
+    const RuntimeFacts facts{.runpod_pod_id = environment_variable("RUNPOD_POD_ID"),
+                             .runpod_api_key = environment_variable("RUNPOD_API_KEY"),
+                             .version = version_string()};
+    const auto self_stop = runpod_self_stop(*config, facts);
+    if (!self_stop.has_value()) {
+        return failed(kBadConfiguration, self_stop.error());
+    }
+    if (const auto stopped = (*self_stop)(); !stopped.has_value()) {
+        return failed(kFailure, stopped.error());
+    }
+    log::info("RunPod accepted the stop: the pod is stopping");
+    log::flush();
+    return kOk;
+}
+
 int show_config(const Global& global, bool origin) {
     const auto config = load_config(global);
     if (!config.has_value()) {
@@ -339,6 +370,8 @@ int run(int argc, char** argv) {
     verify_command->add_flag("--full", full, "Hash every file, ignoring the verification records");
     auto* sync_command = models_command->add_subcommand("sync", "Download missing or wrong model files");
     auto* gpu_command = app.add_subcommand("gpu", "List the GPUs nvidia-smi sees");
+    auto* stop_pod_command =
+        app.add_subcommand("stop-pod", "Stop this pod through RunPod's API, as an idle pod does");
     auto* config_command = app.add_subcommand("config", "Configuration")->require_subcommand(1);
     bool origin = false;
     auto* show_command = config_command->add_subcommand("show", "Print every setting (secrets masked)");
@@ -363,6 +396,9 @@ int run(int argc, char** argv) {
     }
     if (*gpu_command) {
         return gpu();
+    }
+    if (*stop_pod_command) {
+        return stop_pod(global);
     }
     if (*show_command) {
         return show_config(global, origin);

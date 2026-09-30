@@ -1,0 +1,28 @@
+# The Docker build context (docker/runtime/Dockerfile): the sources only.
+# .git stays: without an RR_GIT_REVISION build argument, the build reads the
+# revision from it, and the hub compares that revision with its own.
+
+# Build trees and caches.
+build/
+out/
+cmake-build-*/
+.cache/
+**/__pycache__/
+
+# Local data, secrets and weights: never in an image.
+.env
+.env.*
+**/secrets.toml
+*.db
+*.db-wal
+*.db-shm
+*.gguf
+*.onnx
+*.safetensors
+/library/
+/models/
+/workspace/
+
+# Web and TypeScript artifacts.
+**/node_modules/
+**/dist/

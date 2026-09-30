@@ -1,5 +1,7 @@
 #include <rr/supervisor/catalog.hpp>
 
+#include <cstdint>
+#include <filesystem>
 #include <string>
 
 #include <gmock/gmock.h>
@@ -130,6 +132,32 @@ TEST(Catalog, LoadsFromAFile) {
     const testkit::TempDir dir{"rr_catalog_test"};
     EXPECT_EQ(unwrap(load_catalog(dir.write_file("catalog.toml", catalog_text()))).profiles.size(), 2U);
     EXPECT_ERRC(load_catalog(dir / "missing.toml"), Errc::not_found);
+}
+
+// The catalog the image ships (docker/runtime/catalog.toml) loads, and
+// "auto" picks what its comments promise, for the memory real GPUs report.
+TEST(Catalog, TheImagesCatalogChoosesAsDocumented) {
+    const Catalog catalog =
+        unwrap(load_catalog(std::filesystem::path{RR_SOURCE_DIR} / "docker/runtime/catalog.toml"));
+    const auto chosen = [&catalog](std::int64_t vram_mib) {
+        return unwrap(choose_profile(catalog, vram_mib))->name;
+    };
+    EXPECT_EQ(chosen(16'376), "16gb") << "RTX A4000";
+    EXPECT_EQ(chosen(23'034), "16gb") << "L4: no commander fits";
+    EXPECT_EQ(chosen(24'564), "24gb") << "RTX 4090: the commander, the first of two 24 GB profiles";
+    EXPECT_EQ(chosen(32'607), "32gb") << "RTX 5090";
+    EXPECT_EQ(chosen(46'068), "48gb") << "L40S";
+    EXPECT_EQ(chosen(49'140), "48gb") << "RTX A6000";
+    EXPECT_EQ(chosen(81'559), "80gb") << "H100";
+    EXPECT_ERRC(choose_profile(catalog, 12'288), Errc::unsupported);
+    EXPECT_NE(catalog.find_profile("24gb-infantry"), nullptr) << "chosen by name";
+
+    for (const Model& model : catalog.models) {
+        for (const ModelFile* file : model.files()) {
+            ASSERT_TRUE(file->url.has_value()) << model.id << ": models sync must be able to fetch it";
+            EXPECT_TRUE(file->url->starts_with("https://huggingface.co/")) << *file->url;
+        }
+    }
 }
 
 TEST(LlamaServerCommand, ListensOnLocalhostAndCarriesTheProfile) {

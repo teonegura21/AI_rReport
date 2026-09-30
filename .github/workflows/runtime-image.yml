@@ -1,0 +1,76 @@
+# The pod's image (docker/runtime/Dockerfile), built and pushed to GitHub's
+# container registry:
+#
+#   ghcr.io/<owner>/rreport-runtime:<branch>   on every push to main
+#   ghcr.io/<owner>/rreport-runtime:<version>  on a tag vX.Y.Z
+#   ghcr.io/<owner>/rreport-runtime:sha-<sha>  always
+#
+# To build a branch's image before it is merged (the M0 runbook does this),
+# run the workflow by hand: Actions → runtime-image → Run workflow.
+#
+# llama.cpp's CUDA build is the slow part (about an hour on a 4-core runner).
+# Its stage depends only on its own build arguments, so GitHub's Actions cache
+# keeps it across runs, and a change to rReport rebuilds only rReport's stage.
+name: runtime-image
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: runtime-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write  # push to ghcr.io
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      # The CUDA devel image and llama.cpp's build need more room than a
+      # runner leaves free; these toolchains are unused here.
+      - name: Make room
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      # The same name the hub computes for itself (git rev-parse --short=12),
+      # so `rreport doctor` finds hub and pod on one release.
+      - name: Name the revision
+        id: revision
+        run: echo "short=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/rreport-runtime
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha,format=long
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/runtime/Dockerfile
+          build-args: RR_GIT_REVISION=${{ steps.revision.outputs.short }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

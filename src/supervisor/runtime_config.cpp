@@ -53,26 +53,6 @@ struct SelfStop {
     explicit SelfStop(runpod::Options options) : api(http, std::move(options)) {}
 };
 
-// How the pod stops itself on RunPod: nothing (logged) without a key.
-Result<std::function<Result<void>()>> runpod_self_stop(const config::Config& config,
-                                                       const std::string& pod_id,
-                                                       const std::optional<std::string>& pod_key) {
-    RR_TRY(runpod::validate_pod_id(pod_id));
-    RR_TRY_ASSIGN(Secret key, config.get_secret("idle.runpod_api_key"));
-    if (key.empty() && pod_key.has_value()) {
-        key = Secret{*pod_key};
-    }
-    if (key.empty()) {
-        log::warn("on RunPod without RUNPOD_API_KEY or idle.runpod_api_key: an idle pod cannot stop itself");
-        return std::function<Result<void>()>{};
-    }
-    RR_TRY_ASSIGN(std::string api_url, config.get_string("idle.runpod_api_url"));
-    RR_TRY_ASSIGN(std::string graphql_url, config.get_string("idle.runpod_graphql_url"));
-    auto self_stop = std::make_shared<const SelfStop>(runpod::Options{
-        .api_key = std::move(key), .api_url = std::move(api_url), .graphql_url = std::move(graphql_url)});
-    return std::function<Result<void>()>{[self_stop, pod_id] { return self_stop->api.stop_self(pod_id); }};
-}
-
 // A duration where "0s" means "off".
 Result<std::optional<milliseconds>> optional_duration(const config::Config& config, std::string_view key) {
     RR_TRY_ASSIGN(const milliseconds duration, config.get_duration(key));
@@ -80,6 +60,28 @@ Result<std::optional<milliseconds>> optional_duration(const config::Config& conf
 }
 
 }  // namespace
+
+Result<std::function<Result<void>()>> runpod_self_stop(const config::Config& config,
+                                                       const RuntimeFacts& facts) {
+    if (!facts.runpod_pod_id.has_value() || facts.runpod_pod_id->empty()) {
+        return fail(Errc::unavailable, "not on RunPod: RUNPOD_POD_ID is not set");
+    }
+    const std::string& pod_id = *facts.runpod_pod_id;
+    RR_TRY(runpod::validate_pod_id(pod_id));
+    RR_TRY_ASSIGN(Secret key, config.get_secret("idle.runpod_api_key"));
+    if (key.empty() && facts.runpod_api_key.has_value()) {
+        key = Secret{*facts.runpod_api_key};
+    }
+    if (key.empty()) {
+        return fail(Errc::unavailable,
+                    "no key for RunPod's API: neither idle.runpod_api_key nor RUNPOD_API_KEY is set");
+    }
+    RR_TRY_ASSIGN(std::string api_url, config.get_string("idle.runpod_api_url"));
+    RR_TRY_ASSIGN(std::string graphql_url, config.get_string("idle.runpod_graphql_url"));
+    auto self_stop = std::make_shared<const SelfStop>(runpod::Options{
+        .api_key = std::move(key), .api_url = std::move(api_url), .graphql_url = std::move(graphql_url)});
+    return std::function<Result<void>()>{[self_stop, pod_id] { return self_stop->api.stop_self(pod_id); }};
+}
 
 std::string_view runtime_defaults() noexcept {
     // The embedded file is part of the build: it is always there.
@@ -166,8 +168,14 @@ Result<SupervisorSettings> settings_from_config(const config::Config& config, Ca
     RR_TRY_ASSIGN(settings.idle_stop, optional_duration(config, "idle.stop_after"));
     RR_TRY_ASSIGN(settings.stop_command, config.get_string_list("idle.stop_command"));
     if (settings.stop_command.empty() && facts.runpod_pod_id.has_value() && !facts.runpod_pod_id->empty()) {
-        RR_TRY_ASSIGN(settings.stop_pod,
-                      runpod_self_stop(config, *facts.runpod_pod_id, facts.runpod_api_key));
+        auto self_stop = runpod_self_stop(config, facts);
+        if (self_stop.has_value()) {
+            settings.stop_pod = std::move(*self_stop);
+        } else if (self_stop.error().code() == Errc::unavailable) {  // on RunPod, so: no key
+            log::warn("{}: an idle pod cannot stop itself", self_stop.error().message());
+        } else {
+            return fail(std::move(self_stop).error());
+        }
     }
     RR_TRY_ASSIGN(settings.watchdog_interval, config.get_duration("idle.check_every"));
     if (settings.watchdog_interval.count() == 0) {

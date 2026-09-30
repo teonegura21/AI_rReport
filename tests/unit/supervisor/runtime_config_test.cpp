@@ -153,6 +153,24 @@ TEST(RuntimeConfig, AKeyOrACommandOfOnesOwnWins) {
     EXPECT_ERRC(settings({{"RR_RUNTIME_TOKEN", "t"}}, {}, bad_id), Errc::invalid_argument);
 }
 
+// What `rreport-runtime stop-pod` builds: RunPod and a key, and nothing
+// else, since a pod that cannot start may lack a token, a GPU or a catalog.
+TEST(RuntimeConfig, AStopOfItsOwnNeedsOnlyRunpodAndAKey) {
+    FakeRunpod runpod;
+    runpod.add_pod("pod123", "RUNNING");
+    const config::Config config = unwrap(load({}, aimed_at(runpod)));  // no token
+    EXPECT_ERRC(runpod_self_stop(config, {}), Errc::unavailable) << "not on RunPod";
+    const auto keyless = runpod_self_stop(config, {.runpod_pod_id = "pod123"});
+    ASSERT_ERRC(keyless, Errc::unavailable);
+    EXPECT_THAT(keyless.error().message(), HasSubstr("RUNPOD_API_KEY"));
+    EXPECT_ERRC(runpod_self_stop(config, {.runpod_pod_id = "pod/../123", .runpod_api_key = "k"}),
+                Errc::invalid_argument);
+
+    const auto stop = unwrap(runpod_self_stop(config, on_runpod()));
+    ASSERT_OK(stop());
+    EXPECT_EQ(runpod.status("pod123"), "EXITED");
+}
+
 TEST(RuntimeConfig, ZeroTurnsIdleStopAndKeepAlivesOff) {
     const SupervisorSettings loaded =
         unwrap(settings({{"RR_RUNTIME_TOKEN", "t"}}, {"idle.stop_after=0s", "engines.stream_keep_alive=0s"}));

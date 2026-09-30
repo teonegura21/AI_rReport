@@ -5,6 +5,8 @@
 #   build-test  GCC debug; Clang + ASan/UBSan; Clang + TSan — all tests green
 #   tidy        clang-tidy with warnings as errors on every rReport translation unit
 #   fetch       dependencies built from pinned git tags only (proves ADR-0012's fallback)
+#   scripts     the pod image's entry point (shellcheck, and its tests with fake
+#               tools) and scripts/ (their tests, against a fake Hugging Face Hub)
 name: ci
 
 on:
@@ -74,3 +76,14 @@ jobs:
         run: cmake --build --preset ci-fetch
       - name: Test
         run: ctest --preset ci-fetch
+
+  scripts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint the entry point
+        run: shellcheck --severity=style docker/runtime/entrypoint.sh
+      - name: Test the entry point
+        run: python3 -m unittest discover -s docker/runtime -p 'test_*.py' -v
+      - name: Test the scripts
+        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v

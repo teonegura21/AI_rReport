@@ -183,6 +183,35 @@ TEST(RuntimeApp, OnRunpodAnIdleRuntimeStopsItsPod) {
     EXPECT_TRUE(unwrap(runtime.wait(15s)).success());
 }
 
+// The image's entry point stops a pod that cannot start, so `stop-pod` needs
+// none of what may be missing: no token, no GPU, not even a catalog.
+TEST(RuntimeApp, StopPodNeedsOnlyRunpod) {
+    fakes::FakeRunpod runpod;
+    runpod.add_pod("pod123", "RUNNING");
+    const auto stop_pod = [&runpod](std::vector<EnvironmentVariable> environment) {
+        std::vector<std::string> argv{RR_RUNTIME_BINARY, "stop-pod"};
+        for (const std::string& setting : {std::format("idle.runpod_api_url={}", runpod.api_url()),
+                                           std::format("idle.runpod_graphql_url={}", runpod.graphql_url()),
+                                           std::string{"models.catalog=/nonexistent/catalog.toml"}}) {
+            argv.emplace_back("--set");
+            argv.push_back(setting);
+        }
+        return unwrap(proc::run(
+            proc::Command{
+                .argv = std::move(argv), .environment = std::move(environment), .inherit_environment = false},
+            proc::RunOptions{.timeout = 60s}));
+    };
+    const proc::RunResult off_runpod = stop_pod({});
+    EXPECT_EQ(off_runpod.status.code, 2);
+    EXPECT_THAT(off_runpod.stderr_text, HasSubstr("RUNPOD_POD_ID"));
+
+    const proc::RunResult stopped =
+        stop_pod({{"RUNPOD_POD_ID", "pod123"}, {"RUNPOD_API_KEY", std::string{fakes::FakeRunpod::kPodKey}}});
+    EXPECT_EQ(stopped.status.code, 0) << stopped.stderr_text;
+    EXPECT_EQ(runpod.status("pod123"), "EXITED");
+    EXPECT_EQ(runpod.graphql_stops(), 1) << "the pod's own key: refused by REST, taken by GraphQL";
+}
+
 TEST(RuntimeApp, RefusesToServeWithoutAToken) {
     const Pod pod;
     const proc::RunResult result = pod.run({"serve"}, /*with_token=*/false);

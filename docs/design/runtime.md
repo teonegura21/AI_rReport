@@ -17,6 +17,7 @@
 | `src/supervisor/runtime_config.*` | From configuration to `SupervisorSettings`: aliases, the `auto` profile, RunPod defaults |
 | `apps/rreport-runtime/` | The executable: commands, signals, exit codes |
 | `tests/fake_engine/` | `rr_fake_engine`: a scriptable llama-server stand-in, so every behaviour is tested end to end without a GPU |
+| `docker/runtime/` | The pod's image: the Dockerfile, the entry point (PID 1) and the model catalog (see "The image") |
 
 ## The door
 
@@ -141,6 +142,7 @@ Engines load multi-gigabyte GGUF files from the pod's network volume. A missing,
 | `models verify [--full]` | Checks the profile's model files (`--full`: hash everything, ignoring the records) | 0 all verified; 3 otherwise |
 | `models sync` | Downloads what is missing or wrong, verifying everything | 0; 1 on failure |
 | `gpu` | Lists the GPUs `nvidia-smi` sees | 0; 1 without a GPU |
+| `stop-pod` | Stops this pod through RunPod's API, as an idle pod does. The image's entry point runs it when the pod cannot start, so it needs only RunPod's variables and the `idle` settings: no GPU, no token, no catalog (ADR-0016) | 0; 1 when RunPod refuses; 2 when not on RunPod or without a key |
 | `config show [--origin]` | Every setting, secrets masked, optionally with where it came from | 0 |
 | `version` | Version and git revision | 0 |
 
@@ -174,6 +176,54 @@ Engines load multi-gigabyte GGUF files from the pod's network volume. A missing,
 - **Two traps met on the way.**
   - **CLI11's `fallthrough`** (global options after a command) is inherited only by commands created *after* it is set.
   - **`rr_add_embedded_library`** wrote its header through a CMake bracket argument `[[…]]`, and the header's own `[[nodiscard]]` ended it early. It is now `[=[…]=]`. This was its first use.
+
+## The image
+
+`docker/runtime/Dockerfile` builds the pod's image in three stages. `.github/workflows/runtime-image.yml` pushes it to `ghcr.io/<owner>/rreport-runtime` on `main`, on tags, and by hand for a branch.
+
+1. **llama.cpp** at a release tag, checked against the commit it must name (`v0.5.0` = `7fe450e`), since a tag can be moved.
+   - It is built on NVIDIA's CUDA 12.8.1 devel image, as llama.cpp's own CUDA image is built.
+   - Architectures `80;86;89;90;120` cover the A100, the 30- and 40-series, the L40S, the H100 and the 5090 (sm_120 needs CUDA 12.8).
+   - Backends are libraries loaded at run time, with a CPU backend for every x86 generation, because the pod's CPU is unknown at build time.
+2. **rreport-runtime**, with the `runtime-release` preset (no hub, no tests), from the same package list as CI (`scripts/install-deps-ubuntu.sh`).
+   - The build names its revision like the hub (`git rev-parse --short=12`), or takes it as an argument (`RR_GIT_REVISION`), so `rreport doctor` can compare the two exactly.
+3. **The image**, on the CUDA runtime base, holding only the binaries, their libraries, the catalog and the entry point. Model files live on the pod's `/workspace` volume, never in the image.
+
+**The entry point** (`entrypoint.sh`, PID 1):
+1. Checks for a GPU (`nvidia-smi`) and the hub's token.
+2. Runs `rreport-runtime models sync`.
+3. Runs `serve` until the pod is stopped.
+
+Any failure stops the pod through RunPod's API instead of exiting, because RunPod restarts a container whose command exits, and a pod that cannot start would restart and bill forever (ADR-0016). Bash stays PID 1 to see how the runtime ended, and it passes stop signals on, since the kernel gives PID 1 no default signal handling. `test_entrypoint.py` runs the real script with fake `nvidia-smi` and `rreport-runtime` executables and checks every path, signals included. Each of its ten mechanisms was removed on purpose and caught.
+
+**What was checked before any pod ran** (2026-09-30):
+- **Built with Docker in the development sandbox:** the rReport stage and the final stage, command for command, with plain Ubuntu 24.04 (what the CUDA images are built on) in place of the CUDA base. The packages resolve, and the binary runs in the image and names its revision as the hub does.
+- **Run as PID 1**, without a GPU, against a stand-in for RunPod's API:
+  - the entry point logged its reason and stopped the pod (REST refused the pod's key, GraphQL took it);
+  - it then kept waiting;
+  - `docker stop` ended it in 0.1 s, with exit code 0.
+- **Not built locally:** llama.cpp's CUDA stage (an hour of compilation). The image workflow builds it first, and the runbook's checks exercise it on a real GPU.
+
+**The catalog** (`docker/runtime/catalog.toml`) holds one profile per GPU size, following the plan's §4.5. `auto` picks the largest profile the GPU holds (a unit test checks the choice for the memory real GPUs report):
+
+| Profile | GPUs | Engines |
+|---|---|---|
+| `16gb` | RTX A4000, L4, A10 | Gemma 4 E4B (8 slots), the embedder: a cheap pod to smoke-test the image |
+| `24gb` | RTX 4090, 3090, A5000 | Qwen3.8-27B Q4 alone: commander and infantry phases alternate at this size |
+| `24gb-infantry` | the same, chosen by name | Gemma 4 26B-A4B (8 slots) |
+| `32gb` | RTX 5090 | Qwen3.8-27B Q4 and Gemma 4 12B (6 slots), tight |
+| `48gb` | L40S, A40, A6000 | Qwen3.8-27B Q4, Gemma 4 26B-A4B (16 slots), the embedder |
+| `80gb` | A100, H100 | Qwen3.8-27B Q8, Gemma 4 26B-A4B (32 slots), the embedder |
+
+- **Every engine runs with the same flags:**
+  - every layer on the GPU (`--n-gpu-layers 999`), so a model that does not fit fails loudly instead of running partly on the CPU;
+  - an 8-bit attention cache (`--cache-type-k/v q8_0`, which needs `--flash-attn on`);
+  - the model's own chat template (`--jinja`).
+- **Contexts and slot counts are estimates** until `rreport bench` measures them.
+- **Two differences from the plan's layout** (§13, M0 step 4):
+  - Its `models.toml` and `profiles/*.toml` are one file, `catalog.toml`, because the catalog is validated as a whole: a profile naming an unknown model fails when it is loaded, not when an engine starts.
+  - whisper.cpp is not in the image yet. Transcription arrives in M1 (plan §4.4: upstream `whisper-cli`), and joins the image then.
+- **The checksums are not yet verified against the Hub.** They come from LocalAI's model gallery. `scripts/model-hashes.py check` compares them with Hugging Face's own records, and `pin` fixes each URL to a commit, so a later re-upload cannot change what a pod downloads. Its tests run against a fake Hub. Run it before the first sync: the runbook says how.
 
 ## The fake engine
 

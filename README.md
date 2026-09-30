@@ -75,7 +75,19 @@ cmake --preset tidy && cmake --build --preset tidy     # clang-tidy, warnings as
 for preset in dev dev-clang tsan; do     # stops at the first failure
     cmake --preset $preset && cmake --build --preset $preset && ctest --preset $preset || break
 done
+shellcheck --severity=style docker/runtime/entrypoint.sh
+python3 -m unittest discover -s docker/runtime -p 'test_*.py'   # the pod image's entry point
+python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
+
+## Running the pod
+
+The GPU pod runs `rreport-runtime` from a CUDA image (`docker/runtime/`, built by `.github/workflows/runtime-image.yml`). **[deploy/runpod/README.md](deploy/runpod/README.md)** takes you from a green CI to a measured pod:
+1. check the model checksums;
+2. build the image;
+3. set up the volume, the pod and the hub;
+4. run the M0 checks that only a real pod can settle;
+5. run the benchmark that chooses the default GPU.
 
 ## Repository map
 
