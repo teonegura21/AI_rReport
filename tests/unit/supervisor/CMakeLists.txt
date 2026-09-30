@@ -7,7 +7,8 @@ rr_add_test_suite(supervisor
         supervisor_test.cpp
         watchdog_test.cpp
     DEPS
-        rr::supervisor)
+        rr::supervisor
+        rr::fake_engine_stream)
 
 # The end-to-end tests run real engine processes: rr_fake_engine stands in for
 # llama-server. Build it first, and tell the tests where it is.

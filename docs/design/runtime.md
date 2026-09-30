@@ -174,11 +174,13 @@ Engines load multi-gigabyte GGUF files from the pod's network volume. A missing,
 
 ## The fake engine
 
-`rr_fake_engine` speaks the part of llama-server's interface the supervisor uses:
+`rr_fake_engine` speaks the part of llama-server's interface the supervisor and the hub use:
 - `/health` answers 503 while "loading", then 200;
 - chat completions, JSON or SSE;
 - embeddings;
 - `/stats` counts the streams and requests its clients abandoned.
+
+**Its streams are shaped as llama-server's** (checked against llama.cpp `db00347`, 2026-09-30): a role chunk whose content is null, `reasoning_content` then `content` deltas, a finish chunk with `"delta": {}`, the usage chunk (`"choices": []`) when `stream_options.include_usage` asks for it, `timings` on the last JSON chunk, and `[DONE]`. `tests/fake_engine/include/rr/fake_engine/stream.hpp` builds them; the fake and the tests that check what arrives share it, so they cannot drift apart.
 
 **Process flags** script its life: `--fake-load-ms`, `--fake-never-ready`, `--fake-exit-after-ms`, `--fake-token-ms`.
 
@@ -189,9 +191,14 @@ Engines load multi-gigabyte GGUF files from the pod's network volume. A missing,
 | `head_delay_ms` | A queued request |
 | `first_token_ms` | Prompt reading |
 | `break_after` / `break_mid_event` | A crash mid-answer |
+| `error_after` | llama-server's error event mid-answer, then an end with no `[DONE]` |
 | `split_pause_ms` | A pause inside an event |
 | `fail` | A 400 |
 | `echo_headers` | Reports the headers it received |
+| `reply`, `reply_by_turn` | A given answer; `reply_by_turn` picks one per earlier assistant turn (a model repairing its answer) |
+| `reasoning` | Thinking before the answer |
+| `max_tokens` | The OpenAI field: at most that many pieces (`length` when the answer is cut) |
+| `ignore_eos` | llama-server's field: with no `reply`, the answer runs to exactly `max_tokens` tokens, as `rreport bench` asks. Without it the answer ends by itself after five tokens, so a benchmark that forgot it would be caught |
 
 It probes its client every 10 ms while silent, as llama-server does, and exits when its parent goes away, so a crashed test leaves no orphans.
 

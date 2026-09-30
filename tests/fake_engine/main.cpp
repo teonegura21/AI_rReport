@@ -15,7 +15,25 @@
 //   --fake-exit-after-ms N  exit with code 3 after N ms (a crash)
 //   --fake-token-ms N       pause between streamed tokens (default 20)
 //
+// A streamed answer is shaped as llama-server shapes it (rr/fake_engine/stream.hpp):
+// a role chunk, reasoning then content pieces, a finish chunk, the usage when
+// stream_options.include_usage asks for it, and [DONE].
+//
 // Knobs in a chat request's JSON body script one call:
+//   "reply": "text"         answer this, in pieces of a few bytes (default:
+//                           five tokens, tok0 … tok4)
+//   "reply_by_turn": [...]  the n-th text for a conversation with n assistant
+//                           turns so far (a model that fixes its answer)
+//   "reasoning": "text"     think this first (delta.reasoning_content)
+//   "max_tokens": N         the OpenAI field: at most N pieces, reasoning
+//                           included ("length" when the answer is cut)
+//   "ignore_eos": true      llama-server's field: with no reply and
+//                           max_tokens, exactly N tokens ("length"), as a
+//                           benchmark asks; without it the answer ends on
+//                           its own, after five tokens
+//   "error_after": N        stream N tokens, then an error event and the end
+//                           with no [DONE], as llama-server reports a failure
+//                           mid-answer
 //   "fail": true            answer 400, as llama-server does for a bad request
 //   "head_delay_ms": N      hold the status and headers back for N ms (a busy
 //                           engine: llama-server answers when a slot is free);
@@ -32,20 +50,24 @@
 // While silent, the engine probes its client every 10 ms, as llama-server
 // does, so a client that leaves is noticed (and counted) at once. It exits
 // when its parent process goes away, so a crashed test leaves no orphans.
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <format>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <unistd.h>
 
 #include <rr/core/strings.hpp>
+#include <rr/fake_engine/stream.hpp>
 #include <rr/json/json.hpp>
 #include <rr/net/http_server.hpp>
 #include <rr/net/sse.hpp>
@@ -115,21 +137,113 @@ bool wait_for(HttpServer::ChunkWriter& writer, std::chrono::milliseconds duratio
 }
 
 struct StreamScript {
-    int token_ms = 20;
     int first_token_ms = 0;
     int break_after = -1;
     bool break_mid_event = false;
     int split_pause_ms = 0;
+    int error_after = -1;
 };
 
-rr::Result<void> stream_tokens(HttpServer::ChunkWriter& writer, const StreamScript& script,
-                               std::atomic<int>& abandoned_streams) {
+// `text` in pieces of at most four bytes, never splitting a UTF-8 sequence.
+std::vector<std::string> pieces(std::string_view text) {
+    std::vector<std::string> out;
+    std::size_t start = 0;
+    while (start < text.size()) {
+        std::size_t end = std::min(start + 4, text.size());
+        while (end < text.size() && (static_cast<unsigned char>(text[end]) & 0xC0U) == 0x80U) {
+            ++end;
+        }
+        out.emplace_back(text.substr(start, end - start));
+        start = end;
+    }
+    return out;
+}
+
+// What to stream for `body` (see the knobs above).
+rr::fake_engine::StreamPlan plan_for(const rr::json::Json& body, const Options& options) {
+    rr::fake_engine::StreamPlan plan{.model = options.alias, .token_ms = options.token_ms};
+    if (const auto stream_options = body.find("stream_options");
+        stream_options != body.end() && stream_options->is_object()) {
+        plan.include_usage = knob(*stream_options, "include_usage", false);
+    }
+    // About four characters per token, as for English text.
+    std::size_t characters = 0;
+    std::size_t assistant_turns = 0;
+    if (const auto messages = body.find("messages"); messages != body.end() && messages->is_array()) {
+        for (const rr::json::Json& message : *messages) {
+            if (message.is_object() && message.value("role", "") == "assistant") {
+                ++assistant_turns;
+            }
+            const auto content = message.is_object() ? message.find("content") : message.end();
+            if (content == message.end()) {
+                continue;
+            }
+            if (content->is_string()) {
+                characters += content->get<std::string>().size();
+            } else if (content->is_array()) {
+                for (const rr::json::Json& part : *content) {
+                    if (part.is_object() && part.value("type", "") == "text") {
+                        characters += part.value("text", "").size();
+                    }
+                }
+            }
+        }
+    }
+    plan.prompt_tokens = std::max<std::int64_t>(1, static_cast<std::int64_t>(characters / 4));
+
+    std::optional<std::string> reply;
+    if (const auto text = body.find("reply"); text != body.end() && text->is_string()) {
+        reply = text->get<std::string>();
+    } else if (const auto turns = body.find("reply_by_turn");
+               turns != body.end() && turns->is_array() && !turns->empty()) {
+        const rr::json::Json& chosen = (*turns)[std::min(assistant_turns, turns->size() - 1)];
+        if (chosen.is_string()) {
+            reply = chosen.get<std::string>();
+        }
+    }
+    if (const auto reasoning = body.find("reasoning"); reasoning != body.end() && reasoning->is_string()) {
+        plan.reasoning = pieces(reasoning->get<std::string>());
+    }
+    const int max_tokens = knob(body, "max_tokens", -1);
+    if (reply.has_value()) {
+        plan.content = pieces(*reply);
+    } else {
+        // The model's own answer is five tokens. ignore_eos makes it go on past
+        // its end, to exactly max_tokens: a benchmark's fixed-length run.
+        const bool run_to_limit = knob(body, "ignore_eos", false) && max_tokens >= 0;
+        const int count = run_to_limit ? std::min(max_tokens, 100'000) : 5;
+        plan.content.clear();
+        for (int index = 0; index < count; ++index) {
+            plan.content.push_back(std::format("tok{}", index));
+        }
+        if (run_to_limit) {
+            plan.finish_reason = "length";
+        }
+    }
+    if (max_tokens >= 0) {
+        const auto limit = static_cast<std::size_t>(max_tokens);
+        if (plan.reasoning.size() + plan.content.size() > limit) {
+            plan.finish_reason = "length";
+            if (plan.reasoning.size() >= limit) {
+                plan.reasoning.resize(limit);
+                plan.content.clear();
+            } else {
+                plan.content.resize(limit - plan.reasoning.size());
+            }
+        }
+    }
+    return plan;
+}
+
+rr::Result<void> stream_answer(HttpServer::ChunkWriter& writer, const rr::fake_engine::StreamPlan& plan,
+                               const StreamScript& script, std::atomic<int>& abandoned_streams) {
     const auto left = [&abandoned_streams]() -> rr::Result<void> {
         ++abandoned_streams;
         return rr::fail(rr::Errc::cancelled, "the client went away");
     };
     // Writes one event, in two halves when asked to (a pause mid-line).
-    const auto send = [&](const std::string& event) {
+    const auto send = [&](std::string_view data) {
+        const std::string event = rr::net::format_sse_event(data);
         if (script.split_pause_ms <= 0) {
             return writer.write(event);
         }
@@ -139,24 +253,40 @@ rr::Result<void> stream_tokens(HttpServer::ChunkWriter& writer, const StreamScri
                writer.write(std::string_view{event}.substr(half));
     };
 
-    if (!wait_for(writer, std::chrono::milliseconds{script.first_token_ms})) {
+    if (!wait_for(writer, std::chrono::milliseconds{script.first_token_ms})) {  // reading the prompt
         return left();
     }
-    for (int index = 0; index < 5; ++index) {
-        const std::string event = rr::net::format_sse_event(
-            std::format(R"({{"choices":[{{"delta":{{"content":"tok{}"}}}}]}})", index));
-        if (index == script.break_after) {
+    if (!send(rr::fake_engine::role_event(plan))) {
+        return left();
+    }
+    std::vector<std::string> tokens;
+    tokens.reserve(plan.reasoning.size() + plan.content.size());
+    for (const std::string& piece : plan.reasoning) {
+        tokens.push_back(rr::fake_engine::reasoning_event(plan, piece));
+    }
+    for (const std::string& piece : plan.content) {
+        tokens.push_back(rr::fake_engine::content_event(plan, piece));
+    }
+    for (std::size_t index = 0; index < tokens.size(); ++index) {
+        if (std::cmp_equal(index, script.break_after)) {
             if (script.break_mid_event) {
+                const std::string event = rr::net::format_sse_event(tokens[index]);
                 (void)writer.write(
                     std::string_view{event}.substr(0, event.find('\n') + 1));  // one whole line
             }
             return rr::fail(rr::Errc::internal, "the fake engine broke off");  // truncates the transfer
         }
-        if (!send(event) || !wait_for(writer, std::chrono::milliseconds{script.token_ms})) {
+        if (std::cmp_equal(index, script.error_after)) {
+            (void)send(
+                R"({"error":{"code":500,"message":"the fake engine failed mid-answer","type":"server_error"}})");
+            return rr::ok();  // llama-server ends the stream after an error, without [DONE]
+        }
+        if (!send(tokens[index]) || !wait_for(writer, std::chrono::milliseconds{plan.token_ms})) {
             return left();
         }
     }
-    if (!send(rr::net::format_sse_event("[DONE]"))) {
+    if (!send(rr::fake_engine::finish_event(plan)) ||
+        (plan.include_usage && !send(rr::fake_engine::usage_event(plan))) || !send("[DONE]")) {
         return left();
     }
     return rr::ok();
@@ -227,14 +357,15 @@ int main(int argc, char** argv) {
                     R"({{"model":"{}","choices":[{{"message":{{"role":"assistant","content":"hello from {}"}}}}]}})",
                     options.alias, options.alias));
         }
-        const StreamScript script{.token_ms = options.token_ms,
-                                  .first_token_ms = knob(*body, "first_token_ms", 0),
+        const StreamScript script{.first_token_ms = knob(*body, "first_token_ms", 0),
                                   .break_after = knob(*body, "break_after", -1),
                                   .break_mid_event = knob(*body, "break_mid_event", false),
-                                  .split_pause_ms = knob(*body, "split_pause_ms", 0)};
-        return Response::event_stream([&abandoned_streams, script](HttpServer::ChunkWriter& writer) {
-            return stream_tokens(writer, script, abandoned_streams);
-        });
+                                  .split_pause_ms = knob(*body, "split_pause_ms", 0),
+                                  .error_after = knob(*body, "error_after", -1)};
+        return Response::event_stream(
+            [&abandoned_streams, script, plan = plan_for(*body, options)](HttpServer::ChunkWriter& writer) {
+                return stream_answer(writer, plan, script, abandoned_streams);
+            });
     });
     server.route(rr::net::Method::post, "/v1/embeddings", [](const auto&) {
         return Response::json(200, R"({"data":[{"embedding":[0.1,0.2,0.3],"index":0}]})");

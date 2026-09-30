@@ -19,6 +19,7 @@
 #include <gtest/gtest.h>
 
 #include <rr/core/hash.hpp>
+#include <rr/fake_engine/stream.hpp>
 #include <rr/json/json.hpp>
 #include <rr/net/http_client.hpp>
 #include <rr/net/sse.hpp>
@@ -194,18 +195,14 @@ std::int64_t abandoned_streams(const Pod& pod, int engine_index) {
     return engine_stat(pod, engine_index, "abandoned_streams");
 }
 
-// The data of the events a fake engine streams: five tokens, then [DONE].
+// What the "chat" engine streams by default, llama-server's way: a role
+// chunk, five tokens (tok0 … tok4), a finish chunk, then [DONE].
+const fake_engine::StreamPlan kChatAnswer = fake_engine::default_plan("chat");
 std::string token_event(int index) {
-    return std::format(R"({{"choices":[{{"delta":{{"content":"tok{}"}}}}]}})", index);
+    return fake_engine::content_event(kChatAnswer, std::format("tok{}", index));
 }
 std::vector<std::string> all_tokens() {
-    std::vector<std::string> events;
-    events.reserve(6);
-    for (int index = 0; index < 5; ++index) {
-        events.push_back(token_event(index));
-    }
-    events.emplace_back("[DONE]");
-    return events;
+    return fake_engine::events(kChatAnswer);
 }
 
 std::size_t count(std::string_view text, std::string_view needle) {
@@ -347,9 +344,7 @@ TEST(Supervisor, StreamsTokensAsTheEngineProducesThem) {
                           }})));
     const auto finished = Clock::now();
     EXPECT_EQ(response.headers.get("Content-Type"), "text/event-stream");
-    ASSERT_EQ(events.size(), 6U);
-    EXPECT_THAT(events[0], HasSubstr("tok0"));
-    EXPECT_EQ(events[5], "[DONE]");
+    EXPECT_EQ(events, all_tokens());
     ASSERT_TRUE(first.has_value());
     EXPECT_LT(*first - started, finished - started - 40ms) << "tokens must not be buffered until the end";
 }
@@ -504,10 +499,11 @@ TEST(Supervisor, AStreamThatBreaksOffLooksBroken) {
     const StreamedCall call = stream_chat(pod, R"({"model":"chat","stream":true,"break_after":2})");
     EXPECT_ERRC(call.result, Errc::network)
         << "truncated: the hub retries instead of trusting a partial answer";
-    ASSERT_EQ(call.events.size(), 3U);
-    EXPECT_EQ(call.events[0], token_event(0));
-    EXPECT_EQ(call.events[1], token_event(1));
-    const auto error = net::error_from_event(call.events[2]);
+    ASSERT_EQ(call.events.size(), 4U);
+    EXPECT_EQ(call.events[0], fake_engine::role_event(kChatAnswer));
+    EXPECT_EQ(call.events[1], token_event(0));
+    EXPECT_EQ(call.events[2], token_event(1));
+    const auto error = net::error_from_event(call.events[3]);
     ASSERT_TRUE(error.has_value()) << "and says why, where an event fits";
     EXPECT_EQ(error->code(), Errc::network);
     EXPECT_THAT(error->describe(), HasSubstr("broke off"));
@@ -521,7 +517,8 @@ TEST(Supervisor, ABreakInsideAnEventLeavesNoGarbage) {
     const StreamedCall call =
         stream_chat(pod, R"({"model":"chat","stream":true,"break_after":2,"break_mid_event":true})");
     EXPECT_ERRC(call.result, Errc::network);
-    EXPECT_EQ(call.events, (std::vector<std::string>{token_event(0), token_event(1)}))
+    EXPECT_EQ(call.events, (std::vector<std::string>{fake_engine::role_event(kChatAnswer), token_event(0),
+                                                     token_event(1)}))
         << "the unfinished event is dropped by the parser, and nothing was added to it";
     EXPECT_EQ(call.raw.find("\"error\""), std::string::npos) << "no error event where none fits";
 }
