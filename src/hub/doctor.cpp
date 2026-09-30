@@ -159,18 +159,6 @@ std::optional<runpod::Pod> check_runpod(const DoctorInputs& inputs, std::vector<
     return std::move(*pod);
 }
 
-std::string describe_gpus(const std::vector<runtime_api::GpuInfo>& gpus) {
-    if (gpus.empty()) {
-        return "no GPU";
-    }
-    std::string text;
-    for (const runtime_api::GpuInfo& gpu : gpus) {
-        text += std::format("{}{} ({} MiB, {} used)", text.empty() ? "" : "; ", gpu.name,
-                            gpu.memory_total_mib, gpu.memory_used_mib);
-    }
-    return text;
-}
-
 void check_runtime(const DoctorInputs& inputs, const std::optional<runpod::Pod>& pod,
                    std::vector<Finding>& findings) {
     const std::string check = "runtime";
@@ -237,6 +225,18 @@ void check_runtime(const DoctorInputs& inputs, const std::optional<runpod::Pod>&
 }
 
 }  // namespace
+
+std::string describe_gpus(const std::vector<runtime_api::GpuInfo>& gpus) {
+    if (gpus.empty()) {
+        return "no GPU";
+    }
+    std::string text;
+    for (const runtime_api::GpuInfo& gpu : gpus) {
+        text += std::format("{}{} ({} MiB, {} used)", text.empty() ? "" : "; ", gpu.name,
+                            gpu.memory_total_mib, gpu.memory_used_mib);
+    }
+    return text;
+}
 
 std::string_view to_string(Severity severity) noexcept {
     switch (severity) {

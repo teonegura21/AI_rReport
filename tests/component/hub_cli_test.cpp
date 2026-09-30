@@ -208,6 +208,7 @@ TEST_F(Hub, StartsStopsAndReportsThePod) {
     const proc::RunResult status = rreport({"pod", "status"});
     EXPECT_EQ(status.status.code, 0);
     EXPECT_THAT(status.stdout_text, HasSubstr("$0.44/h"));
+    EXPECT_THAT(status.stdout_text, HasSubstr("profile test, no GPU")) << "a test machine has none";
     EXPECT_THAT(status.stdout_text, HasSubstr("squad (infantry): ready"));
 
     const proc::RunResult stopped = rreport({"pod", "stop"});

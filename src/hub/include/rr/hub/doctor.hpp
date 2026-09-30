@@ -28,6 +28,7 @@
 
 #include <rr/hub/hub_config.hpp>
 #include <rr/net/http_client.hpp>
+#include <rr/runtime_api/protocol.hpp>
 
 namespace rr::hub {
 
@@ -63,6 +64,9 @@ struct DoctorInputs {
 
 // Whether the findings let the hub work: no failures.
 [[nodiscard]] bool healthy(const std::vector<Finding>& findings) noexcept;
+
+// "NVIDIA GeForce RTX 4090 (24564 MiB, 20512 used)", one per GPU; "no GPU".
+[[nodiscard]] std::string describe_gpus(const std::vector<runtime_api::GpuInfo>& gpus);
 
 // A program on the PATH: the first executable file named `program` in one of
 // the directories of `path_variable` (colon-separated, like $PATH).

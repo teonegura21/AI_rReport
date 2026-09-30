@@ -20,7 +20,7 @@
 |---|---|---|
 | `doctor` | Checks the data directory, the library, the capture tools, RunPod and the runtime, and says what to do about each problem | 0 no failures (warnings allowed); 1 a failure |
 | `bench [options]` | Starts the pod if it is stopped, waits for its engines, and measures them (see below) | 0; 1 on failure |
-| `pod status` | The pod as RunPod reports it, and each engine's state | 0; 1 on failure |
+| `pod status` | The pod as RunPod reports it; then, from the runtime, its profile, its GPUs (VRAM total and used) and each engine's state | 0; 1 on failure |
 | `pod start [--no-wait]` | Starts the pod and waits until every engine is ready | 0; 1 on failure |
 | `pod stop` | Stops the pod; its `/workspace` volume is kept | 0; 1 on failure |
 | `config show [--origin]` | Prints every setting, secrets masked, optionally with where each value came from | 0 |

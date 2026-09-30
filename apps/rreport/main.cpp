@@ -331,6 +331,8 @@ int pod_command(const Global& global, std::string_view action, bool wait,
         if (status->status == runpod::PodStatus::running && endpoint.has_value()) {
             auto health = pod.runtime.health(stop);
             if (health.has_value()) {
+                (void)std::printf("  profile %s, %s\n", health->profile.c_str(),
+                                  describe_gpus(health->gpus).c_str());
                 for (const runtime_api::EngineInfo& engine : health->engines) {
                     (void)std::printf("  %s (%s): %s\n", engine.model.c_str(), engine.role.c_str(),
                                       std::string{to_string(engine.state)}.c_str());
