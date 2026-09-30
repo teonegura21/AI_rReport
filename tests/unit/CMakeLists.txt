@@ -18,6 +18,7 @@ if(RR_BUILD_HUB)
     add_subdirectory(db)
     add_subdirectory(llm)
     add_subdirectory(library)
+    add_subdirectory(hub)
 endif()
 
 # The runtime client is tested against the real runtime: it needs both halves.

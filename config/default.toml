@@ -1,0 +1,42 @@
+# rreport (the hub) — built-in defaults. Compiled into the binary.
+#
+# These defaults are also the schema: every settable key appears here with its
+# type, so a misspelt key or a wrong type fails at startup, with a suggestion,
+# instead of being ignored. Layers, each overriding the ones before:
+#
+#   these defaults
+#   < the config file          --config PATH, or RREPORT_CONFIG, or
+#                              ~/.config/rreport/config.toml when it exists
+#   < the secrets file         --secrets PATH, or ~/.config/rreport/secrets.toml
+#                              when it exists (must be chmod 600)
+#   < environment variables    RREPORT_<SECTION>__<KEY>, e.g. RREPORT_RUNPOD__POD_ID=abc123
+#   < --set section.key=value
+#
+# `rreport config show --origin` prints every value and where it came from.
+# Durations are written with a unit: "250ms", "30s", "15m", "24h".
+
+[hub]
+data_dir = ""                # empty: $XDG_DATA_HOME/rreport, or ~/.local/share/rreport
+library = "default"          # the library commands work in
+
+[runtime]
+url = ""                     # empty: RunPod's proxy URL for runpod.pod_id and runpod.port
+token = ""                   # the runtime's bearer token (its RR_RUNTIME_TOKEN)
+ready_timeout = "20m"        # how long a starting pod may take to load its models
+
+[runpod]
+api_key = ""                 # RunPod API key, for starting and stopping the pod
+pod_id = ""
+port = 8080                  # the runtime's port, exposed over HTTP by the pod's template
+api_url = "https://api.runpod.io/v2"   # RunPod REST API v2
+
+[llm]
+mode = "live"                # live · record (live, and keep every answer) · replay (recorded answers only)
+recordings = ""              # where record and replay keep answers; empty: <data_dir>/recordings
+idle_timeout = "60s"         # a streamed call silent this long has failed (the runtime pings every 15s)
+call_timeout = "30m"         # no single call may take longer
+attempts = 4                 # tries per call, when the failures are transient
+
+[log]
+level = "info"               # trace, debug, info, warn, error
+file = ""                    # JSON Lines, rotated; empty: the console only

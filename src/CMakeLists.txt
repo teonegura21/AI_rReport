@@ -25,4 +25,5 @@ if(RR_BUILD_HUB)
     add_subdirectory(llm)       # calling models
     add_subdirectory(library)   # a library's database: schema and repositories
     add_subdirectory(runtime_client)  # the pod, seen from the hub
+    add_subdirectory(hub)             # the hub's configuration, doctor and bench
 endif()
