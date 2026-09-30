@@ -75,7 +75,7 @@ cmake --preset tidy && cmake --build --preset tidy     # clang-tidy, warnings as
 for preset in dev dev-clang tsan; do     # stops at the first failure
     cmake --preset $preset && cmake --build --preset $preset && ctest --preset $preset || break
 done
-shellcheck --severity=style docker/runtime/entrypoint.sh
+shellcheck --severity=style docker/runtime/entrypoint.sh    # apt-get install shellcheck
 python3 -m unittest discover -s docker/runtime -p 'test_*.py'   # the pod image's entry point
 python3 -m unittest discover -s scripts -p 'test_*.py'
 ```

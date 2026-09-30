@@ -118,11 +118,11 @@ Tick each as you go. Where a check fails, the "If not" column says what it means
 
 | # | Check | How | Expected | If not |
 |---|---|---|---|---|
-| 1 | The pod boots, and reports its GPU | `rreport pod start`, then `rreport pod status` | `every engine ready`; then `profile <name>, <GPU> (<total> MiB, <used> used)` and each engine `ready` | The pod's log (RunPod console → the pod → Logs) ends with the entry point's reason |
+| 1 | The pod boots, and reports its GPU | `rreport pod start`, then `rreport pod status` | `every engine ready`; then `profile <name>, <GPU> (<total> MiB, <used> used)` and each engine `ready` | The pod's log (RunPod console → the pod → Logs) gives the entry point's reason, just before `stopping pod` |
 | 2 | Nothing without the token | `curl -i https://<pod>-8080.proxy.runpod.net/v1/health` | `401`, with `WWW-Authenticate: Bearer` | Any other answer is a bug: stop the pod, then report it |
 | 3 | The models are verified | On the pod (its web terminal): `rreport-runtime models verify --full --set models.profile=<name>`, with the profile `pod status` names | `verified` for every file | `mismatch`: the file on the volume is not the catalog's. Delete it and restart the pod |
 | 4 | An idle pod stops itself | Leave the pod alone for 15 minutes (or set `RR_RUNTIME_IDLE__STOP_AFTER=5m` on a test pod) | The pod shows `Exited` in the console; its log says `stopping the pod` | The log's error says which API refused which key (below) |
-| 5 | A pod that cannot start stops itself | Deploy a test pod from the template with `RR_RUNTIME_TOKEN` removed | The pod stops within a minute; its log ends `RR_RUNTIME_TOKEN is not set` | It restarts in a loop: stop it by hand, and report it |
+| 5 | A pod that cannot start stops itself | Deploy a test pod from the template with `RR_RUNTIME_TOKEN` removed | The pod stops within a minute; its log says `RR_RUNTIME_TOKEN is not set`, then `stopping pod` | It restarts in a loop: stop it by hand, and report it |
 | 6 | Long, silent calls survive RunPod's proxy | On a `24gb-infantry` or larger pod: `rreport bench --parallel 32 --prompt-tokens 1000 --output-tokens 2048` | The table's `failed` column is 0 for every level | `failed` > 0 at the high levels, with `network` errors: the proxy cut queued calls, and ADR-0014's keep-alive needs a look |
 | 7 | The benchmark table | Below | One table per GPU type | — |
 
