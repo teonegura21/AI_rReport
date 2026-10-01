@@ -61,7 +61,7 @@ Modules marked *(M0)* exist now; the rest arrive in the milestone shown.
 | `rr_runpod` *(M0)* | RunPod's pod API (REST v2): read, start and stop a pod; a pod stopping itself (ADR-0015) | core, net, json |
 | `rr_supervisor` *(M0)* | Runtime: auth, health, engines, the streaming relay (ADR-0014), model files (verified, resumable downloads), blobs, idle/dead-man stop through RunPod's API (ADR-0015), the runtime's configuration ([design](design/runtime.md)) | runtime_api, net, proc, blob, config, runpod, json, log, toml++ |
 | `rr_llm` *(M0)* | Calling models: one chat vocabulary (n choices, sampling presets), the OpenAI-compatible streaming provider, retries, accounting, record/replay, schema-validated answers with ordered fields ([design](design/llm.md)) | core, json, net, log |
-| `rr_library` *(M0)* | A library's database (ADR-0008): its schema (`migrations/`, compiled in) and repositories, starting with the model-call log | core, db, json, llm |
+| `rr_library` *(M0)* | A library's database (ADR-0008): its schema (`migrations/`, compiled in) and repositories: the model-call log, and a job's memo of its calls (ADR-0020) | core, db, json, llm |
 | `rr_runtime_client` *(M0)* | The hub's side of the pod: the runtime protocol, readiness, the runtime's model provider, `PodManager` | runtime_api, runpod, net, llm |
 | `rr_hub` *(M0)* | The hub's configuration; `ModelStack`, the providers every model call goes through (the runtime only, ADR-0017); operator tools: `doctor`, `bench` ([design](design/hub.md)) | config, runtime_client, library, llm |
 | `rr_agents` (M1) | Missions, squads, dispatcher, escalation, battle log | llm, db |

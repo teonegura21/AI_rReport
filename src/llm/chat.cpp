@@ -170,6 +170,53 @@ json::Json to_json(const ChatRequest& request) {
     return document;
 }
 
+json::Json to_json(const ChatResponse& response) {
+    json::Json choices = json::Json::array();
+    for (const Choice& choice : response.choices) {
+        choices.push_back({{"content", choice.content},
+                           {"reasoning", choice.reasoning},
+                           {"finish_reason", to_string(choice.finish)},
+                           {"completion_tokens", choice.completion_tokens}});
+    }
+    return {{"choices", std::move(choices)},
+            {"model", response.model},
+            {"usage",
+             {{"prompt_tokens", response.usage.prompt_tokens},
+              {"completion_tokens", response.usage.completion_tokens},
+              {"cached_prompt_tokens", response.usage.cached_prompt_tokens}}}};
+}
+
+namespace {
+
+Result<Choice> choice_from_json(const json::Json& document) {
+    Choice choice;
+    RR_TRY_ASSIGN(choice.content, json::get_string(document, "content"));
+    RR_TRY_ASSIGN(choice.reasoning, json::get_string(document, "reasoning"));
+    RR_TRY_ASSIGN(const std::string finish, json::get_string(document, "finish_reason"));
+    choice.finish = finish_reason_from_string(finish);
+    RR_TRY_ASSIGN(choice.completion_tokens, json::get_int(document, "completion_tokens"));
+    return choice;
+}
+
+}  // namespace
+
+Result<ChatResponse> response_from_json(const json::Json& document) {
+    ChatResponse response;
+    RR_TRY_ASSIGN(const json::Json* choices, json::find(document, "choices"));
+    if (!choices->is_array() || choices->empty()) {
+        return fail(Errc::invalid_argument, "'choices' must be a list of at least one answer");
+    }
+    for (const json::Json& entry : *choices) {
+        RR_TRY_ASSIGN(Choice choice, choice_from_json(entry));
+        response.choices.push_back(std::move(choice));
+    }
+    RR_TRY_ASSIGN(response.model, json::get_string(document, "model"));
+    RR_TRY_ASSIGN(response.usage.prompt_tokens, json::get_int(document, "usage.prompt_tokens"));
+    RR_TRY_ASSIGN(response.usage.completion_tokens, json::get_int(document, "usage.completion_tokens"));
+    RR_TRY_ASSIGN(response.usage.cached_prompt_tokens, json::get_int(document, "usage.cached_prompt_tokens"));
+    return response;
+}
+
 std::string request_key(std::string_view provider, const ChatRequest& request) {
     return json::content_hash(json::Json{{"provider", provider}, {"request", to_json(request)}}).hex();
 }

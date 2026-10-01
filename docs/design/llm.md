@@ -13,6 +13,8 @@ Every model call in rReport goes through `rr_llm`: the infantry's missions, the 
 | `src/llm/include/rr/llm/replay.hpp` | `RecordingProvider` and `ReplayProvider`: answers recorded once, replayed without a model |
 | `src/llm/include/rr/llm/structured.hpp` | `structured<T>()`: answers that satisfy a JSON schema and the caller's checks |
 | `src/llm/include/rr/llm/sampling.hpp` | `SamplingPreset` and `apply()`; the checks on every request's values; the rule against penalties |
+| `src/llm/include/rr/llm/memo.hpp` | `MemoProvider`: a job's memory of its calls, so a resume repeats none (ADR-0020); `derived_seed()` |
+| `src/library/include/rr/library/call_memo.hpp` | `CallMemo`: that memory, kept in the library database (`llm_memo`) |
 | `src/library/include/rr/library/call_log.hpp` | `CallLog`: the records, kept in the library database |
 
 ## A call, as it is wired
@@ -197,6 +199,22 @@ Pipeline tests (layer L3) run whole videos without a GPU:
 - **What is recorded.** Only successes. A replayed transient failure would make a test depend on luck.
 - **Replay is strict.** A request without a recording fails with `not_found` and names its key. A recording copied under another call's name is refused as `integrity`.
 
+## A job's memory of its calls
+
+A job makes thousands of calls over an hour or more, and a pod stop, a crash or Ctrl-C can interrupt it anywhere. A finished stage is a cache hit (ADR-0004); an interrupted one would start over. `MemoProvider` wraps a job's stack (above everything `ModelStack` builds) and remembers each call's answer as it arrives, so a resumed job repeats at most the calls that were in flight (ADR-0020).
+
+| Rule | Why |
+|---|---|
+| The key is the request's key **and the served model's checksum** (`memo_key()`) | A request names a role ("commander"), and the role's model can change between a crash and a resume |
+| A request that may sample needs a seed: temperature unset (servers then sample) or above 0, without one, is refused | Otherwise three samples of a window are three identical requests, and all three get the first one's answer |
+| Seeds are derived: `base + sample`, with `base = BLAKE3(salt, stage, mission) mod 2³¹` (`derived_seed()`) | Deterministic, so a resume asks the same questions. Consecutive, so a request for n choices (llama-server: choice i gets seed + i) draws the same seeds as n single requests. Below 2³² − 1, which llama-server reads as "pick one at random" |
+| Only successes are kept, the first under a key stays | A failure is retried, never replayed |
+| A failure to keep an answer is logged; the answer is still returned | Losing a memo entry costs one repeated call, never the answer already paid for |
+| A memo that cannot be read fails the call | An unreadable store is a fault to report, not a reason to pay for the call again unnoticed |
+| A remembered answer reaches the sink whole, choice by choice, and is not accounted again | It was accounted when it was made |
+
+`CallMemo` keeps the answers in the library database (`migrations/0002_call_memo.sql`: `llm_memo`, keyed by job and memo key, one row per answer, committed as it arrives), next to the job's artifacts and as durable as they are. `forget()` deletes a job's rows once its results are committed. The derivation of seeds is pinned by a test against values computed independently (Python's `blake3` over the same canonical JSON): changing it would orphan every memo, and break the eval's common random numbers between versions.
+
 ## Accounting
 
 Tokens and GPU time are the product's cost (plan §4.3). `AccountedProvider` hands one `CallRecord` per attempt to a `CallRecorder`. `rr_library`'s `CallLog` keeps records in the library database (`migrations/0001_accounting.sql`):
@@ -283,6 +301,12 @@ Two findings from these runs were fixed before they counted:
 | Recordings carry their format; an older one is refused | `RecordsAnswersAndReplaysThemWithoutAModel`, `ARecordingInAnOlderFormatIsRefusedNotGuessedAt` |
 | Replay streams each choice to its index | `EveryChoiceIsRecordedAndReplayedToItsIndex` |
 | The record's finish is the least complete choice's | `ACallOfManyChoicesIsRecordedAsTheLeastCompleteOfThem` |
+| Memo: a sampled request needs a seed; an unset temperature samples | `ARequestThatMaySampleNeedsASeed` |
+| Memo: the served model is part of the key | `TheServedModelIsPartOfTheKey` |
+| Memo: answers are kept, and given back from memory | `AnAnswerGivenOnceIsGivenFromMemoryAfterwards` |
+| Memo: a failure to keep is not fatal; a failure to read is | `AnAnswerOutlivesAFailureToKeepIt`, `AMemoThatCannotBeReadOrAModelThatCannotBeNamedFailsTheCall` |
+| Memo: seeds are spaced by sample, salted, masked below 2³¹, and pinned | `SeedsAreDerivedSoThatAResumeAsksTheSameQuestions` |
+| `CallMemo`: one memory per job; the first answer stays; forgetting one job leaves the others | `EachJobHasItsOwnMemory`, `TheFirstAnswerStays` |
 | One repair | `SendsAnInvalidAnswerBackWithItsProblems` |
 | Validation against the full schema, even under a grammar | `SendsAnInvalidAnswerBackWithItsProblems` |
 | Thinking off for structured calls | `AcceptsAValidAnswer` |

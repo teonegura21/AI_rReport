@@ -6,6 +6,7 @@ rr_add_module(llm
     SOURCES
         accounting.cpp
         chat.cpp
+        memo.cpp
         openai_provider.cpp
         provider.cpp
         replay.cpp

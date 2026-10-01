@@ -230,4 +230,12 @@ struct StreamSink {
 // what recordings store for people to read.
 [[nodiscard]] json::Json to_json(const ChatRequest& request);
 
+// The JSON form of a response, as recordings and a job's memo keep it: its
+// choices, model and usage. Not its timings, which describe one run of it.
+[[nodiscard]] json::Json to_json(const ChatResponse& response);
+
+// The inverse: Errc::invalid_argument for a document that is not a response,
+// or has no choice.
+[[nodiscard]] Result<ChatResponse> response_from_json(const json::Json& document);
+
 }  // namespace rr::llm
