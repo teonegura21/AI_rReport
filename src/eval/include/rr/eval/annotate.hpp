@@ -35,7 +35,9 @@
 //   engine even alone is a finding. The sizes, and what each engine holds,
 //   enter the stage's key.
 //
-// Thread-safety: pure functions; the stage is immutable.
+// Thread-safety: the stage is immutable, and the functions pure, but for
+//   start_annotation() and run_annotation(), which read and write the eval's
+//   files and the library: one annotation of a video at a time.
 #pragma once
 
 #include <cstddef>

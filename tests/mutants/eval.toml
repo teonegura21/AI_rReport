@@ -333,7 +333,7 @@ file = "src/eval/gold.cpp"
 expect = "Gold.ProblemsSayWhatToCorrect"
   [[mutant.edit]]
   from = '''    if (!said_there(quote, start, end, transcript)) {'''
-  to = '''    if (false) {'''
+  to = '''    if (!said_there(quote, start, end, transcript) && false) {'''
 
 [[mutant]]
 name = "no-slack-before-a-stretch"
@@ -497,7 +497,7 @@ file = "src/eval/annotate.cpp"
 expect = "Drafts.ThatDoNotAreSentBackWithWhatToDoInstead"
   [[mutant.edit]]
   from = '''        } else if (!verbatim_in(quote, said_by(ids, transcript))) {'''
-  to = '''        } else if (false) {'''
+  to = '''        } else if (!verbatim_in(quote, said_by(ids, transcript)) && false) {'''
 
 [[mutant]]
 name = "a-term-is-not-checked"
