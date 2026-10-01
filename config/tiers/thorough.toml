@@ -1,0 +1,36 @@
+# The `thorough` tier: one careful pass, checked and repaired, with a judge
+# for the article (ADR-0018). Keys: see max.toml.
+#
+# The ADR's table leaves the video's chapters out of this tier's outline. The
+# tier uses them as fast and max do: a video's own chapters are its author's
+# sections, and no outline drawn by a model is truer.
+
+[outline]
+chapters = true
+samples = 1
+boundary_tolerance = 2
+quorum = 0.5
+thinking_budget = 8192
+
+[atomize]
+first = 1
+step = 0
+max = 1
+quorum = 0.5
+thinking = false
+repairs = 1
+recall_pass = true
+contested_to_commander = false
+
+[plan]
+mode = "assign"
+thinking_budget = 8192
+
+[write]
+drafts = 2
+thinking = false
+judge_top = 2
+repair_rounds = 2
+
+[seams]
+mode = "rewrite"

@@ -1,0 +1,37 @@
+# The `max` tier: the most intelligence the local models can give, and the
+# default (ADR-0018). Compiled into the hub; rr/reason/tier.hpp reads it.
+#
+# Each section is one stage's compute. Its values, filled with the defaults
+# for any left out, enter that stage's cache key in canonical form: change
+# one, and that stage and the stages after it run again, and nothing else.
+# Every key a tier may set is written out here.
+
+[outline]                 # the commander, thinking: sections and the video brief
+chapters = true           # use the video's own chapters when it has them
+samples = 3               # outlines drawn when it has none
+boundary_tolerance = 2    # sentences within which two outlines' boundaries agree
+quorum = 0.5              # the share of outlines a boundary needs (2 of 3)
+thinking_budget = 16384
+
+[atomize]                 # the infantry, in closed-world windows of the transcript
+first = 3                 # samples drawn at once; each sentence is voted on
+step = 0                  # more samples at a time while a sentence is contested…
+max = 3                   # …up to this many
+quorum = 0.66             # the share of votes a sentence's answer needs (2 of 3)
+thinking = false          # narrow, schema-bound labelling: thinking adds cost, not accuracy
+repairs = 1
+recall_pass = true        # re-ask the sentences that atoms barely cover
+contested_to_commander = true  # what the samples still disagree on, the commander decides, thinking
+
+[plan]                    # the commander, thinking
+mode = "assign"           # plan the article, and assign every atom to a paragraph (closed world)
+thinking_budget = 16384
+
+[write]                   # the commander drafts each section
+drafts = 4
+thinking = false          # thinking adds hallucinations when summarizing (ADR-0018); runbook R6 tests it
+judge_top = 2             # the drafts with fewest ledger violations that a judge then compares
+repair_rounds = 3         # targeted: only the failing sentences, with their evidence
+
+[seams]                   # the paragraphs where sections meet
+mode = "recheck"          # rewritten, then checked again
