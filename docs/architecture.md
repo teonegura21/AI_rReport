@@ -49,7 +49,7 @@ Modules marked *(M0)* exist now; the rest arrive in the milestone shown.
 
 | Module | Responsibility | Depends on |
 |---|---|---|
-| `rr_core` *(M0)* | `Result`/`Error`, strong IDs + ULIDs, time spans + clocks, BLAKE3/SHA-256, `Secret`, `RR_ASSERT`, `ThreadPool`, `Limiter`, careful POSIX file I/O (EINTR, short writes, fsync of files and directories, whole files replaced atomically) | std, BLAKE3, OpenSSL (crypto) |
+| `rr_core` *(M0)* | `Result`/`Error`, strong IDs + ULIDs, time spans + clocks, BLAKE3/SHA-256, `Secret`, `RR_ASSERT`, `ThreadPool`, `Limiter` (priorities; permits of several slots at once), careful POSIX file I/O (EINTR, short writes, fsync of files and directories, whole files replaced atomically) | std, BLAKE3, OpenSSL (crypto) |
 | `rr_log` *(M0)* | Structured logging (console + rotating JSONL) with per-thread context | core, nlohmann_json |
 | `rr_config` *(M0)* | Layered TOML config with value origins and secrets | core, toml++ |
 | `rr_json` *(M0)* | JSON parse/dump, canonical form, JSON-Schema validation, portable-schema lint; schemas keep their field order for models | core, nlohmann_json, jsoncons |
@@ -60,10 +60,10 @@ Modules marked *(M0)* exist now; the rest arrive in the milestone shown.
 | `rr_runtime_api` *(M0)* | Hub↔runtime protocol v1: paths, the health report, the streamed-call contract | core, json |
 | `rr_runpod` *(M0)* | RunPod's pod API (REST v2): read, start and stop a pod; a pod stopping itself (ADR-0015) | core, net, json |
 | `rr_supervisor` *(M0)* | Runtime: auth, health, engines, the streaming relay (ADR-0014), model files (verified, resumable downloads), blobs, idle/dead-man stop through RunPod's API (ADR-0015), the runtime's configuration ([design](design/runtime.md)) | runtime_api, net, proc, blob, config, runpod, json, log, toml++ |
-| `rr_llm` *(M0)* | Calling models: one chat vocabulary, the OpenAI-compatible streaming provider, retries, accounting, record/replay, schema-validated answers ([design](design/llm.md)) | core, json, net, log |
+| `rr_llm` *(M0)* | Calling models: one chat vocabulary (n choices, sampling presets), the OpenAI-compatible streaming provider, retries, accounting, record/replay, schema-validated answers with ordered fields ([design](design/llm.md)) | core, json, net, log |
 | `rr_library` *(M0)* | A library's database (ADR-0008): its schema (`migrations/`, compiled in) and repositories, starting with the model-call log | core, db, json, llm |
 | `rr_runtime_client` *(M0)* | The hub's side of the pod: the runtime protocol, readiness, the runtime's model provider, `PodManager` | runtime_api, runpod, net, llm |
-| `rr_hub` *(M0)* | The hub's configuration and operator tools: `doctor`, `bench` ([design](design/hub.md)) | config, runtime_client, library, llm |
+| `rr_hub` *(M0)* | The hub's configuration; `ModelStack`, the providers every model call goes through (the runtime only, ADR-0017); operator tools: `doctor`, `bench` ([design](design/hub.md)) | config, runtime_client, library, llm |
 | `rr_agents` (M1) | Missions, squads, dispatcher, escalation, battle log | llm, db |
 | `rr_media`, `rr_text`, `rr_transcript` (M1) | Capture sources, captions, frames, alignment | proc, blob |
 | `rr_pipeline`, `rr_fidelity`, `rr_report` (M1) | Stages + executor, ledger checks, rendering | all of the above |

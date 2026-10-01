@@ -180,14 +180,14 @@ Result<runtime_api::HealthReport> RuntimeClient::wait_until_ready(
 
 std::unique_ptr<llm::LlmProvider> runtime_provider(const net::HttpClient& http, const Endpoint& endpoint,
                                                    CallLimits limits) {
-    return std::make_unique<llm::OpenAiProvider>(
-        http, llm::OpenAiOptions{.name = "runtime",
-                                 .base_url = endpoint.url,
-                                 .api_key = endpoint.token,
-                                 .dialect = llm::Dialect::llama_server,
-                                 .caps = {.json_schema = true, .images = true, .thinking = true},
-                                 .idle_timeout = limits.idle_timeout,
-                                 .call_timeout = limits.call_timeout});
+    return std::make_unique<llm::OpenAiProvider>(http,
+                                                 llm::OpenAiOptions{.name = std::string{kRuntimeProviderName},
+                                                                    .base_url = endpoint.url,
+                                                                    .api_key = endpoint.token,
+                                                                    .dialect = llm::Dialect::llama_server,
+                                                                    .caps = kRuntimeProviderCaps,
+                                                                    .idle_timeout = limits.idle_timeout,
+                                                                    .call_timeout = limits.call_timeout});
 }
 
 }  // namespace rr::runtime_client

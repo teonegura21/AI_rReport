@@ -26,7 +26,15 @@ structured<T>()                     schema, checks, one repair
           └ OpenAiProvider          one streamed attempt over HTTP
 ```
 
-In record mode a `RecordingProvider` sits above the live provider. In replay mode a `ReplayProvider` replaces the live one, and never calls a model.
+The hub builds this stack in one place, `hub::ModelStack` (`src/hub/model_stack.hpp`), and only against the runtime: ADR-0017's one model endpoint is a property of that code. It wires `llm.mode`, outermost first:
+
+| Mode | Stack | Why the order |
+|---|---|---|
+| `live` | retries → accounting → the runtime | Retries above accounting: every attempt is a record, so a flaky pod shows as several attempts at one call |
+| `record` | recording → retries → accounting → the runtime | The recording above the retries: a call is recorded once, after it succeeded |
+| `replay` | retries → accounting → recorded answers | No runtime, no network. The accounting stays, so a replayed job reports what its recordings cost |
+
+The benchmark builds the same stack without retries, since a failed call is a result for it, and refuses any mode but `live`. A replayed benchmark would measure nothing.
 
 The vocabulary says *what* is asked, never how a server spells it:
 
@@ -149,7 +157,7 @@ What llama.cpp does with them at the image's pin (`7fe450e`, `tools/server/serve
 Test-time compute samples: k drafts of a section, k labellings of a window (ADR-0018). `ChatRequest::n` asks for them in one request, and llama-server makes that cheap. Its behaviour at `7fe450e`:
 - **The prompt is read once.** The request's task gets n − 1 child tasks. When the parent has read the prompt, its attention cache is *copied* to the children's slots (`copy_state_to()`), so k samples cost one prompt.
 - **Choice i is sampled with the seed + i** (`server_task::add_child()`). This is why derived seeds are spaced as ADR-0020 says.
-- **It needs n free slots at once.** Until they are free, the request waits. With fewer slots in all it would wait forever, so a caller must never ask a model for more choices than its slots (`bench --n` checks this; the army's limiter will take k slots for k choices, plan P4).
+- **It needs n free slots at once.** Until they are free, the request waits. With fewer slots in all it would wait forever, so a caller must never ask a model for more choices than its slots. `bench --n` checks this, and `Limiter::acquire(stop, priority, Slots{k})` holds k slots for k choices; it fails at once, rather than waiting forever, when k exceeds the limiter's capacity (`rr/core/limiter.hpp`).
 - **Choice 0 is the request itself**, and the children are 1 … n − 1 (`server_response_reader::post_tasks()`).
 
 How rReport reads such an answer (`ChatStreamReader`):

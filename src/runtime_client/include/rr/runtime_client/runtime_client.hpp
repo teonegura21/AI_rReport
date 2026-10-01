@@ -93,9 +93,16 @@ struct CallLimits {
     std::optional<std::chrono::milliseconds> call_timeout{};
 };
 
+// The name runtime_provider() files its calls under (call records,
+// recordings, request keys), and what it can do. A replay of its calls must
+// use both, or no recorded key would match.
+inline constexpr std::string_view kRuntimeProviderName = "runtime";
+inline constexpr llm::ProviderCaps kRuntimeProviderCaps{
+    .json_schema = true, .images = true, .thinking = true};
+
 // A model provider aimed at the runtime: the OpenAI-compatible relay to its
-// llama-server engines, with the runtime's token. Its name, "runtime", is
-// what call records and recordings file its calls under. `http` must outlive it.
+// llama-server engines, with the runtime's token, named kRuntimeProviderName.
+// `http` must outlive it.
 [[nodiscard]] std::unique_ptr<llm::LlmProvider> runtime_provider(const net::HttpClient& http,
                                                                  const Endpoint& endpoint,
                                                                  CallLimits limits = {});

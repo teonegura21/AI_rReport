@@ -38,9 +38,9 @@
 #include <rr/hub/bench.hpp>
 #include <rr/hub/doctor.hpp>
 #include <rr/hub/hub_config.hpp>
+#include <rr/hub/model_stack.hpp>
 #include <rr/library/call_log.hpp>
 #include <rr/library/library.hpp>
-#include <rr/llm/accounting.hpp>
 #include <rr/log/log.hpp>
 #include <rr/net/http_client.hpp>
 #include <rr/proc/termination_signals.hpp>
@@ -209,6 +209,11 @@ int bench(const Global& global, const BenchFlags& flags, const proc::Termination
         return failed(kBadConfiguration, hub.error());
     }
     const HubSettings& settings = hub->settings;
+    if (settings.llm_mode != LlmMode::live) {
+        return failed(
+            kBadConfiguration,
+            Error{Errc::invalid_argument, "bench measures the pod's models: run it with llm.mode = live"});
+    }
     const auto endpoint = configured_runtime(settings);
     if (!endpoint.has_value()) {
         return failed(kBadConfiguration, endpoint.error());
@@ -258,9 +263,11 @@ int bench(const Global& global, const BenchFlags& flags, const proc::Termination
         return failed(kFailure, database.error());
     }
     library::CallLog calls{*database};
-    const auto model = runtime_client::runtime_provider(http, **endpoint, settings.call_limits);
-    const llm::AccountedProvider accounted{*model, calls, SystemClock::instance()};
-    auto result = run_bench(accounted, runtime, options, stop, [](std::string_view line) {
+    auto models = ModelStack::build(settings, http, calls, SystemClock::instance(), {.retries = false});
+    if (!models.has_value()) {
+        return failed(kBadConfiguration, models.error());
+    }
+    auto result = run_bench(models->provider(), runtime, options, stop, [](std::string_view line) {
         (void)std::fprintf(stderr, "bench: %.*s\n", static_cast<int>(line.size()), line.data());
     });
     if (!result.has_value()) {

@@ -159,6 +159,26 @@ std::optional<runpod::Pod> check_runpod(const DoctorInputs& inputs, std::vector<
     return std::move(*pod);
 }
 
+// Where model calls go: the pod's runtime, and nowhere else (ADR-0017), or
+// recorded answers in replay mode.
+void check_models(const DoctorInputs& inputs, std::vector<Finding>& findings) {
+    const HubSettings& settings = *inputs.settings;
+    const std::string check = "models";
+    if (settings.llm_mode == LlmMode::replay) {
+        findings.push_back({check, Severity::ok,
+                            std::format("replayed from {}: no model is called", settings.recordings.string()),
+                            ""});
+    } else if (!settings.runtime.has_value()) {
+        findings.push_back({check, Severity::warning, "none can be called: no runtime is configured", ""});
+    } else {
+        findings.push_back(
+            {check, Severity::ok,
+             std::format("local only: every call goes to the runtime at {}{}", settings.runtime->url,
+                         settings.llm_mode == LlmMode::record ? ", and is recorded" : ""),
+             ""});
+    }
+}
+
 void check_runtime(const DoctorInputs& inputs, const std::optional<runpod::Pod>& pod,
                    std::vector<Finding>& findings) {
     const std::string check = "runtime";
@@ -258,6 +278,7 @@ std::vector<Finding> run_doctor(const DoctorInputs& inputs) {
     check_library(inputs, findings);
     check_tools(inputs, findings);
     const std::optional<runpod::Pod> pod = check_runpod(inputs, findings);
+    check_models(inputs, findings);
     check_runtime(inputs, pod, findings);
     return findings;
 }

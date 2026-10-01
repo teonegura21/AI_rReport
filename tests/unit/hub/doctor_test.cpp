@@ -127,6 +127,8 @@ TEST_F(DoctorTest, AHubWithoutAPodIsHealthyAndSaysWhatIsMissing) {
     EXPECT_EQ(about(findings, "RunPod").severity, Severity::warning);
     EXPECT_EQ(about(findings, "runtime").severity, Severity::warning);
     EXPECT_THAT(about(findings, "runtime").advice, HasSubstr("runpod.pod_id"));
+    EXPECT_EQ(about(findings, "models").severity, Severity::warning);
+    EXPECT_THAT(about(findings, "models").detail, HasSubstr("no runtime is configured"));
     // In order: the data directory first, the runtime last.
     EXPECT_EQ(findings.front().check, "data directory");
     EXPECT_EQ(findings.back().check, "runtime");
@@ -175,6 +177,10 @@ TEST_F(DoctorTest, ChecksTheRuntime) {
     EXPECT_EQ(about(ready, "runtime").severity, Severity::ok);
     EXPECT_THAT(about(ready, "runtime").detail, HasSubstr("profile 24gb, RTX 4090 (24564 MiB, 20000 used)"));
     EXPECT_THAT(about(ready, "runtime").detail, HasSubstr("commander (commander) ready"));
+    EXPECT_EQ(about(ready, "models").severity, Severity::ok);
+    EXPECT_THAT(about(ready, "models").detail,
+                HasSubstr("local only: every call goes to the runtime at http"))
+        << "ADR-0017: one model endpoint";
 
     runtime().set(runtime_api::EngineState::starting, std::string{kHubVersion});
     EXPECT_EQ(about(run(), "runtime").severity, Severity::warning) << "still loading";
@@ -189,6 +195,14 @@ TEST_F(DoctorTest, ChecksTheRuntime) {
 
     use_runtime("");
     EXPECT_THAT(about(run(), "runtime").detail, HasSubstr("runtime.token is not set"));
+}
+
+TEST_F(DoctorTest, AReplayCallsNoModel) {
+    settings().llm_mode = LlmMode::replay;
+    settings().recordings = "/tmp/recorded";
+    const Finding models = about(run(), "models");
+    EXPECT_EQ(models.severity, Severity::ok);
+    EXPECT_EQ(models.detail, "replayed from /tmp/recorded: no model is called");
 }
 
 TEST_F(DoctorTest, AStoppedPodsRuntimeIsNotAskedFor) {

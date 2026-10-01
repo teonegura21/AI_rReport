@@ -285,6 +285,11 @@ TEST_F(Hub, ConfigurationMistakesAndSecrets) {
     EXPECT_EQ(typo.status.code, 2);
     EXPECT_THAT(typo.stderr_text, HasSubstr("did you mean 'runtime.token'"));
 
+    const proc::RunResult replayed = rreport({"bench"}, {"llm.mode=replay"});
+    EXPECT_EQ(replayed.status.code, 2);
+    EXPECT_THAT(replayed.stderr_text, HasSubstr("run it with llm.mode = live"))
+        << "a replay measures nothing";
+
     const proc::RunResult shown = rreport({"config", "show", "--origin"});
     EXPECT_EQ(shown.status.code, 0);
     EXPECT_THAT(shown.stdout_text, HasSubstr("RREPORT_RUNTIME__TOKEN")) << "where the token came from";

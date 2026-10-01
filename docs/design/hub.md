@@ -10,6 +10,7 @@
 | `src/hub/…/hub_config.hpp` | From configuration to `HubSettings`, with the rules unit-tested |
 | `src/hub/…/doctor.hpp` | The checks, as data (findings) |
 | `src/hub/…/bench.hpp` | The benchmark |
+| `src/hub/…/model_stack.hpp` | The providers every model call goes through: built against the runtime only (ADR-0017), wired by `llm.mode` ([llm.md](llm.md#a-call-as-it-is-wired)) |
 | `src/runtime_client/…/pod_manager.hpp` | Starting the pod and waiting until its engines are ready |
 | `src/runpod/…/runpod.hpp` | RunPod's pod API |
 | `config/default.toml` | The built-in defaults, which are also the schema |
@@ -18,7 +19,7 @@
 
 | Command | What it does | Exit codes |
 |---|---|---|
-| `doctor` | Checks the data directory, the library, the capture tools, RunPod and the runtime, and says what to do about each problem | 0 no failures (warnings allowed); 1 a failure |
+| `doctor` | Checks the data directory, the library, the capture tools, RunPod and the runtime, says where model calls go (`models`), and what to do about each problem | 0 no failures (warnings allowed); 1 a failure |
 | `bench [options]` | Starts the pod if it is stopped, waits for its engines, and measures them (see below) | 0; 1 on failure |
 | `pod status` | The pod as RunPod reports it; then, from the runtime, its profile, its GPUs (VRAM total and used) and each engine's state | 0; 1 on failure |
 | `pod start [--no-wait]` | Starts the pod and waits until every engine is ready | 0; 1 on failure |
@@ -138,6 +139,11 @@ Each rule was removed on purpose, and the named test was confirmed to fail.
 | Little room is a warning | `MissingToolsAndLittleRoomAreWarnings` |
 | A failure makes the hub unhealthy | `AnUnusableDataDirectoryIsAFailure` |
 | A version mismatch is reported | `ChecksTheRuntime` |
+| `doctor` says where model calls go | `ChecksTheRuntime`, `AReplayCallsNoModel` |
+| `ModelStack`: retries only when asked, above accounting | `TransientFailuresAreRetriedAndEachAttemptAccounted` |
+| `ModelStack`: recording only in record mode, once per call | `RecordModeKeepsEachCallOnce`, `EveryLiveCallGoesToTheRuntimeAndIsAccounted` |
+| `ModelStack`: replay calls no model | `AReplayCallsNoModelAndNeedsNoRuntime` |
+| `bench` refuses replay | `ConfigurationMistakesAndSecrets` |
 | Only a booting pod is waited for: a wrong token ends the wait | `AWrongTokenEndsTheWaitAtOnce` |
 | The proxy's 404 and 502 are waited out | `APodStillBootingBehindRunpodsProxyIsWaitedFor` |
 | `/ping` must answer `ok` | `RefusesARuntimeOfAnotherProtocol` |
