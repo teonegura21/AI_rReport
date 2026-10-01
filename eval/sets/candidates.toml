@@ -1,0 +1,401 @@
+# rReport's evaluation candidates: PROPOSED, not yet approved.
+#
+# What this file is
+#   The videos proposed for the eval set (ADR-0019). There are four types:
+#   talk, conversation, tutorial (visual) and narrative. The owner approves,
+#   swaps or strikes each one. Approved videos move to a set file
+#   (eval/sets/m2.toml) with a dev/test split, and `rreport eval fetch`
+#   (plan P16) snapshots their captions and metadata, pinned by hash.
+#
+# Licences
+#   ADR-0019 allows only CC BY or the US public domain. Every candidate below
+#   is a work of the US federal government: 17 U.S.C. §105 puts it in the US
+#   public domain. [licence.*] quotes each agency's own statement.
+#   - No CC BY candidate could be confirmed. YouTube shows that licence line
+#     only on the watch page, which this environment cannot reach.
+#   - A speaker who is not a federal employee (a guest panelist, a reporter)
+#     may hold rights in their own words. Those videos say
+#     all_speakers_federal = false; prefer the others for stored snapshots.
+#
+# What was checked, and what was not
+#   Every fact comes from search-engine text about official pages
+#   (checked = "search"). Nobody has opened the watch pages: youtube.com and
+#   the agency sites are blocked here. Before approving a video, check on its
+#   page:
+#     1. the uploader is the agency's own channel;
+#     2. the duration;
+#     3. the caption tracks:
+#          yt-dlp --skip-download --list-subs https://www.youtube.com/watch?v=<id>
+#        lists manual tracks under "Available subtitles" and machine ones
+#        under "Available automatic captions".
+#
+# Fields
+#   id                    YouTube video id (watch?v=<id>), or none yet
+#   type                  talk | conversation | tutorial | narrative
+#   title, agency
+#   published             "YYYY-MM-DD", or "YYYY-MM" / "YYYY" when only that was stated
+#   duration_min          minutes, when stated
+#   speakers              as found; "+ press" etc. marks non-federal voices
+#   all_speakers_federal  whether every voice is a federal employee
+#   captions              manual | auto | unknown (unknown for all, today)
+#   why                   what it tests
+#   risks                 what could disqualify it
+#   pick                  recommended for the first set
+#   m1                    proposed as an M1 acceptance video:
+#                         talk-20 · lecture-60 (auto captions) · interview-90
+#   checked               "search": facts from search text only
+
+status = "proposed"
+checked_on = "2026-10-01"
+
+[licence.nasa]
+basis = 'NASA content "generally [is] not subject to copyright in the United States" (nasa.gov/nasa-brand-center/images-and-media)'
+[licence.usgs]
+basis = '''USGS material is "considered to be in the U.S. public domain" (usgs.gov/copyright). The same page warns that a staff member's likeness or voice may carry publicity rights: relevant to showing media, not to quoting text.'''
+[licence.fda]
+basis = 'FDA website contents are "not copyrighted ... in the public domain" (fda.gov/about-fda/about-website/website-policies)'
+[licence.federal-reserve]
+basis = '''"Information on the Board's website is in the public domain" (federalreserve.gov/disclaimer.htm)'''
+[licence.army-university-press]
+basis = '"Pursuant to Title 17 Section 105 ... films are ... in the public domain" (Army University Press)'
+[licence.csb]
+basis = '''The Chemical Safety Board's site holds "public information that may be distributed or copied unless otherwise specified" (csb.gov/privacy-policy)'''
+[licence.nlm]
+basis = '"Government information at NLM Web sites is in the public domain" (NLM/NCBI)'
+[licence.copyright-office]
+basis = 'No site statement found. 17 U.S.C. §105, as the speakers are Copyright Office officials (an inference).'
+
+# ---------------------------------------------------------------------------
+# Talks and lectures
+# ---------------------------------------------------------------------------
+
+[[candidate]]
+id = "sYH4Cybgi8E"
+type = "talk"
+title = "FDA Grand Rounds: Adopting Large Language Models for Regulatory Review"
+agency = "fda"
+published = "2025-04-10"
+duration_min = 60          # the event's slot; the video may be shorter
+speakers = ["Joshua Xu (FDA)"]
+all_speakers_federal = true
+captions = "unknown"
+why = "Evaluating LLMs, deduplicating adverse-event reports; dense with numbers and terms"
+risks = "Federal uploads often carry manual captions; M1's lecture-60 needs auto captions only"
+pick = true
+m1 = "lecture-60"
+checked = "search"
+
+[[candidate]]
+id = "PQqDwD2yP7A"
+type = "talk"
+title = "FDA Grand Rounds: Statistical Considerations for Drug Development in Rare Disease"
+agency = "fda"
+published = "2026-01-15"
+duration_min = 60          # the event's slot
+speakers = ["Emily Morris (FDA)"]
+all_speakers_federal = true
+captions = "unknown"
+why = "Adaptive trial designs and statistical power: hedges, numbers, careful qualifications"
+risks = "Slides carry much of the content"
+pick = true
+checked = "search"
+
+[[candidate]]
+id = "dzlsx0hL0N8"        # inferred from search text: confirm
+type = "talk"
+title = "Copyright Office webinar: Registration Guidance for Works Containing AI-Generated Content"
+agency = "copyright-office"
+published = "2023-06-28"
+duration_min = 75
+speakers = ["Rob Kasunic", "Erik Bertin"]
+all_speakers_federal = true
+captions = "unknown"
+why = "Law meets AI; precise, hedged guidance; an official transcript (PDF) exists to check captions against"
+risks = "Over 60 minutes; the video id is inferred"
+pick = true
+checked = "search"
+
+[[candidate]]
+id = "AAJen8SyeHI"
+type = "talk"
+title = "FDA Grand Rounds: Menopausal Hormone Therapy Labeling"
+agency = "fda"
+published = "2026-04-23"
+duration_min = 60          # the event's slot
+speakers = ["N. Hazen (FDA)", "A. Johnson (FDA)"]
+all_speakers_federal = true
+captions = "unknown"
+why = "A contested decision (removing boxed warnings): tests that strong claims are not softened; two speakers"
+risks = ""
+pick = false
+checked = "search"
+
+[[candidate]]
+id = "08QREHDm1RA"
+type = "talk"
+title = "USGS PubTalk 04/2023: Gravity Never Sleeps (landslides)"
+agency = "usgs"
+published = "2023-04"
+duration_min = 69
+speakers = ["Jonathan Godt (USGS)"]
+all_speakers_federal = true
+captions = "unknown"
+why = "Hazard science with numbers; audience questions"
+risks = "The Q&A takes it past 60 minutes"
+pick = false
+checked = "search"
+
+[[candidate]]
+id = "xn7ZgJPhnIw"
+type = "talk"
+title = "USGS PubTalk: busting myths about Yellowstone"
+agency = "usgs"
+duration_min = 89
+speakers = ["Michael Poland (USGS)"]
+all_speakers_federal = true
+captions = "unknown"
+why = "Full of blunt statements: tests that the article keeps their force"
+risks = "Long"
+pick = false
+checked = "search"
+
+# ---------------------------------------------------------------------------
+# Conversations: podcasts, interviews, panels, briefings
+# ---------------------------------------------------------------------------
+
+[[candidate]]
+id = "2Nha1Zh63SA"
+type = "conversation"
+title = "FDA Expert Panel on SSRIs and Pregnancy"
+agency = "fda"
+published = "2025-07-21"
+duration_min = 120         # the event's slot; actual length unknown
+speakers = ["FDA Commissioner Makary", "10 panelists, e.g. Healy, Moncrieff, Urato"]
+all_speakers_federal = false
+captions = "unknown"
+why = "Eleven voices on a disputed topic; NPR reported the panel spread misinformation, a hard test of reporting claims without softening or endorsing them"
+risks = "The panelists are outside guests: their words may not be federal works"
+pick = true
+m1 = "interview-90"
+checked = "search"
+
+[[candidate]]
+id = "ZC4hpgNoumQ"
+type = "conversation"
+title = "NASA's Houston We Have a Podcast, Ep. 209: Artemis Flight Directors"
+agency = "nasa"
+published = "2021-08"
+speakers = ["Gary Jordan (host)", "Rick LaBrode", "Judd Frieling"]
+all_speakers_federal = true
+captions = "unknown"
+why = "Mission-operations jargon; NASA publishes a full transcript to check captions against"
+risks = "Duration unknown"
+pick = true
+checked = "search"
+
+[[candidate]]
+id = "aYhXoI-XSsc"
+type = "conversation"
+title = "Federal Reserve press conference after the July 2025 FOMC meeting"
+agency = "federal-reserve"
+published = "2025-07-30"
+duration_min = 60
+speakers = ["Jerome Powell", "+ press"]
+all_speakers_federal = false
+captions = "unknown"
+why = "Hedged language and precise numbers; an official transcript exists"
+risks = "Confirm the uploader is the Fed's own channel; reporters' questions are not federal works"
+pick = true
+checked = "search"
+
+[[candidate]]
+id = "S6vYHdH0AeE"
+type = "conversation"
+title = "NASA: The Color of Space"
+agency = "nasa"
+published = "2022-06"
+duration_min = 50
+speakers = ["seven astronauts", "Vanessa Wyche (moderator)"]
+all_speakers_federal = true
+captions = "unknown"
+why = "Eight voices; candid personal views on race: tests attribution and register"
+risks = "Possible music rights (irrelevant to captions); half documentary"
+pick = false
+checked = "search"
+
+[[candidate]]
+id = "nuBMnluJfs0"        # inferred from search text: confirm
+type = "conversation"
+title = "NASA briefing on its UAP (UFO) independent study report"
+agency = "nasa"
+published = "2023-09-14"
+speakers = ["Bill Nelson", "Nicola Fox", "Dan Evans", "David Spergel", "+ press"]
+all_speakers_federal = false
+captions = "unknown"
+why = "Careful hedging on a controversial topic"
+risks = "Spergel (the panel's chair) and the press are not federal employees; the id is inferred"
+pick = false
+checked = "search"
+
+# ---------------------------------------------------------------------------
+# Visual tutorials: slides, code, live demos (the weakest type so far)
+# ---------------------------------------------------------------------------
+
+[[candidate]]
+id = ""                    # YouTube id not found; on usgs.gov/media/videos/accessing-samples-and-water-quality-41124-webinar
+type = "tutorial"
+title = "USGS webinar: accessing samples and water-quality data"
+agency = "usgs"
+published = "2024-04-11"
+duration_min = 49
+speakers = ["the USGS water-data team"]
+all_speakers_federal = true
+captions = "unknown"
+why = "A walk-through of the data portal and its downloads: on-screen steps the talk refers to"
+risks = "No YouTube id yet"
+pick = true
+checked = "search"
+
+[[candidate]]
+id = ""                    # YouTube id not found; on usgs.gov/media/videos/modernized-usgs-water-data-application-programming-interfaces-apis
+type = "tutorial"
+title = "USGS webinar: the modernized water-data APIs"
+agency = "usgs"
+published = "2025-06"
+duration_min = 65          # the talk itself is about 33 minutes
+speakers = ["Mike Mahoney (USGS)", "Elise Hinman (USGS)"]
+all_speakers_federal = true
+captions = "unknown"
+why = "New API endpoints and the R and Python dataRetrieval packages: code on screen"
+risks = "No YouTube id yet"
+pick = true
+checked = "search"
+
+[[candidate]]
+id = "BLnYW33Mtb0"
+type = "tutorial"
+title = "NCBI webinar: Entrez Direct, part 1 of 4"
+agency = "nlm"
+speakers = ["NCBI staff"]
+all_speakers_federal = true
+captions = "unknown"
+why = "Command-line pipelines typed on screen"
+risks = "Duration unknown; part of a series"
+pick = true
+checked = "search"
+
+[[candidate]]
+id = "6vqLR9ozLjE"
+type = "tutorial"
+title = "USGS public webinar: modernizing water-data access"
+agency = "usgs"
+published = "2021-10"
+duration_min = 61
+speakers = ["the USGS water-data team"]
+all_speakers_federal = true
+captions = "unknown"
+why = "A live demo"
+risks = "Would need trimming"
+pick = false
+checked = "search"
+
+[[candidate]]
+id = "-LxSMAKHygU"
+type = "tutorial"
+title = "NASA Earthdata short webinar: the harmony-py Python library"
+agency = "nasa"
+published = "2026-05"
+speakers = ["Diane Fritz (a university data centre)"]
+all_speakers_federal = false
+captions = "unknown"
+why = "Python notebook code on screen"
+risks = "The presenter is not a federal employee"
+pick = false
+checked = "search"
+
+# ---------------------------------------------------------------------------
+# Narratives: documentaries, investigations
+# ---------------------------------------------------------------------------
+
+[[candidate]]
+id = "5p7EeTcktVU"        # inferred from search text: confirm
+type = "narrative"
+title = "Army University Press: Stalingrad, the Campaign"
+agency = "army-university-press"
+published = "2019"
+duration_min = 53
+speakers = ["narrator", "historians"]
+all_speakers_federal = true
+captions = "unknown"
+why = "Names, dates, unit numbers and doctrine terms: tests numbers and entities"
+risks = "Archival footage and music may carry their own rights (irrelevant to captions); the id is inferred"
+pick = true
+checked = "search"
+
+[[candidate]]
+id = "XuJtdQOU_Z4"
+type = "narrative"
+title = "CSB: Anatomy of a Disaster, the BP Texas City explosion"
+agency = "csb"
+published = "2008"
+duration_min = 56
+speakers = ["narrator", "CSB investigators"]
+all_speakers_federal = true
+captions = "unknown"
+why = "15 killed and 180 injured; blunt root-cause findings: tests that harsh conclusions keep their force"
+risks = "News footage and contractor-made animation inside"
+pick = true
+checked = "search"
+
+[[candidate]]
+id = "deXzTPe_TF4"        # which upload is official is unclear; a duplicate is jeOjmuAQWeE
+type = "narrative"
+title = "Army University Press: Stalingrad, the Commissar's House"
+agency = "army-university-press"
+published = "2018"
+duration_min = 39
+speakers = ["narrator", "historians"]
+all_speakers_federal = true
+captions = "unknown"
+why = "A shorter narrative of the same kind"
+risks = "As for the campaign film; confirm which upload is the press's own"
+pick = true
+checked = "search"
+
+# ---------------------------------------------------------------------------
+# M1's talk-20 (a ~20-minute talk with manual captions): no good fit found.
+# The closest:
+# ---------------------------------------------------------------------------
+
+[[candidate]]
+id = "Ai0tbgJT-bA"        # inferred from search text: confirm
+type = "talk"
+title = "FDA Direct, Ep. 8: Priorities for a New FDA"
+agency = "fda"
+duration_min = 30
+speakers = ["FDA Commissioner Makary"]
+all_speakers_federal = true
+captions = "unknown"
+why = "FDA posts episode transcripts, so manual captions are plausible"
+risks = "30 minutes, not 20; the id is inferred"
+pick = false
+m1 = "talk-20"
+checked = "search"
+
+# ---------------------------------------------------------------------------
+# Considered and excluded
+# ---------------------------------------------------------------------------
+#   DARPA "Voices from DARPA" podcast: permission comes with conditions
+#     (attribution, no implied endorsement): not a clean public-domain grant.
+#   Census Bureau videos: their policy says they are not licensed for
+#     commercial use.
+#   National Cancer Institute (NIH) channel: "copyright remains with the
+#     National Cancer Institute".
+#   Library of Congress events: the rights assessment is left to the user,
+#     and many speakers are outside guests.
+#   NASA JPL and contractor-run national labs: their staff are not federal
+#     employees.
+#   freeCodeCamp's main channel: freeCodeCamp says it owns those videos.
+#   TED, TEDx, MIT OpenCourseWare, Khan Academy: NC or ND licences.
+#   Over 60 minutes, kept in reserve: NASA "Cosmic Dawn" (uSMGENDH_QI, 96 min)
+#     and NASA "Planetary Defenders" (75 min; id not found).
