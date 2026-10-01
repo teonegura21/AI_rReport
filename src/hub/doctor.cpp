@@ -112,7 +112,10 @@ void check_tools(const DoctorInputs& inputs, std::vector<Finding>& findings) {
         {.program = "ffprobe", .role = "reads media metadata", .advice = "it comes with ffmpeg"},
     }};
     for (const Tool& tool : kTools) {
-        const auto found = inputs.find_program ? inputs.find_program(tool.program) : std::nullopt;
+        // yt-dlp is the one the configuration names: a name in PATH, or a path.
+        const std::string_view program =
+            tool.program == "yt-dlp" ? std::string_view{inputs.settings->ytdlp} : tool.program;
+        const auto found = inputs.find_program ? inputs.find_program(program) : std::nullopt;
         if (found.has_value()) {
             findings.push_back({std::string{tool.program}, Severity::ok, found->string(), ""});
         } else {
@@ -289,6 +292,14 @@ bool healthy(const std::vector<Finding>& findings) noexcept {
 }
 
 std::optional<std::filesystem::path> find_on_path(std::string_view program, std::string_view path_variable) {
+    if (program.find('/') != std::string_view::npos) {  // a path, as a shell takes it: not looked up
+        std::error_code error;
+        std::filesystem::path given{program};
+        if (std::filesystem::is_regular_file(given, error) && ::access(given.c_str(), X_OK) == 0) {
+            return given;
+        }
+        return std::nullopt;
+    }
     for (const std::string_view directory : split(path_variable, ':')) {
         std::filesystem::path candidate =
             std::filesystem::path{directory.empty() ? std::string_view{"."} : directory} / program;

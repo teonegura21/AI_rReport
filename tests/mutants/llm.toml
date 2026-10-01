@@ -1,0 +1,27 @@
+# Mutants of rr_llm: each removes one rule, and names the test that must fail
+# without it. Run: scripts/mutate.py tests/mutants/llm.toml
+# The module was mutation-tested in M0 (docs/design/llm.md); its specs are
+# ported here as the code they guard changes. What these found is in
+# docs/design/pipeline.md, "How the tests were validated".
+
+target = "rr_llm_tests"
+binary = "build/dev/tests/unit/llm/rr_llm_tests"
+timeout = 120
+
+# --- A preset in a cache key (sampling.cpp, plan P15) ---------------------------------
+
+[[mutant]]
+name = "a-budget-left-out-of-a-preset"
+file = "src/llm/sampling.cpp"
+expect = "Sampling.APresetIsWrittenWhole"
+  [[mutant.edit]]
+  from = '''                      {"thinking_budget", std::move(budget)},'''
+  to = '''                      {"thinking_budget", budget.is_null()},'''
+
+[[mutant]]
+name = "an-effort-left-out-of-a-preset"
+file = "src/llm/sampling.cpp"
+expect = "Sampling.APresetIsWrittenWhole"
+  [[mutant.edit]]
+  from = '''                      {"reasoning_effort", std::move(effort)}};'''
+  to = '''                      {"reasoning_effort", effort.is_null()}};'''

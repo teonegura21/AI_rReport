@@ -27,6 +27,7 @@ if(RR_BUILD_HUB)
     add_subdirectory(reason)
     add_subdirectory(oracle)
     add_subdirectory(library)
+    add_subdirectory(pipeline)
     add_subdirectory(hub)
 endif()
 

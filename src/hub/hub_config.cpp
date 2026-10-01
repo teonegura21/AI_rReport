@@ -221,6 +221,14 @@ Result<HubSettings> hub_settings_from_config(const config::Config& config, const
     RR_TRY_ASSIGN(settings.runpod, runpod_settings(config));
     RR_TRY_ASSIGN(settings.runtime, runtime_endpoint(config, settings.runpod));
     RR_TRY_ASSIGN(settings.ready_timeout, config.get_duration("runtime.ready_timeout"));
+    RR_TRY_ASSIGN(settings.ytdlp, config.get_string("media.ytdlp"));
+    if (settings.ytdlp.empty()) {
+        return fail(Errc::invalid_argument, "media.ytdlp is empty: name yt-dlp, or give its path");
+    }
+    RR_TRY_ASSIGN(settings.ytdlp_timeout, config.get_duration("media.ytdlp_timeout"));
+    if (settings.ytdlp_timeout.count() <= 0) {
+        return fail(Errc::invalid_argument, "media.ytdlp_timeout must be longer than nothing");
+    }
     RR_TRY(apply_llm_settings(config, settings));
     RR_TRY_ASSIGN(settings.sampling, sampling_presets(config));
     return settings;

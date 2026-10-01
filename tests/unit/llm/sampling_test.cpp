@@ -168,6 +168,21 @@ TEST(Sampling, APresetIsCheckedAsAWhole) {
     EXPECT_THAT(preset_problems(hot), ElementsAre(HasSubstr("top_p")));
 }
 
+TEST(Sampling, APresetIsWrittenWhole) {
+    EXPECT_EQ(to_json(kQwenThinking), json::parse(R"({"temperature": 1.0, "top_p": 0.95, "top_k": 20,
+        "min_p": 0.0, "presence_penalty": 0.0, "repeat_penalty": 1.0, "thinking": true,
+        "thinking_budget": {"tokens": 8192, "closing": "Answer now."}, "reasoning_effort": "medium"})")
+                                          .value());
+    SamplingPreset direct = kQwenThinking;
+    direct.thinking = false;
+    direct.thinking_budget.reset();
+    direct.reasoning_effort.reset();
+    const json::Json written = to_json(direct);
+    EXPECT_TRUE(written.at("thinking_budget").is_null()) << "absent is written, not left out";
+    EXPECT_TRUE(written.at("reasoning_effort").is_null());
+    EXPECT_NE(to_json(direct), to_json(kQwenThinking));
+}
+
 TEST(Sampling, EffortsHaveNames) {
     for (const ReasoningEffort effort :
          {ReasoningEffort::low, ReasoningEffort::medium, ReasoningEffort::high, ReasoningEffort::xhigh}) {

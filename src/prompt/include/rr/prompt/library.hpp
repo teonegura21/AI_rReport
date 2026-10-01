@@ -41,6 +41,7 @@
 
 #include <filesystem>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -48,6 +49,7 @@
 
 #include <rr/core/result.hpp>
 #include <rr/json/json.hpp>
+#include <rr/json/schema.hpp>
 
 namespace rr::prompt {
 
@@ -109,6 +111,12 @@ public:
     // The content hash of prompt `name`'s files as they are now: its two
     // templates, and its schema if it has one.
     [[nodiscard]] Result<std::string> content_hash(std::string_view name) const;
+
+    // Prompt `name`'s answer schema, compiled with its fields in the order
+    // written (rr/json/schema.hpp): what a mission sends with the prompt.
+    // Errc::not_found for an unknown prompt, or one whose answer is prose;
+    // Errc::invalid_argument for a schema that does not compile.
+    [[nodiscard]] Result<std::shared_ptr<const json::Schema>> answer_schema(std::string_view name) const;
 
     // Everything wrong with the library, one line each; empty when nothing is
     // (the L0 suite requires that):

@@ -4,7 +4,9 @@ rr_add_test_suite(hub
         bench_test.cpp
         doctor_test.cpp
         hub_config_test.cpp
+        job_army_test.cpp
         model_stack_test.cpp
     DEPS
         rr::fakes
-        rr::hub)
+        rr::hub
+        rr::library)

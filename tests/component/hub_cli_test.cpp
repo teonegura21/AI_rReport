@@ -179,7 +179,7 @@ TEST_F(Hub, DoctorChecksEverythingAndSaysSo) {
     EXPECT_EQ(result.status.code, 0) << result.stdout_text << result.stderr_text;
     // ok, or a warning on a disk with little room (CI runners): either way, found and writable.
     EXPECT_THAT(result.stdout_text, HasSubstr(std::format("] data directory: '{}'", data_dir().string())));
-    EXPECT_THAT(result.stdout_text, HasSubstr("[ok  ] library: 'default' (schema version 3)"));
+    EXPECT_THAT(result.stdout_text, HasSubstr("[ok  ] library: 'default' (schema version 4)"));
     EXPECT_THAT(result.stdout_text, HasSubstr("[ok  ] RunPod: pod pod123 is RUNNING"));
     EXPECT_THAT(result.stdout_text, HasSubstr("[ok  ] runtime:"));
     EXPECT_THAT(result.stdout_text, HasSubstr("chat (commander) ready, squad (infantry) ready"));
@@ -350,6 +350,75 @@ TEST_F(Hub, BenchTimesAColdStart) {
     EXPECT_EQ(runpod().actions("stop"), 1);
     EXPECT_EQ(runpod().actions("start"), 1);
     EXPECT_TRUE(unwrap(json::parse(unwrap(read_file(out))))["cold_start_ms"].is_number());
+}
+
+// --- Jobs ---------------------------------------------------------------------------------
+
+constexpr std::string_view kCaptions =
+    "WEBVTT\n\n00:00.000 --> 00:03.000\nRadium glows in the dark.\n\n00:03.000 --> 00:06.000\n"
+    "Pierre Curie heated it until it glowed.\n";
+
+// The job id a run of `rreport ingest` or `resume` names: "job <id> …".
+std::string job_in(const std::string& output) {
+    const std::size_t at = output.rfind("job ");
+    return at == std::string::npos ? std::string{} : output.substr(at + 4, 26);
+}
+
+TEST_F(Hub, IngestsACaptionFileWithoutStartingThePod) {
+    runpod().add_pod("pod123", "EXITED");
+    const std::filesystem::path captions = home().write_file("On radium.vtt", kCaptions);
+    const proc::RunResult first = rreport({"ingest", captions.string()});
+    ASSERT_EQ(first.status.code, 0) << first.stdout_text << first.stderr_text;
+    EXPECT_THAT(first.stdout_text, HasSubstr("is done: On radium"));
+    EXPECT_THAT(first.stderr_text, HasSubstr("transcript: done"));
+    EXPECT_EQ(runpod().status("pod123"), "EXITED")
+        << "punctuated captions need no model: the pod stays stopped";
+
+    const proc::RunResult second = rreport({"ingest", captions.string()});
+    ASSERT_EQ(second.status.code, 0);
+    EXPECT_THAT(second.stderr_text, HasSubstr("source: found done"));
+    EXPECT_THAT(second.stderr_text, HasSubstr("transcript: found done")) << "the stage cache answers";
+
+    const proc::RunResult listed = rreport({"jobs"});
+    ASSERT_EQ(listed.status.code, 0);
+    EXPECT_THAT(listed.stdout_text, HasSubstr(job_in(first.stdout_text)));
+    EXPECT_THAT(listed.stdout_text, HasSubstr("done"));
+
+    const proc::RunResult shown = rreport({"jobs", "show", job_in(second.stdout_text)});
+    ASSERT_EQ(shown.status.code, 0);
+    EXPECT_THAT(shown.stdout_text, HasSubstr("title:   On radium"));
+    EXPECT_THAT(shown.stdout_text, HasSubstr(std::format("source:  {}", captions.string())));
+    EXPECT_THAT(shown.stdout_text, HasSubstr("stage transcript   found done"));
+
+    const proc::RunResult resumed = rreport({"resume", job_in(first.stdout_text)});
+    EXPECT_EQ(resumed.status.code, 0);
+    EXPECT_THAT(resumed.stdout_text, HasSubstr("is done already"));
+}
+
+TEST_F(Hub, UnpunctuatedCaptionsWithoutAPodAreDoneAndSaySo) {
+    const std::filesystem::path captions =
+        home().write_file("auto.vtt",
+                          "WEBVTT\n\n00:00.000 --> 00:03.000\nso marie curie won two nobel prizes she\n\n"
+                          "00:03.000 --> 00:06.000\ncalled the element radium and it glowed\n");
+    const proc::RunResult result = rreport({"ingest", captions.string()}, {"runtime.url=", "runpod.pod_id="});
+    ASSERT_EQ(result.status.code, 0) << result.stdout_text << result.stderr_text;
+    EXPECT_THAT(result.stdout_text, HasSubstr("what the stages could not do:"));
+    EXPECT_THAT(result.stdout_text,
+                HasSubstr("transcript: The captions are not punctuated, and no pod is configured"));
+}
+
+TEST_F(Hub, AJobThatCannotBeDoneSaysWhy) {
+    const proc::RunResult missing = rreport({"ingest", (home() / "missing.vtt").string()});
+    EXPECT_EQ(missing.status.code, 1);
+    EXPECT_THAT(missing.stdout_text, HasSubstr("failed: cannot open"));
+    const proc::RunResult shown = rreport({"jobs", "show", job_in(missing.stdout_text)});
+    EXPECT_THAT(shown.stdout_text, HasSubstr("stage source       failed"));
+
+    const proc::RunResult tier = rreport({"ingest", (home() / "missing.vtt").string(), "--tier", "turbo"});
+    EXPECT_EQ(tier.status.code, 2) << "an unknown tier is refused before a job is made";
+    const proc::RunResult unknown = rreport({"resume", "01J00000000000000000000000"});
+    EXPECT_EQ(unknown.status.code, 1);
+    EXPECT_THAT(unknown.stderr_text, HasSubstr("rreport jobs"));
 }
 
 TEST_F(Hub, ConfigurationMistakesAndSecrets) {

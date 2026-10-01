@@ -4,6 +4,7 @@
 # into a product.
 rr_add_module(oracle
     SOURCES
+        answers.cpp
         oracle.cpp
     PUBLIC_DEPS
         rr::core

@@ -138,4 +138,25 @@ std::vector<std::string> preset_problems(const SamplingPreset& preset) {
     return problems;
 }
 
+json::Json to_json(const SamplingPreset& preset) {
+    json::Json budget = nullptr;
+    if (preset.thinking_budget.has_value()) {
+        budget = json::Json{{"tokens", preset.thinking_budget->tokens},
+                            {"closing", preset.thinking_budget->closing}};
+    }
+    json::Json effort = nullptr;
+    if (preset.reasoning_effort.has_value()) {
+        effort = std::string{to_string(*preset.reasoning_effort)};
+    }
+    return json::Json{{"temperature", preset.temperature},
+                      {"top_p", preset.top_p},
+                      {"top_k", preset.top_k},
+                      {"min_p", preset.min_p},
+                      {"presence_penalty", preset.presence_penalty},
+                      {"repeat_penalty", preset.repeat_penalty},
+                      {"thinking", preset.thinking},
+                      {"thinking_budget", std::move(budget)},
+                      {"reasoning_effort", std::move(effort)}};
+}
+
 }  // namespace rr::llm

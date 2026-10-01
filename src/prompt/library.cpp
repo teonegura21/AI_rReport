@@ -432,6 +432,23 @@ Result<std::string> Library::content_hash(std::string_view name) const {
     return hasher.finalize().hex();
 }
 
+Result<std::shared_ptr<const json::Schema>> Library::answer_schema(std::string_view name) const {
+    const PromptInfo* info = find(name);
+    if (info == nullptr) {
+        return fail(Errc::not_found, std::format("no prompt '{}' in {}", name, kManifest));
+    }
+    if (!info->schema.has_value()) {
+        return fail(Errc::not_found, std::format("prompt '{}' is answered in prose: it has no schema", name));
+    }
+    const auto file = files_.find(*info->schema);
+    if (file == files_.end()) {
+        return fail(Errc::not_found,
+                    std::format("prompt '{}': its schema '{}' is missing", name, *info->schema));
+    }
+    RR_TRY_ASSIGN(json::Schema schema, json::Schema::compile_text(file->second));
+    return std::make_shared<const json::Schema>(std::move(schema));
+}
+
 Result<Rendered> Library::render(std::string_view name, const json::Json& shared,
                                  const json::Json& order) const {
     if (find(name) == nullptr) {

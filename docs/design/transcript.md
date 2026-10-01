@@ -7,7 +7,7 @@ The transcript is the closed world everything in rReport answers to: sentences S
 | `rr_media` | Where captions come from: yt-dlp's description of a video, the captions chosen in the language spoken, yt-dlp run safely |
 | `rr_transcript` | Captions of four formats read into timed words; a model's punctuation laid onto automatic captions without changing a word; the words cut into numbered sentences |
 
-Everything here is deterministic code. The model that punctuates, and the stage that strings the steps together, come with the pipeline (P15).
+Everything here is deterministic code. The model that punctuates, and the stage that strings the steps together, are the pipeline's transcript stage ([pipeline.md](pipeline.md#the-transcript-stage)).
 
 ## Where captions come from
 

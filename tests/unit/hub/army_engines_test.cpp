@@ -1,5 +1,6 @@
 #include <rr/hub/army_engines.hpp>
 
+#include <format>
 #include <string>
 #include <vector>
 
@@ -31,13 +32,15 @@ Presets shipped_presets() {
 
 runtime_api::EngineInfo engine(std::string model, std::string role, int slots, int context, int ctx_per_slot,
                                bool kv_unified = false) {
+    std::string checksum = std::format("sha256 of {}", model);  // before `model` is moved from
     return runtime_api::EngineInfo{.model = std::move(model),
                                    .role = std::move(role),
                                    .state = runtime_api::EngineState::ready,
                                    .slots = slots,
                                    .context = context,
                                    .ctx_per_slot = ctx_per_slot,
-                                   .kv_unified = kv_unified};
+                                   .kv_unified = kv_unified,
+                                   .model_sha256 = std::move(checksum)};
 }
 
 // The 48 GB profile, as its pod reports it.
@@ -69,6 +72,7 @@ TEST(ArmyEngines, TheCommanderAndTheInfantryWithTheirFamiliesPresets) {
 
     const agents::Engine& commander = engines[0];
     EXPECT_EQ(commander.model, "qwen3.8-27b-q4");
+    EXPECT_EQ(commander.checksum, "sha256 of qwen3.8-27b-q4") << "the file behind the id";
     EXPECT_EQ(commander.roles, std::vector<std::string>{"commander"});
     EXPECT_EQ(commander.family, "qwen");
     EXPECT_EQ(commander.slots, 4);

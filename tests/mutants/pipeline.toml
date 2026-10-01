@@ -1,0 +1,451 @@
+# Mutants of rr_pipeline, and of the stage store it commits to: each removes
+# one rule of running a job's stages, keying their results, reading a source,
+# or punctuating captions, and names the test that must fail without it.
+# Run: scripts/mutate.py tests/mutants/pipeline.toml
+# What they found is in docs/design/pipeline.md, "How the tests were validated".
+
+target = "rr_pipeline_tests"
+binary = "build/dev/tests/unit/pipeline/rr_pipeline_tests"
+timeout = 120
+
+# --- The executor (executor.cpp) -------------------------------------------------
+
+[[mutant]]
+name = "the-cache-never-answers"
+file = "src/pipeline/executor.cpp"
+expect = "ExecutorTest.EachStageRunsOnceAndIsThenFoundDone"
+  [[mutant.edit]]
+  from = '''    if (cached.has_value()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-found-result-loses-its-findings"
+file = "src/pipeline/executor.cpp"
+expect = "ExecutorTest.EachStageRunsOnceAndIsThenFoundDone"
+  [[mutant.edit]]
+  from = '''        done.findings = cached->findings;'''
+  to = '''        done.findings = {};'''
+
+[[mutant]]
+name = "a-found-result-is-not-recorded"
+file = "src/pipeline/executor.cpp"
+expect = "ExecutorTest.EachStageRunsOnceAndIsThenFoundDone"
+  [[mutant.edit]]
+  from = '''        RR_TRY(store.reuse(job.id, name, key, *cached, started));'''
+  to = '''        (void)started;'''
+
+[[mutant]]
+name = "an-artifact-is-kept-unchecked"
+file = "src/pipeline/executor.cpp"
+expect = "ExecutorTest.AnArtifactThatBreaksItsSchemaIsNeverKept"
+  [[mutant.edit]]
+  from = '''            !valid.has_value()) {'''
+  to = '''            false) {'''
+
+[[mutant]]
+name = "a-stop-is-not-heard"
+file = "src/pipeline/executor.cpp"
+expect = "ExecutorTest.AStopEndsTheRunBeforeTheNextStage"
+  [[mutant.edit]]
+  from = '''    if (context.stop.stop_requested()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "run-is-not-told-its-fingerprint"
+file = "src/pipeline/executor.cpp"
+expect = "ExecutorTest.RunIsToldWhatItsKeyWasMadeFrom"
+  [[mutant.edit]]
+  from = '''    key = cache_key(stage, context.fingerprint, inputs, job.salt);
+'''
+  to = '''    key = cache_key(stage, context.fingerprint, inputs, job.salt);
+    context.fingerprint = nullptr;
+'''
+
+[[mutant]]
+name = "every-result-is-shared"
+file = "src/pipeline/executor.cpp"
+expect = "ExecutorTest.AResultKeptForItsJobAloneIsNotFoundByAnother"
+  [[mutant.edit]]
+  from = '''                                                                       .reusable = output.reusable}));'''
+  to = '''                                                                       .reusable = true}));'''
+
+[[mutant]]
+name = "a-failure-is-not-recorded"
+file = "src/pipeline/executor.cpp"
+expect = "ExecutorTest.AFailedStageEndsTheRunAndAResumeGoesOnFromIt"
+  [[mutant.edit]]
+  from = '''                store.record_failure(job.id, stage->name(), key, error.message(), started);'''
+  to = '''                Result<void>{};'''
+
+[[mutant]]
+name = "the-key-ignores-the-version"
+file = "src/pipeline/executor.cpp"
+expect = "CacheKey.NamesEverythingTheResultDependsOn"
+  [[mutant.edit]]
+  from = '''                   {"version", stage.version()},'''
+  to = '''                   {"version", 1},'''
+
+[[mutant]]
+name = "the-key-ignores-the-schema"
+file = "src/pipeline/executor.cpp"
+expect = "CacheKey.NamesEverythingTheResultDependsOn"
+  [[mutant.edit]]
+  from = '''                   {"schema", json::content_hash(schema->document()).hex()},'''
+  to = '''                   {"schema", schema != nullptr},'''
+
+[[mutant]]
+name = "the-key-ignores-the-fingerprint"
+file = "src/pipeline/executor.cpp"
+expect = "CacheKey.NamesEverythingTheResultDependsOn"
+  [[mutant.edit]]
+  from = '''                   {"fingerprint", fingerprint},'''
+  to = '''                   {"fingerprint", fingerprint.is_null()},'''
+
+[[mutant]]
+name = "the-key-ignores-the-inputs"
+file = "src/pipeline/executor.cpp"
+expect = "CacheKey.NamesEverythingTheResultDependsOn"
+  [[mutant.edit]]
+  from = '''                   {"inputs", std::move(hashes)}};'''
+  to = '''                   {"inputs", hashes.size()}};'''
+
+[[mutant]]
+name = "every-stage-takes-the-salt"
+file = "src/pipeline/executor.cpp"
+expect = "CacheKey.NamesEverythingTheResultDependsOn"
+  [[mutant.edit]]
+  from = '''    if (stage.samples()) {'''
+  to = '''    if (true) {'''
+
+[[mutant]]
+name = "no-stage-takes-the-salt"
+file = "src/pipeline/executor.cpp"
+expect = "ExecutorTest.OnlyAStageThatSamplesDrawsAgainForANewSalt"
+  [[mutant.edit]]
+  from = '''    if (stage.samples()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "the-army-in-the-order-reported"
+file = "src/pipeline/executor.cpp"
+expect = "ArmyFingerprint.NamesTheModelsAndHowTheySampleNotTheirSize"
+  [[mutant.edit]]
+  from = '''    std::ranges::sort(engines, {}, &agents::Engine::model);'''
+  to = '''    (void)engines.size();'''
+
+[[mutant]]
+name = "the-army-by-name-not-file"
+file = "src/pipeline/executor.cpp"
+expect = "ArmyFingerprint.NamesTheModelsAndHowTheySampleNotTheirSize"
+  [[mutant.edit]]
+  from = '''                                     {"checksum", engine->checksum},'''
+  to = '''                                     {"checksum", engine->model},'''
+
+[[mutant]]
+name = "a-stage-may-read-what-comes-after"
+file = "src/pipeline/executor.cpp"
+expect = "ExecutorTest.StagesMustComeAfterWhatTheyRead"
+  [[mutant.edit]]
+  from = '''            if (!before.contains(input)) {'''
+  to = '''            if (input.empty()) {'''
+
+[[mutant]]
+name = "two-stages-may-share-a-name"
+file = "src/pipeline/executor.cpp"
+expect = "ExecutorTest.StagesMustComeAfterWhatTheyRead"
+  [[mutant.edit]]
+  from = '''        if (!before.emplace(stage->name()).second) {'''
+  to = '''        if (!before.emplace(stage->name()).second && stage->name().empty()) {'''
+
+[[mutant]]
+name = "a-stage-without-its-schema"
+file = "src/pipeline/executor.cpp"
+expect = "ExecutorTest.StagesMustComeAfterWhatTheyRead"
+  [[mutant.edit]]
+  from = '''        if (knowledge::artifact_schemas().find(stage->schema()) == nullptr) {'''
+  to = '''        if (stage->schema().empty()) {'''
+
+[[mutant]]
+name = "needing-the-user-is-a-failure"
+file = "src/pipeline/executor.cpp"
+expect = "StatusAfter.AStopOrAPassingFailureCanBeResumed"
+  [[mutant.edit]]
+  from = '''            return library::JobStatus::needs_user;'''
+  to = '''            return library::JobStatus::failed;'''
+
+[[mutant]]
+name = "a-passing-failure-is-final"
+file = "src/pipeline/executor.cpp"
+expect = "StatusAfter.AStopOrAPassingFailureCanBeResumed"
+  [[mutant.edit]]
+  from = '''            return is_transient(error.code()) ? library::JobStatus::stopped : library::JobStatus::failed;'''
+  to = '''            return library::JobStatus::failed;'''
+
+# --- The stage store, as the executor commits to it (src/library/stage_store.cpp) --
+
+[[mutant]]
+name = "runs-in-another-order"
+file = "src/library/stage_store.cpp"
+expect = "ExecutorTest.AFailedStageEndsTheRunAndAResumeGoesOnFromIt"
+  [[mutant.edit]]
+  from = '''ORDER BY started_at_ms, stage",'''
+  to = '''ORDER BY stage DESC",'''
+
+# --- A job's run (job_run.cpp) ------------------------------------------------------
+
+[[mutant]]
+name = "a-job-is-not-saved-before-its-stages"
+file = "src/pipeline/job_run.cpp"
+expect = "JobRunTest.AJobIsSavedRunningBeforeItsStagesStart"
+  [[mutant.edit]]
+  from = '''    job.error.reset();
+    RR_TRY_ASSIGN(job, jobs.save(job));'''
+  to = '''    job.error.reset();'''
+
+[[mutant]]
+name = "an-old-error-stays"
+file = "src/pipeline/job_run.cpp"
+expect = "JobRunTest.AStoppedJobSaysWhyAndAResumeFinishesIt"
+  [[mutant.edit]]
+  from = '''    job.error.reset();'''
+  to = '''    (void)job.error;'''
+
+[[mutant]]
+name = "a-run-forgets-the-time-before"
+file = "src/pipeline/job_run.cpp"
+expect = "JobRunTest.AStoppedJobSaysWhyAndAResumeFinishesIt"
+  [[mutant.edit]]
+  from = '''    job.elapsed += '''
+  to = '''    job.elapsed = '''
+
+[[mutant]]
+name = "no-title"
+file = "src/pipeline/job_run.cpp"
+expect = "JobRunTest.ADoneJobHasItsTitleAndForgetsItsModelAnswers"
+  [[mutant.edit]]
+  from = '''        job.title = std::move(title);'''
+  to = '''        (void)title;'''
+
+[[mutant]]
+name = "every-stopped-job-failed"
+file = "src/pipeline/job_run.cpp"
+expect = "JobRunTest.AStoppedJobSaysWhyAndAResumeFinishesIt"
+  [[mutant.edit]]
+  from = '''        job.status = Executor::status_after(*report.error);'''
+  to = '''        job.status = library::JobStatus::failed;'''
+
+[[mutant]]
+name = "a-done-job-remembers-its-answers"
+file = "src/pipeline/job_run.cpp"
+expect = "JobRunTest.ADoneJobHasItsTitleAndForgetsItsModelAnswers"
+  [[mutant.edit]]
+  from = '''memo.forget();'''
+  to = '''Result<std::int64_t>{0};'''
+
+# --- The source stage (source.cpp) --------------------------------------------------
+
+[[mutant]]
+name = "a-changed-file-is-kept"
+file = "src/pipeline/source.cpp"
+expect = "SourceTest.AFileThatChangesWhileItIsReadIsNotKept"
+  [[mutant.edit]]
+  from = '''    if (blake3(content).hex() != context.fingerprint.at("content").get<std::string>()) {'''
+  to = '''    if (blake3(content).hex().empty() && context.fingerprint.is_null()) {'''
+
+[[mutant]]
+name = "empty-tags-kept"
+file = "src/pipeline/source.cpp"
+expect = "SourceTest.AVideoIsReadWithItsCaptionsInTheLanguageSpoken"
+  [[mutant.edit]]
+  from = '''    std::erase(video.tags, std::string{});'''
+  to = '''    (void)video.tags;'''
+
+[[mutant]]
+name = "an-untitled-video"
+file = "src/pipeline/source.cpp"
+expect = "SourceTest.AVideoWithoutATitleIsTitledByItsId"
+  [[mutant.edit]]
+  from = '''        video.title = video.id;'''
+  to = '''        video.title = "";'''
+
+[[mutant]]
+name = "a-file-keyed-by-its-path"
+file = "src/pipeline/source.cpp"
+expect = "SourceTest.ACaptionFileIsKeyedByItsNameAndItsBytes"
+  [[mutant.edit]]
+  from = '''    return json::Json{{"file", path.filename().string()}, {"content", blake3(content).hex()}};'''
+  to = '''    return json::Json{{"file", path.string()}, {"content", blake3(content).hex()}};'''
+
+[[mutant]]
+name = "unknown-is-an-empty-text"
+file = "src/pipeline/source.cpp"
+expect = "Source.IsWrittenAndReadBackAsItsSchemaSays"
+  [[mutant.edit]]
+  from = '''    return text.empty() ? json::Json(nullptr) : json::Json(std::string{text});'''
+  to = '''    return json::Json(std::string{text});'''
+
+[[mutant]]
+name = "an-address-in-capitals-is-a-file"
+file = "src/pipeline/source.cpp"
+expect = "Source.AWebAddressIsOneOfHttpsOrHttp"
+  [[mutant.edit]]
+  from = '''iequals_ascii(source.substr(0, scheme.size()), scheme);'''
+  to = '''source.substr(0, scheme.size()) == scheme;'''
+
+# --- The transcript stage (transcript_stage.cpp) ------------------------------------
+
+[[mutant]]
+name = "punctuated-captions-raise-the-army"
+file = "src/pipeline/transcript_stage.cpp"
+expect = "TranscriptStageTest.PunctuatedCaptionsAreCutAsTheyAreAndNoPodStarts"
+  [[mutant.edit]]
+  from = '''    if (transcript::punctuated(read.track.words)) {'''
+  to = '''    if (read.track.words.empty()) {'''
+
+[[mutant]]
+name = "captions-without-words-are-a-transcript"
+file = "src/pipeline/transcript_stage.cpp"
+expect = "TranscriptStageTest.CaptionsWithoutWordsAreRefused"
+  [[mutant.edit]]
+  from = '''    if (track.words.empty()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "punctuation-samples"
+file = "src/pipeline/transcript_stage.cpp"
+expect = "TranscriptStageTest.TheInfantryPunctuatesThemWithoutChangingAWord"
+  [[mutant.edit]]
+  from = '''                                    .temperature = 0.0,'''
+  to = '''                                    .temperature = 0.7,'''
+
+[[mutant]]
+name = "answers-unchecked"
+file = "src/pipeline/transcript_stage.cpp"
+expect = "TranscriptStageTest.AWindowNoModelPunctuatesKeepsTheCaptionsFormAndSaysWhere"
+  [[mutant.edit]]
+  from = '''            return punctuation_problems(words, window, answer.at("text").get<std::string>());'''
+  to = '''            (void)answer;
+            return std::vector<std::string>{};'''
+
+[[mutant]]
+name = "no-answer-is-taken"
+file = "src/pipeline/transcript_stage.cpp"
+expect = "TranscriptStageTest.TheInfantryPunctuatesThemWithoutChangingAWord"
+  [[mutant.edit]]
+  from = '''        if (outcome.verdict == agents::Verdict::accepted) {'''
+  to = '''        if (outcome.verdict == agents::Verdict::refused) {'''
+
+[[mutant]]
+name = "a-ceilings-result-is-shared"
+file = "src/pipeline/transcript_stage.cpp"
+expect = "TranscriptStageTest.AWindowAJobCeilingStoppedMakesTheResultThisJobsAlone"
+  [[mutant.edit]]
+  from = '''            done.reusable = false;'''
+  to = '''            done.reusable = true;'''
+
+[[mutant]]
+name = "a-refusal-is-unexplained"
+file = "src/pipeline/transcript_stage.cpp"
+expect = "TranscriptStageTest.AWindowTheModelsDeclineIsAFinding"
+  [[mutant.edit]]
+  from = '''        case agents::Verdict::refused:
+            return "the models declined to punctuate them";'''
+  to = '''        case agents::Verdict::refused:'''
+
+[[mutant]]
+name = "the-whole-description"
+file = "src/pipeline/transcript_stage.cpp"
+expect = "TranscriptStageTest.TheInfantryPunctuatesThemWithoutChangingAWord"
+  [[mutant.edit]]
+  from = '''    if (description.size() <= kBriefBytes) {'''
+  to = '''    if (description.size() <= 100 * kBriefBytes) {'''
+
+[[mutant]]
+name = "a-cut-loses-its-line-end"
+file = "src/pipeline/transcript_stage.cpp"
+expect = "TranscriptStageTest.TheInfantryPunctuatesThemWithoutChangingAWord"
+  [[mutant.edit]]
+  from = '''        kept = line + 1;'''
+  to = '''        kept = line;'''
+
+# --- Windows and answers (punctuation.cpp) ------------------------------------------
+
+[[mutant]]
+name = "the-shortest-pause"
+file = "src/pipeline/punctuation.cpp"
+expect = "Windows.ACutFallsWhereTheSpeakerPausedLongest"
+  [[mutant.edit]]
+  from = '''pause_before(words, end) > pause_before(words, *best);'''
+  to = '''pause_before(words, end) < pause_before(words, *best);'''
+
+[[mutant]]
+name = "ties-go-far-from-the-target"
+file = "src/pipeline/punctuation.cpp"
+expect = "Windows.WithoutPausesACutFallsNearestTheTarget"
+  [[mutant.edit]]
+  from = '''                                        distance(end) < distance(*best);'''
+  to = '''                                        distance(end) > distance(*best);'''
+
+[[mutant]]
+name = "a-window-below-its-least"
+file = "src/pipeline/punctuation.cpp"
+expect = "Windows.ACutFallsWhereTheSpeakerPausedLongest"
+  [[mutant.edit]]
+  from = '''        if (length < size.least) {'''
+  to = '''        if (length < 1) {'''
+
+[[mutant]]
+name = "a-window-past-its-most"
+file = "src/pipeline/punctuation.cpp"
+expect = "Windows.ACutFallsWhereTheSpeakerPausedLongest"
+  [[mutant.edit]]
+  from = '''        if (length > size.most) {'''
+  to = '''        if (length > 10 * size.most) {'''
+
+[[mutant]]
+name = "the-rest-cut-anyway"
+file = "src/pipeline/punctuation.cpp"
+expect = "Windows.FewWordsAreOneWindowAndNoneAreNone"
+  [[mutant.edit]]
+  from = '''        const std::size_t end = bytes(ends, begin, words.size()) <= size.most'''
+  to = '''        const std::size_t end = bytes(ends, begin, words.size()) <= size.least / 100'''
+
+[[mutant]]
+name = "more-context-than-its-size"
+file = "src/pipeline/punctuation.cpp"
+expect = "Windows.EachIsSentWithTheWordsAroundIt"
+  [[mutant.edit]]
+  from = '''        while (window.context_begin > 0 && bytes(ends, window.context_begin - 1, begin) <= size.context) {'''
+  to = '''        while (window.context_begin > 0 && bytes(ends, window.context_begin - 1, begin) <= 2 * size.context) {'''
+
+[[mutant]]
+name = "a-rewrite-is-allowed"
+file = "src/pipeline/punctuation.cpp"
+expect = "PunctuationAnswers.AnAnswerThatRewritesIsSentBack"
+  [[mutant.edit]]
+  from = '''    if (differ > std::max<std::size_t>(2, count / 20)) {'''
+  to = '''    if (differ > std::max<std::size_t>(20, count / 20)) {'''
+
+[[mutant]]
+name = "no-allowance"
+file = "src/pipeline/punctuation.cpp"
+expect = "PunctuationAnswers.AnAnswerThatRewritesIsSentBack"
+  [[mutant.edit]]
+  from = '''    if (differ > std::max<std::size_t>(2, count / 20)) {'''
+  to = '''    if (differ > count / 20) {'''
+
+[[mutant]]
+name = "an-unpunctuated-answer-is-taken"
+file = "src/pipeline/punctuation.cpp"
+expect = "PunctuationAnswers.AnAnswerThatEndsNoSentenceIsSentBack"
+  [[mutant.edit]]
+  from = '''    if (!transcript::punctuated(projection->words)) {'''
+  to = '''    if (projection->words.empty()) {'''
+
+[[mutant]]
+name = "the-context-is-taken-too"
+file = "src/pipeline/punctuation.cpp"
+expect = "PunctuationAnswers.OnlyTheWindowsOwnWordsAreTakenWithTheirTimes"
+  [[mutant.edit]]
+  from = '''        projection.words.begin() + static_cast<std::ptrdiff_t>(window.begin - window.context_begin);'''
+  to = '''        projection.words.begin();'''

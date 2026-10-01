@@ -34,6 +34,7 @@ std::vector<Outcome> outcomes = army.squad(std::move(windows)).value();
 
 The army is built from the runtime's health report (`hub::army_engines()`). Each engine becomes an `Engine` with:
 - its slots, its context per slot, and whether its slots share one pool (`kv_unified`);
+- the SHA-256 of the model file it serves (`checksum`): what its model id means now. Stage cache keys hold it, so answers from one file are never taken for another's ([pipeline.md](pipeline.md#the-cache-key));
 - the roles it serves;
 - its model **family**;
 - two sampling presets from the hub's configuration: `[sampling.<family>_direct]` and `[sampling.<family>_thinking]`.

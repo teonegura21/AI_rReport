@@ -226,3 +226,25 @@ expect = "TokenEstimator.CalibrationTakesAHighQuantileOfWhatWasSeen"
   [[mutant.edit]]
   from = '''std::ceil(quantile * static_cast<double>(ratios.size()))'''
   to = '''std::floor(quantile * static_cast<double>(ratios.size()))'''
+
+# --- The answer schema a mission sends (library.cpp, plan P15) ------------------
+
+[[mutant]]
+name = "the-answer-schema-in-alphabetical-order"
+file = "src/prompt/library.cpp"
+expect = "PromptLibrary.ASchemaIsPartOfThePrompt"
+  [[mutant.edit]]
+  from = '''    RR_TRY_ASSIGN(json::Schema schema, json::Schema::compile_text(file->second));'''
+  to = '''    RR_TRY_ASSIGN(const json::Json document, json::parse(file->second));
+    RR_TRY_ASSIGN(json::Schema schema, json::Schema::compile(document));'''
+
+[[mutant]]
+name = "a-prose-prompt-has-a-schema"
+file = "src/prompt/library.cpp"
+expect = "PromptLibrary.ASchemaIsPartOfThePrompt"
+  [[mutant.edit]]
+  from = '''    if (!info->schema.has_value()) {
+        return fail(Errc::not_found, std::format("prompt '{}' is answered in prose: it has no schema", name));
+    }
+    const auto file = files_.find(*info->schema);'''
+  to = '''    const auto file = files_.find(info->schema.value_or("schemas/missions/summary.json"));'''

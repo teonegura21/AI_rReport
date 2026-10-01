@@ -69,7 +69,8 @@ struct DoctorInputs {
 [[nodiscard]] std::string describe_gpus(const std::vector<runtime_api::GpuInfo>& gpus);
 
 // A program on the PATH: the first executable file named `program` in one of
-// the directories of `path_variable` (colon-separated, like $PATH).
+// the directories of `path_variable` (colon-separated, like $PATH). A program
+// with a slash is a path, as a shell takes it, and is not looked up.
 [[nodiscard]] std::optional<std::filesystem::path> find_on_path(std::string_view program,
                                                                 std::string_view path_variable);
 

@@ -1,6 +1,6 @@
 # The hub's command line: `rreport`
 
-`rreport` runs on your own machine. It owns every piece of state (ADR-0001), captures videos, and sends the GPU work to the pod. In M0 it carries the operator's tools: the checks, the pod's controls and the benchmark. This note describes how they work and why. The pod's side is described in [runtime.md](runtime.md); the model calls in [llm.md](llm.md).
+`rreport` runs on your own machine. It owns every piece of state (ADR-0001), captures videos, and sends the GPU work to the pod. It carries the operator's tools (the checks, the pod's controls and the benchmark) and, since P15, jobs: `ingest`, `resume` and `jobs`, whose stages are described in [pipeline.md](pipeline.md). This note describes how the tools work and why. The pod's side is described in [runtime.md](runtime.md); the model calls in [llm.md](llm.md).
 
 ## Pieces
 
@@ -12,6 +12,7 @@
 | `src/hub/…/bench.hpp` | The benchmark |
 | `src/hub/…/model_stack.hpp` | The providers every model call goes through: built against the runtime only (ADR-0017), wired by `llm.mode` ([llm.md](llm.md#a-call-as-it-is-wired)) |
 | `src/hub/…/army_engines.hpp` | The army's engines, from the pod's health report and each family's sampling presets ([agents.md](agents.md#engines-and-roles)) |
+| `src/hub/…/job_army.hpp` | A job's army, raised the first time a stage needs a model: the pod, its engines, the job's memo over the model stack, the battle log ([pipeline.md](pipeline.md#the-army-raised-when-needed)) |
 | `src/runtime_client/…/pod_manager.hpp` | Starting the pod and waiting until its engines are ready |
 | `src/runpod/…/runpod.hpp` | RunPod's pod API |
 | `config/default.toml` | The built-in defaults, which are also the schema |
@@ -20,6 +21,9 @@
 
 | Command | What it does | Exit codes |
 |---|---|---|
+| `ingest SOURCE [--tier] [--salt]` | A new job for a video's address or a caption file, through the stages so far ([pipeline.md](pipeline.md#the-commands)) | 0 the job is done; 1 it is not (failed, stopped, needing you) |
+| `resume JOB` | The job taken up again where it stopped | as `ingest` |
+| `jobs [--limit N]`, `jobs show JOB` | The library's jobs, newest first; one job's stages and findings | 0; 1 on failure |
 | `doctor` | Checks the data directory, the library, the capture tools, RunPod and the runtime, says where model calls go (`models`), and what to do about each problem | 0 no failures (warnings allowed); 1 a failure |
 | `bench [options]` | Starts the pod if it is stopped, waits for its engines, and measures them (see below) | 0; 1 on failure |
 | `pod status` | The pod as RunPod reports it; then, from the runtime, its profile, its GPUs (VRAM total and used) and each engine's state | 0; 1 on failure |
@@ -45,6 +49,7 @@ A misspelt key or a wrong type fails with a suggestion.
 - **Data directory:** `hub.data_dir`, else `$XDG_DATA_HOME/rreport`, else `~/.local/share/rreport`. Relative XDG paths are ignored, as the specification requires. Each library lives in `<data_dir>/libraries/<name>/library.db`.
 - **The runtime's address:** `runtime.url`, else RunPod's proxy URL for `runpod.pod_id` and `runpod.port` (`https://<pod>-8080.proxy.runpod.net`). Without either, the hub works but cannot call models.
 - **`llm.mode`:** `live`; `record` (live, keeping every answer); or `replay` (recorded answers only, for tests).
+- **yt-dlp:** `media.ytdlp`, a name found in `PATH` or a path, and `media.ytdlp_timeout`, the most one run of it may take. `doctor` checks the one configured.
 - **Sampling presets:** every `[sampling.<name>]` table (`qwen_thinking`, `qwen_direct`, `gemma_thinking`, `gemma_direct`), with every field required. Each is checked when the configuration loads (`llm::preset_problems()`), so a bad value fails at startup, not in the middle of a job. Values and reasons: [llm.md](llm.md#sampling).
 - **Secrets:** `runtime.token` (the pod's `RR_RUNTIME_TOKEN`) and `runpod.api_key` (an API key of your RunPod account). They belong in `secrets.toml` or the environment, and are never printed.
 

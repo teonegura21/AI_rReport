@@ -1,5 +1,6 @@
 #include <rr/oracle/oracle.hpp>
 
+#include <format>
 #include <memory>
 #include <regex>
 #include <string>
@@ -11,6 +12,7 @@
 #include <rr/agents/army.hpp>
 #include <rr/core/clock.hpp>
 #include <rr/json/json.hpp>
+#include <rr/oracle/answers.hpp>
 #include <rr/testkit/result.hpp>
 
 namespace rr::oracle {
@@ -56,6 +58,38 @@ TEST(Oracle, AnswersTheKindsItWasTaught) {
 }
 
 // --- Each fault ------------------------------------------------------------------
+
+// A punctuate mission's request for `excerpt`, as the prompt renders it.
+llm::ChatRequest punctuate(std::string_view excerpt) {
+    llm::ChatRequest request = asked("punctuate");
+    request.messages = {
+        llm::Message::system("You restore the punctuation."),
+        llm::Message::user(std::format("The excerpt:\n<excerpt>\n{}\n</excerpt>\n", excerpt))};
+    return request;
+}
+
+TEST(OracleAnswers, PunctuateFromTheScriptTheCaptionsWereMadeFrom) {
+    Oracle oracle;
+    teach_stages(oracle, "So, Marie Curie won two Nobel prizes. She called it radium!");
+    const llm::ChatResponse answer = unwrap(oracle.chat(punctuate("marie curie won two nobel"), {}, {}));
+    EXPECT_EQ(answer.first().content, R"({"text":"Marie Curie won two Nobel"})")
+        << "the script's text for them";
+    llm::ChatRequest repair = punctuate("she called it radium");
+    repair.messages.push_back(llm::Message::assistant(R"({"text":"she called it radium"})"));
+    repair.messages.push_back(llm::Message::user("Your answer cannot be used."));
+    EXPECT_EQ(unwrap(oracle.chat(repair, {}, {})).first().content, R"({"text":"She called it radium!"})")
+        << "a repair is answered from the order's excerpt";
+    EXPECT_ERRC(oracle.chat(punctuate("pierre curie"), {}, {}), Errc::invalid_argument) << "never a guess";
+}
+
+TEST(OracleAnswers, WithoutAScriptASentenceEndsEveryTwelveWords) {
+    Oracle oracle;
+    teach_stages(oracle);
+    const std::string excerpt = "a b c d e f g h i j k l m n";
+    EXPECT_EQ(unwrap(oracle.chat(punctuate(excerpt), {}, {})).first().content,
+              R"({"text":"A b c d e f g h i j k l. M n."})");
+    EXPECT_ERRC(oracle.chat(asked("punctuate"), {}, {}), Errc::invalid_argument) << "no excerpt to punctuate";
+}
 
 TEST(Faults, EachMakesItsMistake) {
     const auto made = [](const Fault& fault, std::string content) {

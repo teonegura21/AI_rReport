@@ -45,6 +45,7 @@ Result<std::vector<agents::Engine>> army_engines(
                         std::format("two engines serve the {} role; the army needs one", info.role));
         }
         agents::Engine engine{.model = info.model,
+                              .checksum = info.model_sha256,
                               .roles = {info.role},
                               .family = agents::family_of(info.model),
                               .slots = info.slots,

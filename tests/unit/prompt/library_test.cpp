@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <format>
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -179,6 +180,15 @@ TEST(PromptLibrary, ASchemaIsPartOfThePrompt) {
     versioned["prompts/manifest.toml"].replace(versioned["prompts/manifest.toml"].find("placeholder"), 11,
                                                hash);
     EXPECT_THAT(unwrap(Library::from_files(versioned)).problems(), IsEmpty());
+
+    const auto schema = unwrap(unwrap(Library::from_files(versioned)).answer_schema("summarize"));
+    EXPECT_EQ(schema->model_facing(), R"({"type":"object","properties":{"summary":{"type":"string"}},)"
+                                      R"("required":["summary"],"additionalProperties":false})")
+        << "the answer schema keeps its fields in the order written";
+    const Result<std::shared_ptr<const json::Schema>> prose = summarize().answer_schema("summarize");
+    EXPECT_ERRC(prose, Errc::not_found);
+    EXPECT_THAT(prose.error().message(), HasSubstr("answered in prose")) << "not a schema gone missing";
+    EXPECT_ERRC(summarize().answer_schema("translate"), Errc::not_found);
 
     versioned["schemas/missions/summary.json"] = R"({"type":"object","properties":{}})";
     EXPECT_THAT(unwrap(Library::from_files(versioned)).problems(),

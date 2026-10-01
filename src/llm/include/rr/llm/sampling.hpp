@@ -41,6 +41,7 @@
 #include <string>
 #include <vector>
 
+#include <rr/json/json.hpp>
 #include <rr/llm/chat.hpp>
 
 namespace rr::llm {
@@ -82,5 +83,10 @@ void apply(const SamplingPreset& preset, ChatRequest& request);
 
 // The preset's problems, as sampling_problems() sees them.
 [[nodiscard]] std::vector<std::string> preset_problems(const SamplingPreset& preset);
+
+// The preset as JSON, every field present (null for an absent budget or
+// effort): what a stage's cache key holds of how a model samples
+// (rr/pipeline/stage.hpp).
+[[nodiscard]] json::Json to_json(const SamplingPreset& preset);
 
 }  // namespace rr::llm

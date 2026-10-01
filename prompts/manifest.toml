@@ -14,4 +14,20 @@
 #                               # the L0 check prints the next one to add
 #     note = "first version"
 #
-# The first prompts arrive with their stages: outline, atomize, plan, write.
+# The prompts arrive with their stages: punctuate with the transcript (plan
+# P15); outline, atomize, plan and write with theirs (P17–P20).
+
+[[prompt]]
+name = "punctuate"
+purpose = "Put back the punctuation and capitals of a window of automatic captions, keeping every word: the transcript stage lays them onto the captions' words (rr/pipeline/punctuation.hpp)."
+schema = "schemas/missions/punctuate.json"
+shared = ["title", "channel", "description"]
+failure_modes = [
+  "rewrites words: numbers into digits (\"thirty seven\" into \"37\"), contractions (\"were\" into \"we're\"), fillers and repetitions dropped",
+  "ends the excerpt with a full stop although its last sentence runs on: harmless, since the context after a window is not kept",
+  "capitalizes common nouns as if they were names",
+]
+  [[prompt.version]]
+  number = 1
+  hash = "b0d3c51c1d85cc936efac563ac75104ea7f0ec4399cc139685c9a6bf4bd2ad91"
+  note = "first version"

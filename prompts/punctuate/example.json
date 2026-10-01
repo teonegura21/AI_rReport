@@ -1,0 +1,11 @@
+{
+  "shared": {
+    "title": "How bridges stand up",
+    "channel": "Engineering Hour",
+    "description": "Tension, compression and resonance: a walk through the forces in a bridge, from the Roman arch to the Tacoma Narrows collapse of 1940."
+  },
+  "orders": [
+    {"excerpt": "the romans did not have steel so every bridge they built is an arch and an arch only ever pushes"},
+    {"excerpt": "in november nineteen forty the tacoma narrows bridge began to twist in a wind of about forty miles an hour and an hour later it fell"}
+  ]
+}

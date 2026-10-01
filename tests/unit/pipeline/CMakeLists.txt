@@ -1,0 +1,11 @@
+rr_add_test_suite(pipeline
+    SOURCES
+        executor_test.cpp
+        job_run_test.cpp
+        punctuation_test.cpp
+        source_test.cpp
+        transcript_stage_test.cpp
+    DEPS
+        rr::library
+        rr::oracle
+        rr::pipeline)

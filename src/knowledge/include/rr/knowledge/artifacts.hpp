@@ -19,8 +19,9 @@
 
 namespace rr::knowledge {
 
-// The artifact schemas, compiled in: "artifacts/transcript", "artifacts/atoms"
-// and "artifacts/article".
+// The artifact schemas, compiled in: "artifacts/source" (written by the
+// pipeline's source stage, rr/pipeline/source.hpp), "artifacts/transcript",
+// "artifacts/atoms" and "artifacts/article".
 [[nodiscard]] const json::SchemaRegistry& artifact_schemas();
 
 }  // namespace rr::knowledge

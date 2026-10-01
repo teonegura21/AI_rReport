@@ -39,7 +39,11 @@ namespace rr::agents {
 // An engine on the pod that missions can be sent to: what it serves, and how
 // much it holds (as the runtime reports it: runtime_api::EngineInfo).
 struct Engine {
-    std::string model{};               // the runtime's id for it: what requests name
+    std::string model{};  // the runtime's id for it: what requests name
+    // The SHA-256 of the model file it serves, as the runtime verified it:
+    // what `model` means now. A stage's cache key holds it, so answers from
+    // one file are never taken for another's (rr/pipeline/stage.hpp).
+    std::string checksum{};
     std::vector<std::string> roles{};  // the roles it serves: "commander", "infantry"
     // Its model family ("qwen", "gemma"; family_of()). A mission one model
     // refuses goes to a model of another family (ADR-0017).
@@ -54,6 +58,8 @@ struct Engine {
     // with a budget, so that every escalation ends.
     llm::SamplingPreset direct{};
     llm::SamplingPreset thinking{};
+
+    friend bool operator==(const Engine&, const Engine&) = default;
 };
 
 // A model's family, from the catalog id it is served under: its leading

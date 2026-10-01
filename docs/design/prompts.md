@@ -50,6 +50,9 @@ Exact counts need the model's tokenizer, which lives on the pod. An estimate is 
 - **Reason, then format.** Answer schemas put evidence and rationale fields **before** verdicts. A constrained decoder writes fields in schema order, so the model quotes before it decides ([llm.md](llm.md)).
 - **Exemplars are synthetic.** Examples in prompts are written for the prompt, never taken from evaluation videos: an exemplar from the test set would make the evaluation measure memory.
 - **Say how it fails.** `failure_modes` lists what reviewers have seen go wrong, so the next change is checked against it.
+- **Put a block tag on a line of its own.** inja's `trim_blocks` removes the newline after a `{% … %}` tag, and the spaces before it too: `.{% if x %} Its` renders as `.Its`. The first prompt shipped with that slip until its test read the rendered text.
+
+The first prompt is `punctuate` (P15): it puts the punctuation back into a window of automatic captions, and the transcript stage lays it onto the captions' words without taking a word from it ([pipeline.md](pipeline.md#the-prompt)).
 
 ## How it is tested
 

@@ -1,6 +1,13 @@
-// rreport — the hub, on your own machine. In M0 it carries the operator's tools.
+// rreport — the hub, on your own machine.
 //
 // Commands
+//   ingest SOURCE     take a video (its web address) or a caption file through
+//                     the pipeline's stages, as a new job: so far its source,
+//                     then its transcript (plan P15)
+//   resume JOB        take a job up again where it stopped
+//   jobs              the library's jobs, newest first
+//   jobs show JOB     a job's stages: done, found done or failed, and what
+//                     they could not do
 //   doctor            check the data directory, the library, the capture tools,
 //                     RunPod and the runtime, and say what to do about problems
 //   bench             measure the pod: its engines, the commander's and the
@@ -14,12 +21,15 @@
 //   version
 //
 // Exit codes
-//   0 ok · 1 failure · 2 usage or configuration error · 128+N interrupted by signal N
+//   0 ok · 1 failure (a job not done: failed, stopped, or needing you) · 2 usage
+//   or configuration error · 128+N interrupted by signal N
 //
 // This file only parses arguments and wires modules together; the rules live
 // in src/ (rr/hub/*.hpp), where they are unit-tested. Configuration:
 // config/default.toml.
+#include <chrono>
 #include <csignal>
+#include <cstdint>
 #include <cstdio>
 #include <exception>
 #include <filesystem>
@@ -27,6 +37,8 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <system_error>
+#include <utility>
 #include <vector>
 
 #include <CLI/CLI.hpp>
@@ -40,12 +52,22 @@
 #include <rr/hub/bench.hpp>
 #include <rr/hub/doctor.hpp>
 #include <rr/hub/hub_config.hpp>
+#include <rr/hub/job_army.hpp>
 #include <rr/hub/model_stack.hpp>
 #include <rr/library/call_log.hpp>
+#include <rr/library/jobs.hpp>
 #include <rr/library/library.hpp>
+#include <rr/library/stage_store.hpp>
 #include <rr/log/log.hpp>
+#include <rr/media/ytdlp.hpp>
 #include <rr/net/http_client.hpp>
+#include <rr/pipeline/executor.hpp>
+#include <rr/pipeline/job_run.hpp>
+#include <rr/pipeline/source.hpp>
+#include <rr/pipeline/transcript_stage.hpp>
 #include <rr/proc/termination_signals.hpp>
+#include <rr/prompt/library.hpp>
+#include <rr/reason/tier.hpp>
 #include <rr/runpod/runpod.hpp>
 #include <rr/runtime_client/pod_manager.hpp>
 #include <rr/runtime_client/runtime_client.hpp>
@@ -384,6 +406,250 @@ int pod_command(const Global& global, std::string_view action, bool wait,
     return kOk;
 }
 
+// ---------------------------------------------------------------------------------------
+// ingest, resume, jobs
+// ---------------------------------------------------------------------------------------
+void say(std::string_view line) {
+    (void)std::fprintf(stderr, "  %.*s\n", static_cast<int>(line.size()), line.data());
+}
+
+// "2026-10-01 20:31 UTC"
+std::string when(std::chrono::system_clock::time_point at) {
+    return std::format("{:%Y-%m-%d %H:%M} UTC", std::chrono::floor<std::chrono::minutes>(at));
+}
+
+// "4.2 s", "3 min 12 s", "1 h 05 min"
+std::string took(std::chrono::milliseconds elapsed) {
+    using std::chrono::duration_cast;
+    if (elapsed < std::chrono::minutes{1}) {
+        return std::format("{:.1f} s", static_cast<double>(elapsed.count()) / 1000.0);
+    }
+    if (elapsed < std::chrono::hours{1}) {
+        return std::format("{} min {:02} s", duration_cast<std::chrono::minutes>(elapsed).count(),
+                           duration_cast<std::chrono::seconds>(elapsed).count() % 60);
+    }
+    return std::format("{} h {:02} min", duration_cast<std::chrono::hours>(elapsed).count(),
+                       duration_cast<std::chrono::minutes>(elapsed).count() % 60);
+}
+
+// The stages a job runs, so far (plan P15): its source, then its transcript.
+Result<pipeline::Executor> job_stages(const HubSettings& settings) {
+    std::vector<std::unique_ptr<pipeline::Stage>> stages;
+    stages.push_back(std::make_unique<pipeline::SourceStage>(
+        media::YtDlp{media::YtDlpOptions{.executable = settings.ytdlp, .timeout = settings.ytdlp_timeout}}));
+    stages.push_back(std::make_unique<pipeline::TranscriptStage>());
+    return pipeline::Executor::create(std::move(stages), SystemClock::instance());
+}
+
+// What a run did, and what to do next; the exit code that says it.
+int report(const pipeline::JobRun& run, const proc::TerminationSignals& signals) {
+    const library::Job& job = run.job;
+    const std::string title = job.title.value_or(job.source);
+    bool told = false;
+    for (const pipeline::StageReport& stage : run.report.stages) {
+        for (const std::string& finding : stage.findings) {
+            if (!std::exchange(told, true)) {
+                (void)std::printf("what the stages could not do:\n");
+            }
+            (void)std::printf("  %s: %s\n", stage.stage.c_str(), finding.c_str());
+        }
+    }
+    switch (job.status) {
+        case library::JobStatus::done:
+            (void)std::printf("job %s is done: %s (%s)\n", job.id.c_str(), title.c_str(),
+                              took(job.elapsed).c_str());
+            return kOk;
+        case library::JobStatus::stopped:
+            (void)std::printf("job %s stopped: %s\n  take it up again with: rreport resume %s\n",
+                              job.id.c_str(), job.error.value_or("").c_str(), job.id.c_str());
+            return signals.received() != 0 ? 128 + signals.received() : kFailure;
+        case library::JobStatus::needs_user:
+            (void)std::printf("job %s needs you: %s\n  then: rreport resume %s\n", job.id.c_str(),
+                              job.error.value_or("").c_str(), job.id.c_str());
+            return kFailure;
+        case library::JobStatus::failed:
+        case library::JobStatus::running:
+            break;
+    }
+    (void)std::printf("job %s failed: %s\n", job.id.c_str(), job.error.value_or("").c_str());
+    return kFailure;
+}
+
+// Takes `job` through the stages, raising the army only if a stage asks for it.
+int run_job(const Hub& hub, db::Database& database, library::Job job,
+            const proc::TerminationSignals& signals) {
+    const HubSettings& settings = hub.settings;
+    auto stages = job_stages(settings);
+    if (!stages.has_value()) {
+        return failed(kFailure, stages.error());
+    }
+    auto prompts = prompt::Library::embedded();
+    if (!prompts.has_value()) {
+        return failed(kFailure, prompts.error());
+    }
+    const net::HttpClient http = make_http();
+    JobArmy forces{JobArmy::Inputs{.settings = &settings,
+                                   .http = &http,
+                                   .database = &database,
+                                   .clock = &SystemClock::instance(),
+                                   .job_id = job.id,
+                                   .elapsed_before = job.elapsed,
+                                   .stop = signals.stop_token(),
+                                   .progress = say}};
+    pipeline::StageContext context{
+        .prompts = &*prompts,
+        .work_directory = settings.library_database().parent_path() / "jobs" / job.id,
+        .stop = signals.stop_token(),
+        .progress = say};
+    // Without a pod, or recordings to replay, no model can be asked: a stage
+    // that needs one does what it can without, and says so.
+    if (settings.llm_mode == LlmMode::replay || settings.runtime.has_value()) {
+        context.army = [&forces] { return forces.raise(); };
+    }
+    (void)std::fprintf(stderr, "job %s: %s\n", job.id.c_str(), job.title.value_or(job.source).c_str());
+    auto run =
+        pipeline::run_job(std::move(job), *stages, database, SystemClock::instance(), std::move(context));
+    if (!run.has_value()) {
+        return failed(kFailure, run.error());
+    }
+    return report(*run, signals);
+}
+
+struct IngestFlags {
+    std::string source;
+    std::string tier{reason::kDefaultTier};
+    std::int64_t salt = 0;
+};
+
+int ingest(const Global& global, const IngestFlags& flags, const proc::TerminationSignals& signals) {
+    auto hub = load(global);
+    if (!hub.has_value()) {
+        return failed(kBadConfiguration, hub.error());
+    }
+    if (auto tier = reason::builtin_tier(flags.tier); !tier.has_value()) {
+        return failed(kBadConfiguration, tier.error());
+    }
+    auto database = library::open_database(hub->settings.library_database());
+    if (!database.has_value()) {
+        return failed(kFailure, database.error());
+    }
+    // A caption file is named by its absolute path, so that the job can be
+    // taken up again from any directory.
+    std::string source = flags.source;
+    if (!pipeline::is_web_address(source)) {
+        std::error_code error;
+        source = std::filesystem::absolute(source, error).string();
+        if (error) {
+            return failed(kBadConfiguration, Error{Errc::invalid_argument,
+                                                   std::format("'{}': {}", flags.source, error.message())});
+        }
+    }
+    library::Jobs jobs{*database, SystemClock::instance()};
+    auto job = jobs.create(source, flags.tier, flags.salt);
+    if (!job.has_value()) {
+        return failed(kFailure, job.error());
+    }
+    return run_job(*hub, *database, *std::move(job), signals);
+}
+
+int resume(const Global& global, const std::string& id, const proc::TerminationSignals& signals) {
+    auto hub = load(global);
+    if (!hub.has_value()) {
+        return failed(kBadConfiguration, hub.error());
+    }
+    auto database = library::open_database(hub->settings.library_database());
+    if (!database.has_value()) {
+        return failed(kFailure, database.error());
+    }
+    const library::Jobs jobs{*database, SystemClock::instance()};
+    auto job = jobs.find(id);
+    if (!job.has_value()) {
+        return failed(kFailure, job.error());
+    }
+    if (job->status == library::JobStatus::done) {
+        (void)std::printf("job %s is done already: %s\n", job->id.c_str(),
+                          job->title.value_or(job->source).c_str());
+        return kOk;
+    }
+    return run_job(*hub, *database, *std::move(job), signals);
+}
+
+int list_jobs(const Global& global, std::size_t limit) {
+    auto hub = load(global);
+    if (!hub.has_value()) {
+        return failed(kBadConfiguration, hub.error());
+    }
+    auto database = library::open_database(hub->settings.library_database());
+    if (!database.has_value()) {
+        return failed(kFailure, database.error());
+    }
+    const library::Jobs jobs{*database, SystemClock::instance()};
+    auto recent = jobs.recent(limit);
+    if (!recent.has_value()) {
+        return failed(kFailure, recent.error());
+    }
+    if (recent->empty()) {
+        (void)std::printf("no jobs yet: rreport ingest <address or caption file> starts one\n");
+        return kOk;
+    }
+    (void)std::printf("%-26s  %-10s  %-8s  %-20s  %s\n", "JOB", "STATUS", "TIER", "UPDATED", "TITLE");
+    for (const library::Job& job : *recent) {
+        (void)std::printf("%-26s  %-10s  %-8s  %-20s  %s\n", job.id.c_str(),
+                          std::string{library::to_string(job.status)}.c_str(), job.tier.c_str(),
+                          when(job.updated_at).c_str(), job.title.value_or(job.source).c_str());
+    }
+    return kOk;
+}
+
+// How a stage's run ended, as `jobs show` says it.
+std::string_view ended(const library::StageRun& run) {
+    if (run.status == library::StageStatus::failed) {
+        return "failed";
+    }
+    return run.cached ? "found done" : "done";
+}
+
+int show_job(const Global& global, const std::string& id) {
+    auto hub = load(global);
+    if (!hub.has_value()) {
+        return failed(kBadConfiguration, hub.error());
+    }
+    auto database = library::open_database(hub->settings.library_database());
+    if (!database.has_value()) {
+        return failed(kFailure, database.error());
+    }
+    const library::Jobs jobs{*database, SystemClock::instance()};
+    auto job = jobs.find(id);
+    if (!job.has_value()) {
+        return failed(kFailure, job.error());
+    }
+    const library::StageStore store{*database, SystemClock::instance()};
+    auto runs = store.runs(job->id);
+    if (!runs.has_value()) {
+        return failed(kFailure, runs.error());
+    }
+    (void)std::printf("job %s: %s\n", job->id.c_str(), std::string{library::to_string(job->status)}.c_str());
+    if (job->title.has_value()) {
+        (void)std::printf("  title:   %s\n", job->title->c_str());
+    }
+    (void)std::printf("  source:  %s\n", job->source.c_str());
+    (void)std::printf("  tier:    %s, salt %lld\n", job->tier.c_str(), static_cast<long long>(job->salt));
+    (void)std::printf("  spent:   %s\n", took(job->elapsed).c_str());
+    (void)std::printf("  created: %s, updated %s\n", when(job->created_at).c_str(),
+                      when(job->updated_at).c_str());
+    if (job->error.has_value()) {
+        (void)std::printf("  why:     %s\n", job->error->c_str());
+    }
+    for (const library::StageRun& run : *runs) {
+        (void)std::printf("  stage %-12s %-10s %s\n", run.stage.c_str(), std::string{ended(run)}.c_str(),
+                          run.error.value_or(run.artifact.value_or("")).c_str());
+        for (const std::string& finding : run.findings) {
+            (void)std::printf("    could not do: %s\n", finding.c_str());
+        }
+    }
+    return kOk;
+}
+
 int show_config(const Global& global, bool origin) {
     const auto config = load_config(global);
     if (!config.has_value()) {
@@ -412,7 +678,7 @@ int run(int argc, char** argv) {
     // a reason to die.
     (void)std::signal(SIGPIPE, SIG_IGN);
 
-    CLI::App app{"rreport: understand any video completely (M0: the operator's tools)"};
+    CLI::App app{"rreport: understand any video completely"};
     app.require_subcommand(1);
     // Global options may also follow a command; set before the commands are
     // made, which inherit it then.
@@ -423,6 +689,26 @@ int run(int argc, char** argv) {
     app.add_option("--secrets", global.secrets_file,
                    "Secrets file (default: ~/.config/rreport/secrets.toml; chmod 600)");
     app.add_option("--set", global.overrides, "Override one setting: section.key=value (repeatable)");
+
+    IngestFlags ingest_flags;
+    auto* ingest_command =
+        app.add_subcommand("ingest", "Take a video, or a caption file, through the pipeline as a new job");
+    ingest_command->add_option("source", ingest_flags.source, "A video's web address, or a caption file")
+        ->required();
+    ingest_command->add_option("--tier", ingest_flags.tier,
+                               "How hard to work: fast, thorough or max (the default)");
+    ingest_command->add_option("--salt", ingest_flags.salt,
+                               "Draw new samples: the eval's replicate (default 0)");
+
+    std::string job_id;
+    auto* resume_command = app.add_subcommand("resume", "Take a job up again where it stopped");
+    resume_command->add_option("job", job_id, "The job (rreport jobs lists them)")->required();
+
+    std::size_t limit = 20;
+    auto* jobs_command = app.add_subcommand("jobs", "The library's jobs, newest first");
+    jobs_command->add_option("--limit", limit, "How many")->check(CLI::Range(1, 10'000));
+    auto* job_show = jobs_command->add_subcommand("show", "A job's stages, and what they could not do");
+    job_show->add_option("job", job_id, "The job")->required();
 
     auto* doctor_command = app.add_subcommand("doctor", "Check what the hub needs, and say what to do");
 
@@ -482,6 +768,18 @@ int run(int argc, char** argv) {
         return code == 0 ? kOk : kBadConfiguration;
     }
 
+    if (*ingest_command) {
+        return ingest(global, ingest_flags, signals);
+    }
+    if (*resume_command) {
+        return resume(global, job_id, signals);
+    }
+    if (*job_show) {
+        return show_job(global, job_id);
+    }
+    if (*jobs_command) {
+        return list_jobs(global, limit);
+    }
     if (*doctor_command) {
         return doctor(global, signals);
     }

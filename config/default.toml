@@ -30,6 +30,10 @@ pod_id = ""
 port = 8080                  # the runtime's port, exposed over HTTP by the pod's template
 api_url = "https://api.runpod.io/v2"   # RunPod REST API v2
 
+[media]
+ytdlp = "yt-dlp"             # yt-dlp: a name found in PATH, or a path. You install and update it (rreport doctor)
+ytdlp_timeout = "3m"         # the most one run of it may take: a description, or a video's captions
+
 [llm]
 mode = "live"                # live · record (live, and keep every answer) · replay (recorded answers only)
 recordings = ""              # where record and replay keep answers; empty: <data_dir>/recordings

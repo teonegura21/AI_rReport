@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Punctuated",
+  "description": "An excerpt of automatic captions, punctuated: its words as given, with punctuation and capitals (prompts/punctuate).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["text"],
+  "properties": {
+    "text": {"type": "string", "minLength": 1}
+  }
+}

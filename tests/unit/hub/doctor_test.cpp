@@ -122,7 +122,7 @@ TEST_F(DoctorTest, AHubWithoutAPodIsHealthyAndSaysWhatIsMissing) {
     EXPECT_TRUE(healthy(findings));
     EXPECT_EQ(about(findings, "data directory").severity, Severity::ok);
     EXPECT_THAT(about(findings, "data directory").detail, HasSubstr("100.0 GiB free"));
-    EXPECT_EQ(about(findings, "library").detail, "'default' (schema version 3)") << "created on the way";
+    EXPECT_EQ(about(findings, "library").detail, "'default' (schema version 4)") << "created on the way";
     EXPECT_EQ(about(findings, "yt-dlp").severity, Severity::ok);
     EXPECT_EQ(about(findings, "RunPod").severity, Severity::warning);
     EXPECT_EQ(about(findings, "runtime").severity, Severity::warning);
@@ -225,6 +225,25 @@ TEST(FindOnPath, FindsExecutablesOnly) {
     EXPECT_EQ(find_on_path("tool", first.path().string() + ":" + second.path().string()), executable);
     EXPECT_FALSE(find_on_path("tool", first.path().string()).has_value());
     EXPECT_FALSE(find_on_path("absent", second.path().string()).has_value());
+    EXPECT_EQ(find_on_path(executable.string(), ""), executable) << "a path is taken as it is";
+    EXPECT_FALSE(find_on_path((first / "tool").string(), second.path().string()).has_value())
+        << "and not looked up: the file it names is not executable";
+    const auto nested = second.write_file("sub/tool", "#!/bin/sh\n");
+    ASSERT_EQ(::chmod(nested.c_str(), 0755), 0);
+    EXPECT_FALSE(find_on_path("sub/tool", second.path().string()).has_value())
+        << "a relative path is the current directory's, as a shell takes it, never PATH's";
+}
+
+TEST_F(DoctorTest, ChecksTheYtDlpTheConfigurationNames) {
+    settings().ytdlp = "/opt/tools/yt-dlp";
+    std::vector<std::string> looked_for;
+    set_find_program([&](std::string_view program) -> std::optional<std::filesystem::path> {
+        looked_for.emplace_back(program);
+        return std::nullopt;
+    });
+    const std::vector<Finding> findings = run();
+    EXPECT_EQ(about(findings, "yt-dlp").severity, Severity::warning);
+    EXPECT_EQ(looked_for.front(), "/opt/tools/yt-dlp");
 }
 
 }  // namespace

@@ -190,3 +190,33 @@ expect = "Faults.HitTheCallsTheyAreAimedAt"
     return response;'''
   to = '''    record(!changed);
     return response;'''
+
+# --- The answers to the pipeline's missions (answers.cpp, plan P15) ---------------
+
+[[mutant]]
+name = "an-excerpt-not-in-the-script-is-guessed"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.PunctuateFromTheScriptTheCaptionsWereMadeFrom"
+  [[mutant.edit]]
+  from = '''    if (found.empty() || wanted.empty()) {
+        return fail(Errc::invalid_argument, "the oracle's script does not hold the excerpt's words");
+    }'''
+  to = '''    if (found.empty() || wanted.empty()) {
+        return answer(joined(excerpt, 0, excerpt.size()));
+    }'''
+
+[[mutant]]
+name = "no-sentence-starts-with-a-capital"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.WithoutAScriptASentenceEndsEveryTwelveWords"
+  [[mutant.edit]]
+  from = '''        if (index % kWordsPerSentence == 0) {'''
+  to = '''        if (index % kWordsPerSentence == 0 && index > words.size()) {'''
+
+[[mutant]]
+name = "the-last-sentence-is-left-open"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.WithoutAScriptASentenceEndsEveryTwelveWords"
+  [[mutant.edit]]
+  from = '''        if ((index + 1) % kWordsPerSentence == 0 || index + 1 == words.size()) {'''
+  to = '''        if ((index + 1) % kWordsPerSentence == 0) {'''

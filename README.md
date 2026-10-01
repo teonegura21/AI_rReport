@@ -95,6 +95,19 @@ The GPU pod runs `rreport-runtime` from a CUDA image (`docker/runtime/`, built b
 
 Then **[docs/runbooks/m1-m2.md](docs/runbooks/m1-m2.md)** lists what only the pod can measure for the intelligence core, step by step as the phases land: R1, the commander's parallel slots and the prompt cache, is ready now.
 
+## Using it
+
+So far a job reads its source and makes its transcript ([docs/design/pipeline.md](docs/design/pipeline.md)); the stages that write the article arrive next. What needs no model runs without a pod: a video with its creator's captions, or a caption file.
+
+```bash
+rreport ingest 'https://www.youtube.com/watch?v=…'   # or a caption file: .vtt, .srt, .json3, .txt
+rreport jobs                                          # the library's jobs, newest first
+rreport jobs show <job>                               # each stage, and what it could not do
+rreport resume <job>                                  # a stopped job, taken up where it stopped
+```
+
+Automatic captions come without punctuation: the pod's infantry punctuates them, without changing a word. Without a pod, they are cut where the speaker paused, and the job says so.
+
 ## Repository map
 
 ```
@@ -103,6 +116,7 @@ apps/                executables: rreport (hub + CLI), rreport-runtime (pod supe
 tests/unit/          GoogleTest suites, one per module
 cmake/               build helpers: warnings, sanitizers, module layering, dependencies, embedding
 config/ migrations/  default configuration and database migrations (compiled into binaries)
+prompts/ schemas/    the prompts, and the JSON schemas of answers and artifacts (compiled in)
 docker/ deploy/      runtime image and RunPod runbook
 docs/                plan, architecture, ADRs, design notes, runbooks
 ```

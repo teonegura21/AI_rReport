@@ -40,6 +40,16 @@ TEST(HubConfig, TheBuiltInDefaultsAreAWorkingConfiguration) {
     EXPECT_EQ(loaded.call_limits.call_timeout, 30min);
     EXPECT_EQ(loaded.call_attempts, 4);
     EXPECT_EQ(loaded.ready_timeout, 20min);
+    EXPECT_EQ(loaded.ytdlp, "yt-dlp") << "found in PATH";
+    EXPECT_EQ(loaded.ytdlp_timeout, 3min);
+}
+
+TEST(HubConfig, YtDlpIsTheUsers) {
+    const HubSettings given = unwrap(settings({"media.ytdlp=/opt/tools/yt-dlp", "media.ytdlp_timeout=90s"}));
+    EXPECT_EQ(given.ytdlp, "/opt/tools/yt-dlp");
+    EXPECT_EQ(given.ytdlp_timeout, 90s);
+    EXPECT_ERRC(settings({"media.ytdlp="}), Errc::invalid_argument);
+    EXPECT_ERRC(settings({"media.ytdlp_timeout=0s"}), Errc::invalid_argument);
 }
 
 TEST(HubConfig, TheDataDirectoryFollowsXdg) {

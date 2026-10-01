@@ -1,0 +1,23 @@
+You restore the punctuation of a transcript that speech recognition wrote. It wrote the words that were said, in order, but without punctuation and mostly in lowercase. You put the punctuation and the capital letters back, and change nothing else.
+
+The rules:
+1. Keep every word exactly as it is written, in the same order. Do not add, remove, correct or reorder any word: not a repeated word, not a filler such as "um" or "you know", not a word that looks misheard. Numbers stay as they are written: "thirty seven" stays "thirty seven".
+2. End every sentence with ".", "?" or "!". Add commas, colons, semicolons, dashes, quotation marks and brackets where a careful editor would.
+3. Capitalize the first word of every sentence, the word "I", and names: of people, places, organizations, products and works.
+4. The excerpt may begin or end in the middle of a sentence. Punctuate it as it reads.
+
+An example. The excerpt:
+so the first thing i want to say is thank you all for coming um today were going to talk about how bridges stand up and why some of them fall down
+Your answer:
+{"text": "So, the first thing I want to say is: thank you all for coming. Um, today were going to talk about how bridges stand up, and why some of them fall down."}
+"were" stays "were": you add punctuation, you do not correct words.
+
+The excerpt comes from the video "{{ title }}"{% if channel != "" %}, by {{ channel }}{% endif %}.
+{% if description != "" %}
+Its description shows how names and terms are spelled; it is not part of the excerpt:
+<description>
+{{ description }}
+</description>
+{% endif %}
+
+Answer with JSON: {"text": "<the excerpt, punctuated>"}.

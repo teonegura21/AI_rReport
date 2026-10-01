@@ -1,0 +1,97 @@
+# Mutants of rr_hub's job army, its settings and its doctor: each removes one
+# rule of raising a job's army, finding yt-dlp, or reading the configuration,
+# and names the test that must fail without it.
+# Run: scripts/mutate.py tests/mutants/hub.toml
+# What they found is in docs/design/pipeline.md, "How the tests were validated".
+
+target = "rr_hub_tests"
+binary = "build/dev/tests/unit/hub/rr_hub_tests"
+timeout = 120
+
+# --- A job's army (job_army.cpp) ---------------------------------------------------
+
+[[mutant]]
+name = "raised-at-every-call"
+file = "src/hub/job_army.cpp"
+expect = "JobArmyTest.RecordingRaisesTheArmyOnThePodsEnginesAndKeepsThemForAReplay"
+  [[mutant.edit]]
+  from = '''    if (forces_ != nullptr) {'''
+  to = '''    if (forces_ != nullptr && forces_ == nullptr) {'''
+
+[[mutant]]
+name = "a-recording-keeps-no-engines"
+file = "src/hub/job_army.cpp"
+expect = "JobArmyTest.RecordingRaisesTheArmyOnThePodsEnginesAndKeepsThemForAReplay"
+  [[mutant.edit]]
+  from = '''        if (settings.llm_mode == LlmMode::record) {'''
+  to = '''        if (settings.llm_mode == LlmMode::replay) {'''
+
+[[mutant]]
+name = "a-replay-asks-the-runtime"
+file = "src/hub/job_army.cpp"
+expect = "JobArmyTest.RecordingRaisesTheArmyOnThePodsEnginesAndKeepsThemForAReplay"
+  [[mutant.edit]]
+  from = '''    if (settings.llm_mode == LlmMode::replay) {'''
+  to = '''    if (settings.llm_mode == LlmMode::live && false) {'''
+
+[[mutant]]
+name = "a-replay-without-engines-is-not-found"
+file = "src/hub/job_army.cpp"
+expect = "JobArmyTest.AReplayWithoutRecordedEnginesNeedsTheUser"
+  [[mutant.edit]]
+  from = '''    if (!text.has_value() && text.error().code() == Errc::not_found) {'''
+  to = '''    if (!text.has_value() && text.error().code() == Errc::io) {'''
+
+[[mutant]]
+name = "no-token-is-asked-anyway"
+file = "src/hub/job_army.cpp"
+expect = "JobArmyTest.WithoutARuntimeAndItsTokenNoArmyCanBeRaised"
+  [[mutant.edit]]
+  from = '''    if (settings.runtime->token.empty()) {'''
+  to = '''    if (false) {'''
+
+# --- The engines (army_engines.cpp) -------------------------------------------------
+
+[[mutant]]
+name = "an-engine-without-its-file"
+file = "src/hub/army_engines.cpp"
+expect = "ArmyEngines.TheCommanderAndTheInfantryWithTheirFamiliesPresets"
+  [[mutant.edit]]
+  from = '''                              .checksum = info.model_sha256,'''
+  to = '''                              .checksum = info.model,'''
+
+# --- The doctor and its tools (doctor.cpp) ------------------------------------------
+
+[[mutant]]
+name = "a-relative-path-looked-up"
+file = "src/hub/doctor.cpp"
+expect = "FindOnPath.FindsExecutablesOnly"
+  [[mutant.edit]]
+  from = '''    if (program.find('/') != std::string_view::npos) {'''
+  to = '''    if (program.starts_with('/')) {'''
+
+[[mutant]]
+name = "the-doctor-checks-another-yt-dlp"
+file = "src/hub/doctor.cpp"
+expect = "DoctorTest.ChecksTheYtDlpTheConfigurationNames"
+  [[mutant.edit]]
+  from = '''            tool.program == "yt-dlp" ? std::string_view{inputs.settings->ytdlp} : tool.program;'''
+  to = '''            tool.program;'''
+
+# --- The settings (hub_config.cpp) ---------------------------------------------------
+
+[[mutant]]
+name = "no-yt-dlp-named"
+file = "src/hub/hub_config.cpp"
+expect = "HubConfig.YtDlpIsTheUsers"
+  [[mutant.edit]]
+  from = '''    if (settings.ytdlp.empty()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "no-time-for-yt-dlp"
+file = "src/hub/hub_config.cpp"
+expect = "HubConfig.YtDlpIsTheUsers"
+  [[mutant.edit]]
+  from = '''    if (settings.ytdlp_timeout.count() <= 0) {'''
+  to = '''    if (settings.ytdlp_timeout.count() < 0) {'''

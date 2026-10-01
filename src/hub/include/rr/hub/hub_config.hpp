@@ -14,6 +14,8 @@
 //       call models);
 //     * llm.mode: live, record (live, keeping every answer) or replay
 //       (recorded answers only: tests, never a live call);
+//     * media.ytdlp: the yt-dlp the source stage runs, a name in PATH or a
+//       path; never bundled, since YouTube changes faster than releases;
 //     * the sampling presets: every [sampling.<name>] table, checked
 //       (llm::preset_problems()), so a bad value fails at startup instead
 //       of in the middle of a job.
@@ -83,6 +85,8 @@ struct HubSettings {
     std::optional<runtime_client::Endpoint> runtime{};  // none: no pod configured
     std::chrono::milliseconds ready_timeout{};
     std::optional<RunpodSettings> runpod{};  // none: no runpod.pod_id
+    std::string ytdlp = "yt-dlp";            // a name in PATH, or a path
+    std::chrono::milliseconds ytdlp_timeout{std::chrono::minutes{3}};
     LlmMode llm_mode = LlmMode::live;
     std::filesystem::path recordings{};
     runtime_client::CallLimits call_limits{};
