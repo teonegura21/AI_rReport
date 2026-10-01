@@ -92,9 +92,11 @@ A bracket is a citation when what it holds starts with A, S or V and a digit, wi
 
 `without_markers()` gives a span's text as a reader sees it: "He hedges [A42]." gives "He hedges.". Checks compare that text, so "A41" is never read as a name, and bad markers stay visible until repaired.
 
+`inline_code()` gives the inline code of a span as CommonMark reads it: from a run of backticks to the next run of as many, a run never matched being text. The parser reads no marker inside, and the fidelity checks read no quote mark inside ([fidelity.md](fidelity.md)).
+
 ## How the tests were validated
 
-42 unit tests state the rules, and the parser is fuzzed like `rr_text` ([testing.md](testing.md#fuzzing)): every push replays its corpus, and the `fuzz` job searches. Five minutes of libFuzzer, 1,580,114 inputs, broke no invariant. The steps before that each found something:
+43 unit tests state the rules, and the parser is fuzzed like `rr_text` ([testing.md](testing.md#fuzzing)): every push replays its corpus, and the `fuzz` job searches. Five minutes of libFuzzer, 1,580,114 inputs, broke no invariant. The steps before that each found something:
 
 1. **Reviewing the parser before its first build** found three defects:
    - `[A012]` was silently text. It passed the "written exactly" comparison, then failed the strict ID parse;
@@ -113,3 +115,5 @@ A bracket is a citation when what it holds starts with A, S or V and a digit, wi
    - one was killed by the ID constructor's assertion rather than the test named.
 
 The final run kills all 43 mutants: 3 on IDs, 30 on the parser's citations, sentences, blocks and reading, 4 on the transcript, 6 on the ledger.
+
+P13 made the inline-code reader public, as `inline_code()`, with a test of its own. The two mutants on it, rerun after the move, are still killed.

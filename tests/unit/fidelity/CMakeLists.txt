@@ -1,0 +1,9 @@
+rr_add_test_suite(fidelity
+    SOURCES
+        article_test.cpp
+        faults_test.cpp
+        ledger_test.cpp
+        report_test.cpp
+    DEPS
+        rr::fidelity
+        rr::oracle)

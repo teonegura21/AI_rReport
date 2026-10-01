@@ -16,6 +16,9 @@ rebuilds the suite, runs it, and reports:
                          the edit's text is not in the file exactly once, so
                          it could mutate the wrong place: it is refused
 
+A test the suite died in (a crash, an abort) has failed: the binary never
+printed its verdict, so it is named from its "[ RUN      ]" line.
+
 Every source file is restored after each mutant, and checked byte for byte
 at the end, whatever happens. The build directory is rebuilt from the
 unmutated sources last. Never run two at once, nor while another build reads
@@ -130,11 +133,24 @@ def apply_edits(text: str, edits: tuple[Edit, ...]) -> tuple[str | None, str]:
 
 
 def failed_tests(output: str) -> list[str]:
-    """The tests GoogleTest's output reports as failed, each once, sorted."""
+    """The tests GoogleTest's output reports as failed, each once, sorted.
+
+    A test that started and never ended, with "[       OK ]", "[  FAILED  ]" or
+    "[  SKIPPED ]", is the one the suite died in: it failed too.
+    """
     failed = set()
+    running = None
     for line in output.splitlines():
-        if line.startswith("[  FAILED  ] ") and "." in line:
-            failed.add(line.split("] ", 1)[1].split(" (", 1)[0].strip())
+        if line.startswith("[ RUN      ] "):
+            running = line.split("] ", 1)[1].strip()
+        elif line.startswith(("[       OK ] ", "[  FAILED  ] ", "[  SKIPPED ] ")):
+            name = line.split("] ", 1)[1].split(" (", 1)[0].strip()
+            if line.startswith("[  FAILED  ] ") and "." in name:
+                failed.add(name)
+            if name == running:
+                running = None
+    if running is not None:
+        failed.add(running)
     return sorted(failed)
 
 

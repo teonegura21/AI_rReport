@@ -147,6 +147,17 @@ TEST(Article, UnmatchedBackticksAreText) {
     EXPECT_EQ(cited_by_sentence("A lone ` here [A2]."), (Cited{{"A lone ` here [A2].", {2}}}));
 }
 
+TEST(Article, InlineCodeRunsToAnEqualRunOfBackticks) {
+    const std::string_view markdown = "Use `a`, ``b ` c`` and a lone ` here.";
+    std::vector<std::string_view> code;
+    for (const text::Span& span : inline_code(markdown, text::Span{.begin = 0, .end = markdown.size()})) {
+        code.push_back(text::text_of(markdown, span));
+    }
+    EXPECT_EQ(code, (std::vector<std::string_view>{"`a`", "``b ` c``"}));
+    EXPECT_TRUE(inline_code(markdown, text::Span{.begin = 4, .end = 6}).empty())
+        << "within \"`a\" alone, the run is never matched";
+}
+
 TEST(Article, BlocksAreMarkdowns) {
     constexpr std::string_view kText =
         "# Title [A1]\n\nA paragraph\nthat wraps [A2].\n\n- an item [A3]\n- another\n"

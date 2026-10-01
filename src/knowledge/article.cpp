@@ -412,7 +412,7 @@ private:
     // The markers in `prose`, outside inline code; bad markers are recorded.
     std::vector<Marker> markers_in(Span prose) {
         constexpr std::size_t kMaxContent = 64;
-        const std::vector<Span> code = code_spans(prose);
+        const std::vector<Span> code = inline_code(markdown_, prose);
         std::vector<Marker> markers;
         std::size_t code_index = 0;
         for (std::size_t at = prose.begin; at < prose.end; ++at) {
@@ -451,46 +451,6 @@ private:
             at = end;
         }
         return markers;
-    }
-
-    // Inline code: a run of backticks, to the next run of as many.
-    [[nodiscard]] std::vector<Span> code_spans(Span prose) const {
-        std::vector<Span> spans;
-        std::size_t at = prose.begin;
-        while (at < prose.end) {
-            if (markdown_[at] != '`') {
-                ++at;
-                continue;
-            }
-            const std::size_t opening = run_end(at, prose.end);
-            std::optional<std::size_t> closing;
-            for (std::size_t search = opening; search < prose.end;) {
-                if (markdown_[search] != '`') {
-                    ++search;
-                    continue;
-                }
-                const std::size_t end = run_end(search, prose.end);
-                if (end - search == opening - at) {
-                    closing = end;
-                    break;
-                }
-                search = end;
-            }
-            if (closing.has_value()) {
-                spans.push_back(Span{.begin = at, .end = *closing});
-                at = *closing;
-            } else {
-                at = opening;  // unmatched backticks are text
-            }
-        }
-        return spans;
-    }
-
-    [[nodiscard]] std::size_t run_end(std::size_t at, std::size_t limit) const {
-        while (at < limit && markdown_[at] == '`') {
-            ++at;
-        }
-        return at;
     }
 
     std::string_view markdown_;
@@ -548,6 +508,46 @@ std::string without_markers(std::string_view markdown, const ParsedArticle& pars
     text.append(markdown.substr(at, span.end - at));
     const std::size_t first = text.find_first_not_of(" \t");
     return first == std::string::npos ? std::string{} : text.substr(first);
+}
+
+std::vector<Span> inline_code(std::string_view markdown, Span span) {
+    const bool within = span.begin <= span.end && span.end <= markdown.size();
+    RR_ASSERT(within, "the span is of the markdown");
+    const auto run_end = [&](std::size_t at) {
+        while (at < span.end && markdown[at] == '`') {
+            ++at;
+        }
+        return at;
+    };
+    std::vector<Span> spans;
+    std::size_t at = span.begin;
+    while (at < span.end) {
+        if (markdown[at] != '`') {
+            ++at;
+            continue;
+        }
+        const std::size_t opening = run_end(at);
+        std::optional<std::size_t> closing;
+        for (std::size_t search = opening; search < span.end;) {
+            if (markdown[search] != '`') {
+                ++search;
+                continue;
+            }
+            const std::size_t end = run_end(search);
+            if (end - search == opening - at) {
+                closing = end;
+                break;
+            }
+            search = end;
+        }
+        if (closing.has_value()) {
+            spans.push_back(Span{.begin = at, .end = *closing});
+            at = *closing;
+        } else {
+            at = opening;  // unmatched backticks are text
+        }
+    }
+    return spans;
 }
 
 }  // namespace rr::knowledge

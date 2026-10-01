@@ -1,0 +1,272 @@
+# Mutants of rr_fidelity: each removes one rule of the ledger checks and names the test
+# that must fail without it. Run: scripts/mutate.py tests/mutants/fidelity.toml
+# What they found is in docs/design/fidelity.md, "How the tests were validated".
+
+target = "rr_fidelity_tests"
+binary = "build/dev/tests/unit/fidelity/rr_fidelity_tests"
+timeout = 60
+
+[[mutant]]
+name = "both-atoms-and-filler-pass"
+file = "src/fidelity/ledger.cpp"
+expect = "Ledger.ASentenceIsAtomsOrFillerNotBoth"
+  [[mutant.edit]]
+  from = '''if (atoms != told.end() && filler != fillers.end()) {'''
+  to = '''if (false && atoms != told.end() && filler != fillers.end()) {'''
+
+[[mutant]]
+name = "unaccounted-pass"
+file = "src/fidelity/ledger.cpp"
+expect = "Ledger.EverySentenceIsAccountedFor"
+  [[mutant.edit]]
+  from = '''} else if (atoms == told.end() && filler == fillers.end()) {'''
+  to = '''} else if (false && atoms == told.end() && filler == fillers.end()) {'''
+
+[[mutant]]
+name = "accounting-uncounted"
+file = "src/fidelity/ledger.cpp"
+expect = "Ledger.EverySentenceIsAccountedFor"
+  [[mutant.edit]]
+  from = '''            ++report.coverage.sentences_accounted;'''
+  to = '''            report.coverage.sentences_accounted += 0;'''
+
+[[mutant]]
+name = "stray-atom-sentences-pass"
+file = "src/fidelity/ledger.cpp"
+expect = "Ledger.OnlyTheSentencesGivenAreNamed"
+  [[mutant.edit]]
+  from = '''[&](const SentenceId& sentence) { return !known.contains(sentence); });'''
+  to = '''[&](const SentenceId& sentence) { return !known.contains(sentence) && false; });'''
+
+[[mutant]]
+name = "stray-fillers-pass"
+file = "src/fidelity/ledger.cpp"
+expect = "Ledger.OnlyTheSentencesGivenAreNamed"
+  [[mutant.edit]]
+  from = '''        if (!known.contains(filler.sentence)) {'''
+  to = '''        if (false && !known.contains(filler.sentence)) {'''
+
+[[mutant]]
+name = "atom-numbers-unchecked"
+file = "src/fidelity/ledger.cpp"
+expect = "Ledger.AnAtomSaysOnlyTheNumbersItsSentencesSay"
+  [[mutant.edit]]
+  from = '''        if (!held::states(said, number)) {'''
+  to = '''        if (false && !held::states(said, number)) {'''
+
+[[mutant]]
+name = "atom-quotes-unchecked"
+file = "src/fidelity/ledger.cpp"
+expect = "Ledger.AMustQuoteIsWhatWasSaid"
+  [[mutant.edit]]
+  from = '''        if (!found.verbatim()) {
+            const std::optional<std::string> said_instead'''
+  to = '''        if (false && !found.verbatim()) {
+            const std::optional<std::string> said_instead'''
+
+[[mutant]]
+name = "invented-names-pass"
+file = "src/fidelity/ledger.cpp"
+expect = "Ledger.ANameTheTranscriptNeverGivesIsAWarning"
+  [[mutant.edit]]
+  from = '''        if (!held::names(whole, name)) {'''
+  to = '''        if (false && !held::names(whole, name)) {'''
+
+[[mutant]]
+name = "filler-numbers-pass"
+file = "src/fidelity/ledger.cpp"
+expect = "Ledger.AFillerHoldsNoNumberNameOrTerm"
+  [[mutant.edit]]
+  from = '''held::numbers(sentence); !numbers.empty()) {'''
+  to = '''held::numbers(sentence); false && !numbers.empty()) {'''
+
+[[mutant]]
+name = "filler-names-pass"
+file = "src/fidelity/ledger.cpp"
+expect = "Ledger.AFillerHoldsNoNumberNameOrTerm"
+  [[mutant.edit]]
+  from = '''text::names(sentence); !names.empty()) {'''
+  to = '''text::names(sentence); false && !names.empty()) {'''
+
+[[mutant]]
+name = "filler-terms-pass"
+file = "src/fidelity/ledger.cpp"
+expect = "Ledger.AFillerHoldsNoNumberNameOrTerm"
+  [[mutant.edit]]
+  from = '''        if (held::uses(sentence, term)) {'''
+  to = '''        if (false && held::uses(sentence, term)) {'''
+
+[[mutant]]
+name = "told-fillers-reexamined"
+file = "src/fidelity/ledger.cpp"
+expect = "Ledger.ASentenceIsAtomsOrFillerNotBoth"
+  [[mutant.edit]]
+  from = '''if (sentence == nullptr || told.contains(filler.sentence)) {'''
+  to = '''if (sentence == nullptr) {'''
+
+[[mutant]]
+name = "one-is-held"
+file = "src/fidelity/held.cpp"
+expect = "Ledger.ABareOneIsNotHeld"
+  [[mutant.edit]]
+  from = '''return mention.form == text::NumberForm::words && mention.value == 1.0 && !mention.ordinal &&'''
+  to = '''return false && mention.form == text::NumberForm::words && mention.value == 1.0 && !mention.ordinal &&'''
+
+[[mutant]]
+name = "last-name-not-enough"
+file = "src/fidelity/held.cpp"
+expect = "Article.ANameIsKeptWholeOrByItsLastWord"
+  [[mutant.edit]]
+  from = '''return words.size() > 1 && !text::mentions(text, text::text_of(name, words.back().span)).empty();'''
+  to = '''return words.size() > 100 && !text::mentions(text, text::text_of(name, words.back().span)).empty();'''
+
+[[mutant]]
+name = "any-alignment-shown"
+file = "src/fidelity/held.cpp"
+expect = "Article.EveryQuotationIsTheTranscriptsWords"
+  [[mutant.edit]]
+  from = '''if (alignment.score == 0 || alignment.identity() < kClose) {'''
+  to = '''if (alignment.score == 0 || alignment.identity() < kClose * 0.0) {'''
+
+[[mutant]]
+name = "bad-markers-uncounted"
+file = "src/fidelity/article.cpp"
+expect = "Article.ABadMarkerIsAFinding"
+  [[mutant.edit]]
+  from = '''        ++report.coverage.markers_invalid;
+        report.findings.push_back('''
+  to = '''        report.coverage.markers_invalid += 0;
+        report.findings.push_back('''
+
+[[mutant]]
+name = "unknown-markers-pass"
+file = "src/fidelity/article.cpp"
+expect = "Article.AMarkerNamesAnAtomOfTheLedger"
+  [[mutant.edit]]
+  from = '''if (ledger.find(marker.atom) == nullptr) {'''
+  to = '''if (false && ledger.find(marker.atom) == nullptr) {'''
+
+[[mutant]]
+name = "numbers-kept-uncounted"
+file = "src/fidelity/article.cpp"
+expect = "Article.AnAtomsNumbersReachTheParagraphCitingIt"
+  [[mutant.edit]]
+  from = '''            ++report.coverage.numbers_kept;'''
+  to = '''            report.coverage.numbers_kept += 0;'''
+
+[[mutant]]
+name = "untold-atoms-pass"
+file = "src/fidelity/article.cpp"
+expect = "Article.EveryAtomIsTold"
+  [[mutant.edit]]
+  from = '''            report.findings.push_back(
+                finding(Check::atom_told'''
+  to = '''            (void)(
+                finding(Check::atom_told'''
+
+[[mutant]]
+name = "told-uncounted"
+file = "src/fidelity/article.cpp"
+expect = "Article.EveryAtomIsTold"
+  [[mutant.edit]]
+  from = '''        ++report.coverage.atoms_told;'''
+  to = '''        report.coverage.atoms_told += 0;'''
+
+[[mutant]]
+name = "must-quotes-anywhere"
+file = "src/fidelity/article.cpp"
+expect = "Article.AMustQuoteIsKeptVerbatim"
+  [[mutant.edit]]
+  from = '''        if (found.verbatim()) {
+            ++report.coverage.must_quotes_kept;'''
+  to = '''        if (true) {
+            ++report.coverage.must_quotes_kept;'''
+
+[[mutant]]
+name = "short-quotations-checked"
+file = "src/fidelity/article.cpp"
+expect = "Article.AShortQuotationIsANameOrATerm"
+  [[mutant.edit]]
+  from = '''constexpr std::size_t kQuotedWords = 3;'''
+  to = '''constexpr std::size_t kQuotedWords = 1;'''
+
+[[mutant]]
+name = "ellipses-ignored"
+file = "src/fidelity/article.cpp"
+expect = "Article.AnEllipsisLeavesWordsOut"
+  [[mutant.edit]]
+  from = '''for (const std::string_view ellipsis : {"[\u2026]", "[...]", "\u2026", "..."}) {'''
+  to = '''for (const std::string_view ellipsis : {"[\u2026]", "[...]", "..."}) {'''
+
+[[mutant]]
+name = "quotations-unchecked"
+file = "src/fidelity/article.cpp"
+expect = "Article.EveryQuotationIsTheTranscriptsWords"
+  [[mutant.edit]]
+  from = '''                if (found.verbatim()) {
+                    continue;'''
+  to = '''                if (true) {
+                    continue;'''
+
+[[mutant]]
+name = "sections-ignored"
+file = "src/fidelity/article.cpp"
+expect = "Article.SectionsMayBeOrderedFreely"
+  [[mutant.edit]]
+  from = '''        if (block.kind == BlockKind::heading) {'''
+  to = '''        if (false && block.kind == BlockKind::heading) {'''
+
+[[mutant]]
+name = "order-by-every-citation"
+file = "src/fidelity/article.cpp"
+expect = "Article.AnAtomToldAgainIsPlacedWhereFirstTold"
+  [[mutant.edit]]
+  from = '''if (atom == nullptr || atom->sentences.empty() || !seen.insert(marker.atom).second) {'''
+  to = '''if (atom == nullptr || atom->sentences.empty() || (!seen.insert(marker.atom).second && false)) {'''
+
+[[mutant]]
+name = "order-strictly-increasing"
+file = "src/fidelity/article.cpp"
+expect = "Article.AtomsSaidTogetherMayBeToldInEitherOrder"
+  [[mutant.edit]]
+  from = '''const auto later = std::ranges::upper_bound(tails,'''
+  to = '''const auto later = std::ranges::lower_bound(tails,'''
+
+[[mutant]]
+name = "code-quotations-checked"
+file = "src/fidelity/article.cpp"
+expect = "Article.QuotesInCodeAreCode"
+  [[mutant.edit]]
+  from = '''        if (block.kind == BlockKind::code) {
+            continue;'''
+  to = '''        if (false) {
+            continue;'''
+
+[[mutant]]
+name = "inline-code-quotations-read"
+file = "src/fidelity/article.cpp"
+expect = "Article.QuotesInCodeAreCode"
+  [[mutant.edit]]
+  from = '''        if (next_code != code.end() && next_code->begin <= at) {
+            continue;  // a quote mark in code is code'''
+  to = '''        if (false) {
+            continue;  // a quote mark in code is code'''
+
+[[mutant]]
+name = "inch-marks-open"
+file = "src/fidelity/article.cpp"
+expect = "Article.AnInchMarkIsNoQuote"
+  [[mutant.edit]]
+  from = '''open == Open::none && !in_a_word(previous)) {'''
+  to = '''open == Open::none && (!in_a_word(previous) || true)) {'''
+
+[[mutant]]
+name = "last-section-unchecked"
+file = "src/fidelity/article.cpp"
+expect = "Article.WithinASectionTheTalksOrderIsKept"
+  [[mutant.edit]]
+  from = '''    }
+    close_section();
+}'''
+  to = '''    }
+}'''

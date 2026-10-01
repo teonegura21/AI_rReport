@@ -117,6 +117,19 @@ class Judging(unittest.TestCase):
         )
         self.assertEqual(mutate.failed_tests("[  PASSED  ] 3 tests."), [])
 
+    def test_the_test_a_suite_died_in_failed(self) -> None:
+        crashed = (
+            "[ RUN      ] Ledger.A\n[       OK ] Ledger.A (0 ms)\n"
+            "[ RUN      ] Ledger.B\n[  SKIPPED ] Ledger.B (0 ms)\n"
+            "[ RUN      ] Ledger.C\n/usr/include/c++/14/bits/stl_vector.h:1130: Assertion failed\n"
+        )
+        self.assertEqual(mutate.failed_tests(crashed), ["Ledger.C"])
+        finished = "[ RUN      ] Ledger.A\n[  FAILED  ] Ledger.A (3 ms)\n" + self.OUTPUT
+        self.assertEqual(
+            mutate.failed_tests(finished),
+            ["Army.ASharedPoolRunsOnlyWhatItsTokensHold", "Army.EachAnswerTakesASlot", "Ledger.A"],
+        )
+
     def test_judges_by_the_test_that_claims_the_rule(self) -> None:
         failed = mutate.failed_tests(self.OUTPUT)
         self.assertEqual(mutate.verdict(1, failed, "Army.EachAnswerTakesASlot"), "KILLED")

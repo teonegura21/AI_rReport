@@ -49,7 +49,7 @@ rReport's promise is an article that is faithful to the video: every sentence ac
   | `edit` | a stage's own: softening a quote, misattributing | the stage's check |
 
   `When` picks the calls: by mission, mission kind, model, thinking or not, and how many calls of each mission it hits. The default is the first call, so the repair succeeds; `calls = 0` hits every call, so the ladder's top is reached. Where two faults match a call, the first listed is made. `injected()` lists every fault made, and whether it found something to change.
-- **The test now (P10)** runs each fault through the army against the oracle, and checks its end: repaired, rescued by another family, retried without thinking, a finding, or an error.
+- **The tests now** run each fault through the army against the oracle (P10), and check its end: repaired, rescued by another family, retried without thinking, a finding, or an error. The faults that change what a model writes are each caught by a fidelity check (P13, [fidelity.md](fidelity.md#faults-caught)).
 - **End to end, through the fake engine (`--fake-oracle`), arrives with P22.** A call on the wire does not carry its mission kind: the tag is never sent to a model. The fake engine will therefore know a mission by its answer schema's name, which the stages set. Both land together, when there are missions to route.
 
 ## Fuzzing

@@ -123,4 +123,9 @@ struct ParsedArticle {
 [[nodiscard]] std::string without_markers(std::string_view markdown, const ParsedArticle& parsed,
                                           text::Span span);
 
+// The inline code of `span`, a span of `markdown`: from a run of backticks to
+// the next run of as many, as CommonMark reads it; a run never matched is
+// text. Inside, nothing is a marker, and no quote mark opens a quotation.
+[[nodiscard]] std::vector<text::Span> inline_code(std::string_view markdown, text::Span span);
+
 }  // namespace rr::knowledge

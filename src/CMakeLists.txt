@@ -23,6 +23,7 @@ endif()
 if(RR_BUILD_HUB)
     add_subdirectory(text)      # text made comparable: tokens, sentences, numbers, names, alignment
     add_subdirectory(knowledge) # the knowledge model: IDs, transcript, atoms, the article's markers
+    add_subdirectory(fidelity)  # the ledger checks: every sentence, atom, number and quote accounted for
     add_subdirectory(db)
     add_subdirectory(llm)       # calling models
     add_subdirectory(prompt)    # the prompts: templates, versions, rendering, token estimates
