@@ -1,0 +1,17 @@
+# The prompts: one [[prompt]] each. rr/prompt/library.hpp explains the rules;
+# docs/design/prompts.md, the craft.
+#
+#   [[prompt]]
+#   name = "atomize"            # its files: prompts/atomize/system.md.inja,
+#                               # task.md.inja and example.json
+#   purpose = "…"               # one line
+#   schema = "schemas/missions/atomize.json"  # its answer's schema, if any
+#   shared = ["role", "rules", "brief"]       # all its system part may use
+#   failure_modes = ["…"]       # how it is known to go wrong
+#     [[prompt.version]]        # one per change, oldest first
+#     number = 1
+#     hash = "…"                # the files' content hash at this version;
+#                               # the L0 check prints the next one to add
+#     note = "first version"
+#
+# The first prompts arrive with their stages: outline, atomize, plan, write.

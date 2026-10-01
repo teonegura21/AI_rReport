@@ -89,7 +89,17 @@ FetchContent_Declare(BLAKE3
     SYSTEM
     FIND_PACKAGE_ARGS 1.5 CONFIG)
 
-set(_rr_dependencies nlohmann_json tomlplusplus CLI11 httplib jsoncons BLAKE3)
+# Prompt templates (rr_prompt): Jinja's syntax in C++, header-only. Its own
+# CMake is not run (it executes a script at configure time and sets up
+# installs); its headers are all rReport needs, given a target below.
+FetchContent_Declare(inja
+    GIT_REPOSITORY https://github.com/pantor/inja.git
+    GIT_TAG v3.5.0
+    GIT_SHALLOW TRUE
+    SOURCE_SUBDIR headers-only  # no such directory: populate, do not add_subdirectory()
+    FIND_PACKAGE_ARGS 3.4 CONFIG)
+
+set(_rr_dependencies nlohmann_json tomlplusplus CLI11 httplib jsoncons BLAKE3 inja)
 
 if(RR_BUILD_TESTS)
     set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
@@ -113,10 +123,16 @@ endif()
 if(TARGET blake3 AND NOT TARGET BLAKE3::blake3)
     add_library(BLAKE3::blake3 ALIAS blake3)
 endif()
+if(NOT TARGET pantor::inja)  # fetched: headers only, against our nlohmann_json
+    add_library(rr_inja INTERFACE)
+    target_include_directories(rr_inja SYSTEM INTERFACE "${inja_SOURCE_DIR}/include")
+    target_link_libraries(rr_inja INTERFACE nlohmann_json::nlohmann_json)
+    add_library(pantor::inja ALIAS rr_inja)
+endif()
 
 foreach(_rr_required_target IN ITEMS
         nlohmann_json::nlohmann_json tomlplusplus::tomlplusplus CLI11::CLI11
-        httplib::httplib jsoncons::jsoncons BLAKE3::blake3
+        httplib::httplib jsoncons::jsoncons BLAKE3::blake3 pantor::inja
         OpenSSL::Crypto CURL::libcurl SQLite::SQLite3)
     if(NOT TARGET ${_rr_required_target})
         message(FATAL_ERROR "Dependency target ${_rr_required_target} is missing after resolution")
