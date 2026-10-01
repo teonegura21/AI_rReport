@@ -87,6 +87,55 @@ TEST(HubConfig, ModelCallSettings) {
     EXPECT_ERRC(settings({"llm.attempts=21"}), Errc::invalid_argument);
 }
 
+TEST(HubConfig, SamplingPresetsComeFromTheModelCards) {
+    const HubSettings loaded = unwrap(settings());
+    ASSERT_EQ(loaded.sampling.size(), 4U);
+
+    const llm::SamplingPreset& qwen = loaded.sampling.at("qwen_thinking");
+    EXPECT_EQ(qwen.temperature, 1.0);
+    EXPECT_EQ(qwen.top_p, 0.95);
+    EXPECT_EQ(qwen.top_k, 20);
+    EXPECT_TRUE(qwen.thinking);
+    ASSERT_TRUE(qwen.thinking_budget.has_value());
+    EXPECT_EQ(qwen.thinking_budget->tokens, 8192);
+    EXPECT_THAT(qwen.thinking_budget->closing, HasSubstr("must answer now")) << "TOML's \\n escapes apply";
+    EXPECT_EQ(qwen.reasoning_effort, llm::ReasoningEffort::medium) << "not the template's xhigh";
+
+    const llm::SamplingPreset& drafting = loaded.sampling.at("qwen_direct");
+    EXPECT_EQ(drafting.temperature, 0.7);
+    EXPECT_EQ(drafting.top_p, 0.8);
+    EXPECT_FALSE(drafting.thinking);
+    EXPECT_FALSE(drafting.thinking_budget.has_value()) << "-1: no budget";
+    EXPECT_FALSE(drafting.reasoning_effort.has_value()) << "\"\": none";
+    EXPECT_EQ(drafting.presence_penalty, 0.0) << "not the card's 1.5: penalties paraphrase quotes";
+
+    EXPECT_EQ(loaded.sampling.at("gemma_direct").top_k, 64);
+    for (const auto& [name, preset] : loaded.sampling) {
+        llm::ChatRequest probe;
+        llm::apply(preset, probe);
+        EXPECT_THAT(llm::penalty_problems(probe), ::testing::IsEmpty()) << name << " penalizes nothing";
+    }
+}
+
+TEST(HubConfig, ABadPresetFailsAtStartup) {
+    const auto hot = settings({"sampling.qwen_direct.top_p=1.5"});
+    ASSERT_ERRC(hot, Errc::invalid_argument);
+    EXPECT_THAT(hot.error().message(), HasSubstr("sampling.qwen_direct: top_p"));
+
+    const auto budget_without_thinking = settings({"sampling.gemma_direct.thinking_budget=512"});
+    ASSERT_ERRC(budget_without_thinking, Errc::invalid_argument);
+    EXPECT_THAT(budget_without_thinking.error().message(), HasSubstr("budget needs thinking"));
+
+    const auto effort = settings({"sampling.qwen_thinking.reasoning_effort=extreme"});
+    ASSERT_ERRC(effort, Errc::invalid_argument);
+    EXPECT_THAT(effort.error().message(), HasSubstr("low, medium, high, xhigh or empty"));
+
+    EXPECT_ERRC(settings({"sampling.qwen_thinking.thinking_budget=-2"}), Errc::invalid_argument);
+    EXPECT_ERRC(settings({"sampling.qwen_thinking.top_k=99999999999"}), Errc::invalid_argument);
+    EXPECT_ERRC(settings({"sampling.qwen_thinking.temperatur=1"}), Errc::invalid_argument)
+        << "a misspelt key is refused by rr_config, as everywhere";
+}
+
 TEST(HubConfig, ConfigurationFilesAreFoundWhereTheyLive) {
     const testkit::TempDir home;
     const HubFacts facts{.home = home.path().string()};

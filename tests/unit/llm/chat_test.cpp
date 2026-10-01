@@ -42,17 +42,26 @@ TEST(Chat, TheJsonFormLeavesUnsetFieldsOut) {
     full.max_tokens = 100;
     full.temperature = 0.5;
     full.top_p = 0.9;
+    full.top_k = 20;
+    full.min_p = 0.05;
+    full.presence_penalty = 0.0;
+    full.repeat_penalty = 1.0;
     full.seed = 7;
     full.stop = {"END"};
     full.json_schema = R"({"type":"object"})";
     full.schema_name = "atoms";
-    full.thinking = false;
+    full.thinking = true;
+    full.thinking_budget = ThinkingBudget{.tokens = 512, .closing = "Answer now."};
+    full.reasoning_effort = ReasoningEffort::medium;
     full.extra = {{"cache_prompt", true}};
     const json::Json document = to_json(full);
-    for (const char* field : {"max_tokens", "temperature", "top_p", "seed", "stop", "json_schema",
-                              "schema_name", "thinking", "extra"}) {
+    for (const char* field : {"max_tokens", "temperature", "top_p", "top_k", "min_p", "presence_penalty",
+                              "repeat_penalty", "seed", "stop", "json_schema", "schema_name", "thinking",
+                              "thinking_budget", "reasoning_effort", "extra"}) {
         EXPECT_TRUE(document.contains(field)) << field;
     }
+    EXPECT_EQ(document["thinking_budget"], (json::Json{{"tokens", 512}, {"closing", "Answer now."}}));
+    EXPECT_EQ(document["reasoning_effort"], "medium");
     EXPECT_FALSE(document.contains("tag"));
 }
 
@@ -74,6 +83,19 @@ TEST(Chat, TheRequestKeyIsWhatTheModelSees) {
     ChatRequest extra = ask("hi");
     extra.extra = {{"id_slot", 2}};
     EXPECT_NE(request_key("runtime", extra), key) << "server-specific extras are";
+    ChatRequest neutral = ask("hi");
+    neutral.repeat_penalty = 1.0;
+    EXPECT_NE(request_key("runtime", neutral), key)
+        << "an explicit neutral value overrides a server's default";
+    ChatRequest thinking = ask("hi");
+    thinking.thinking = true;
+    const std::string thinking_key = request_key("runtime", thinking);
+    thinking.thinking_budget = ThinkingBudget{.tokens = 512};
+    EXPECT_NE(request_key("runtime", thinking), thinking_key) << "the thinking budget is";
+    const std::string budget_key = request_key("runtime", thinking);
+    thinking.thinking_budget->closing = "Answer now.";
+    EXPECT_NE(request_key("runtime", thinking), budget_key)
+        << "so is what the model is made to say at its end";
 }
 
 TEST(Chat, TheSchemasFieldOrderIsPartOfTheKey) {

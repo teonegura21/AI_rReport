@@ -43,6 +43,7 @@ A misspelt key or a wrong type fails with a suggestion.
 - **Data directory:** `hub.data_dir`, else `$XDG_DATA_HOME/rreport`, else `~/.local/share/rreport`. Relative XDG paths are ignored, as the specification requires. Each library lives in `<data_dir>/libraries/<name>/library.db`.
 - **The runtime's address:** `runtime.url`, else RunPod's proxy URL for `runpod.pod_id` and `runpod.port` (`https://<pod>-8080.proxy.runpod.net`). Without either, the hub works but cannot call models.
 - **`llm.mode`:** `live`; `record` (live, keeping every answer); or `replay` (recorded answers only, for tests).
+- **Sampling presets:** every `[sampling.<name>]` table (`qwen_thinking`, `qwen_direct`, `gemma_thinking`, `gemma_direct`), with every field required. Each is checked when the configuration loads (`llm::preset_problems()`), so a bad value fails at startup, not in the middle of a job. Values and reasons: [llm.md](llm.md#sampling).
 - **Secrets:** `runtime.token` (the pod's `RR_RUNTIME_TOKEN`) and `runpod.api_key` (an API key of your RunPod account). They belong in `secrets.toml` or the environment, and are never printed.
 
 ## `doctor`
@@ -113,7 +114,7 @@ The GPU is the product's main running cost. Which one to rent is decided by meas
 
 | Level | What |
 |---|---|
-| Unit | `hub_config_test.cpp`: XDG rules, file locations, the runtime's address, mode and limit checks. `doctor_test.cpp`: each finding, against a hand-written runtime and the fake RunPod API |
+| Unit | `hub_config_test.cpp`: XDG rules, file locations, the runtime's address, mode and limit checks, sampling presets. `doctor_test.cpp`: each finding, against a hand-written runtime and the fake RunPod API |
 | Unit, RunPod and the pod | `runpod_test.cpp`: the API against `tests/fakes/fake_runpod.hpp`, a fake RunPod that refuses what RunPod refuses (409, 400 for a full machine, 429, 403 for a pod's own key on REST) and whose reads can lag its writes. `pod_manager_test.cpp`: that fake plus a real runtime with fake engines. `runtime_client_test.cpp`: the proxy's 404 and 502 while a pod boots, served by hand |
 | Component | `tests/component/hub_cli_test.cpp` runs the real `rreport` against a real `rreport-runtime` (fake engines: a commander, and infantry with 4 slots) and the fake RunPod API. It covers `doctor`'s verdicts and advice; `pod start`, `status` and `stop`; a full `bench`, with the queued level marked, RunPod's price, the JSON saved and 11 calls accounted for; a timed cold start; and configuration mistakes, with secrets never printed |
 
@@ -126,6 +127,10 @@ Each rule was removed on purpose, and the named test was confirmed to fail.
 | Relative XDG paths are ignored | `TheDataDirectoryFollowsXdg` |
 | The runtime's address follows the pod | `TheRuntimeFollowsThePod` |
 | A config file named with `--config` must exist | `ConfigurationFilesAreFoundWhereTheyLive` |
+| Presets are checked at startup | `ABadPresetFailsAtStartup` |
+| A misspelt reasoning effort is refused, not dropped | `ABadPresetFailsAtStartup` |
+| A thinking budget is a token count, or -1 | `ABadPresetFailsAtStartup` |
+| Preset names come from the defaults' tables | `SamplingPresetsComeFromTheModelCards` |
 | A stopped pod's runtime is not asked for | `AStoppedPodsRuntimeIsNotAskedFor` |
 | Little room is a warning | `MissingToolsAndLittleRoomAreWarnings` |
 | A failure makes the hub unhealthy | `AnUnusableDataDirectoryIsAFailure` |

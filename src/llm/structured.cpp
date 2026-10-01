@@ -4,6 +4,7 @@
 #include <string_view>
 
 #include <rr/core/strings.hpp>
+#include <rr/llm/sampling.hpp>
 
 namespace rr::llm {
 
@@ -67,6 +68,13 @@ std::string as_lines(const std::vector<std::string>& problems) {
 Result<StructuredAnswer> structured_json(const LlmProvider& provider, ChatRequest request,
                                          const json::Schema& schema, const StreamSink& sink,
                                          const std::stop_token& stop, const StructuredOptions& options) {
+    // A penalty biases the answer's labels and paraphrases its quotes
+    // (rr/llm/sampling.hpp): a mistake in the caller, refused before any call.
+    if (const std::vector<std::string> penalties = penalty_problems(request); !penalties.empty()) {
+        return fail(Errc::invalid_argument,
+                    std::format("a structured answer from '{}' cannot be asked with penalties: {}",
+                                request.model, join(penalties, "; ")));
+    }
     const ProviderCaps caps = provider.caps();
     if (caps.json_schema) {
         request.json_schema = schema.model_facing();

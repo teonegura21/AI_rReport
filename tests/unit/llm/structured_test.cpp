@@ -116,6 +116,23 @@ TEST(Structured, SendsAnInvalidAnswerBackWithItsProblems) {
     EXPECT_THAT(instruction, HasSubstr("corrected JSON only"));
 }
 
+TEST(Structured, RefusesPenaltiesBeforeAnyCall) {
+    const ScriptedProvider model{{answer(R"({"title": "Dune", "year": 1965})")}, kLlamaServer};
+    ChatRequest penalized = ask("a book");
+    penalized.presence_penalty = 1.5;
+    penalized.extra = {{"dry_multiplier", 0.8}};
+    const auto result = structured<Book>(model, penalized, book_schema(), to_book, {}, {});
+    ASSERT_ERRC(result, Errc::invalid_argument);
+    EXPECT_THAT(result.error().message(), HasSubstr("presence_penalty = 1.5"));
+    EXPECT_THAT(result.error().message(), HasSubstr("extra.dry_multiplier = 0.8"));
+    EXPECT_TRUE(model.requests().empty()) << "a caller's mistake costs no call";
+
+    ChatRequest neutral = ask("a book");
+    neutral.presence_penalty = 0.0;
+    neutral.repeat_penalty = 1.0;
+    ASSERT_OK(structured<Book>(model, neutral, book_schema(), to_book, {}, {}));
+}
+
 TEST(Structured, GivesUpWithEveryProblemListed) {
     const ScriptedProvider model{{answer("I think it is Dune."), answer(R"({"title": "Dune"})")},
                                  kLlamaServer};

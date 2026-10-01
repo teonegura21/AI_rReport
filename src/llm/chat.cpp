@@ -9,6 +9,7 @@ namespace {
 
 constexpr std::array<std::string_view, 3> kRoleNames{"system", "user", "assistant"};
 constexpr std::array<std::string_view, 4> kFinishNames{"stop", "length", "content_filter", "other"};
+constexpr std::array<std::string_view, 4> kEffortNames{"low", "medium", "high", "xhigh"};
 
 Message text_message(MessageRole role, std::string text) {
     return Message{.role = role,
@@ -49,6 +50,20 @@ std::string_view to_string(FinishReason reason) noexcept {
     return index < kFinishNames.size() ? kFinishNames[index] : std::string_view{"other"};
 }
 
+std::string_view to_string(ReasoningEffort effort) noexcept {
+    const auto index = static_cast<std::size_t>(effort);
+    return index < kEffortNames.size() ? kEffortNames[index] : std::string_view{"unknown"};
+}
+
+std::optional<ReasoningEffort> reasoning_effort_from_string(std::string_view name) noexcept {
+    for (std::size_t index = 0; index < kEffortNames.size(); ++index) {
+        if (kEffortNames[index] == name) {
+            return static_cast<ReasoningEffort>(index);
+        }
+    }
+    return std::nullopt;
+}
+
 FinishReason finish_reason_from_string(std::string_view name) noexcept {
     if (name == "stop") {
         return FinishReason::stop;
@@ -85,6 +100,18 @@ json::Json to_json(const ChatRequest& request) {
     if (request.top_p.has_value()) {
         document["top_p"] = *request.top_p;
     }
+    if (request.top_k.has_value()) {
+        document["top_k"] = *request.top_k;
+    }
+    if (request.min_p.has_value()) {
+        document["min_p"] = *request.min_p;
+    }
+    if (request.presence_penalty.has_value()) {
+        document["presence_penalty"] = *request.presence_penalty;
+    }
+    if (request.repeat_penalty.has_value()) {
+        document["repeat_penalty"] = *request.repeat_penalty;
+    }
     if (request.seed.has_value()) {
         document["seed"] = *request.seed;
     }
@@ -97,6 +124,13 @@ json::Json to_json(const ChatRequest& request) {
     }
     if (request.thinking.has_value()) {
         document["thinking"] = *request.thinking;
+    }
+    if (request.thinking_budget.has_value()) {
+        document["thinking_budget"] = {{"tokens", request.thinking_budget->tokens},
+                                       {"closing", request.thinking_budget->closing}};
+    }
+    if (request.reasoning_effort.has_value()) {
+        document["reasoning_effort"] = to_string(*request.reasoning_effort);
     }
     if (!request.extra.is_null() && !request.extra.empty()) {
         document["extra"] = request.extra;

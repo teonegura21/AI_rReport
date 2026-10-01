@@ -72,6 +72,32 @@ struct Message {
     friend bool operator==(const Message&, const Message&) = default;
 };
 
+// How hard a model that thinks should think. llama-server hands the level to
+// the model's chat template (Qwen3.8 knows low, medium and xhigh; its default,
+// xhigh, over-thinks). Thinking off is ChatRequest::thinking = false, not a
+// level.
+enum class ReasoningEffort : std::uint8_t {
+    low,
+    medium,
+    high,
+    xhigh
+};
+
+[[nodiscard]] std::string_view to_string(ReasoningEffort effort) noexcept;
+// "low", "medium", "high" or "xhigh"; anything else is none.
+[[nodiscard]] std::optional<ReasoningEffort> reasoning_effort_from_string(std::string_view name) noexcept;
+
+// A cap on thinking. After `tokens` tokens of thought, the server ends the
+// thinking itself: it writes `closing`, then the template's end tag, and the
+// model goes on to answer. So a thinking model always answers, instead of
+// spending its whole max_tokens thinking (Gemma 4 can loop there).
+struct ThinkingBudget {
+    int tokens = 0;
+    std::string closing{};  // e.g. "I have to answer now."; empty: the end tag alone
+
+    friend bool operator==(const ThinkingBudget&, const ThinkingBudget&) = default;
+};
+
 // Why a call was made. Recorded with the call; never sent.
 struct CallTag {
     std::string purpose{};     // e.g. "bench", "atomize", "compose"
@@ -81,12 +107,20 @@ struct CallTag {
     friend bool operator==(const CallTag&, const CallTag&) = default;
 };
 
+// Sampling fields left unset take the server's defaults, which are not the
+// model cards' and change between llama.cpp versions: real calls set them all
+// from a preset (rr/llm/sampling.hpp). Ranges are checked before a call is
+// sent (sampling_problems()).
 struct ChatRequest {
     std::string model{};  // the provider's name for the model ("commander" on the runtime)
     std::vector<Message> messages{};
     std::optional<int> max_tokens{};
     std::optional<double> temperature{};
     std::optional<double> top_p{};
+    std::optional<int> top_k{};                // 0: off
+    std::optional<double> min_p{};             // 0: off
+    std::optional<double> presence_penalty{};  // 0: off
+    std::optional<double> repeat_penalty{};    // 1: off
     std::optional<std::int64_t> seed{};
     std::vector<std::string> stop{};
     // Constrained output: the model-facing schema as compact JSON text
@@ -101,6 +135,9 @@ struct ChatRequest {
     std::string schema_name = "answer";
     // Chain of thought for models that can think: on, off, or the model's default.
     std::optional<bool> thinking{};
+    // How long and how hard to think. Both need thinking = true.
+    std::optional<ThinkingBudget> thinking_budget{};
+    std::optional<ReasoningEffort> reasoning_effort{};
     // Fields merged into the request body as they are, for server-specific
     // parameters (llama-server: "cache_prompt", "id_slot"). A JSON object;
     // a key the provider sets itself is refused rather than overwritten.

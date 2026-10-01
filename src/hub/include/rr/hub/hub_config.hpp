@@ -13,7 +13,10 @@
 //       and runpod.port, else none (the hub works without a pod, but cannot
 //       call models);
 //     * llm.mode: live, record (live, keeping every answer) or replay
-//       (recorded answers only: tests, never a live call).
+//       (recorded answers only: tests, never a live call);
+//     * the sampling presets: every [sampling.<name>] table, checked
+//       (llm::preset_problems()), so a bad value fails at startup instead
+//       of in the middle of a job.
 //   Environment variables are RREPORT_<SECTION>__<KEY>; the runtime's are
 //   RR_RUNTIME_*, so the two never read each other's.
 //
@@ -22,6 +25,8 @@
 
 #include <chrono>
 #include <filesystem>
+#include <functional>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -29,6 +34,7 @@
 #include <rr/config/config.hpp>
 #include <rr/core/result.hpp>
 #include <rr/core/secret.hpp>
+#include <rr/llm/sampling.hpp>
 #include <rr/runtime_client/runtime_client.hpp>
 
 namespace rr::hub {
@@ -81,6 +87,8 @@ struct HubSettings {
     std::filesystem::path recordings{};
     runtime_client::CallLimits call_limits{};
     int call_attempts = 4;
+    // How each model samples, by preset name ("qwen_thinking", ...).
+    std::map<std::string, llm::SamplingPreset, std::less<>> sampling{};
 
     // <data_dir>/libraries/<library>/library.db
     [[nodiscard]] std::filesystem::path library_database() const;

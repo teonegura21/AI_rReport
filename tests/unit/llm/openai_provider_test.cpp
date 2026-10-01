@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <functional>
+#include <limits>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -169,6 +170,34 @@ TEST(OpenAiProvider, SendsWhatLlamaServerReads) {
     EXPECT_EQ(body["cache_prompt"], false) << "extras pass through";
 }
 
+TEST(OpenAiProvider, SendsSamplingAndThinkingAsLlamaServerReadsThem) {
+    ChatRequest request = ask("plan the article");
+    request.top_k = 20;
+    request.min_p = 0.05;
+    request.presence_penalty = 0.0;
+    request.repeat_penalty = 1.0;
+    request.thinking = true;
+    request.thinking_budget = ThinkingBudget{.tokens = 4096, .closing = "Answer now."};
+    request.reasoning_effort = ReasoningEffort::medium;
+    // Not const: a const operator[] asserts on a missing key, which aborts the
+    // whole test program; this one yields null, and the expectation fails.
+    json::Json body = unwrap(chat_request_body(request, Dialect::llama_server, {.thinking = true}));
+    EXPECT_EQ(body["top_k"], 20);
+    EXPECT_EQ(body["min_p"], 0.05);
+    EXPECT_EQ(body["presence_penalty"], 0.0);
+    EXPECT_EQ(body["repeat_penalty"], 1.0);
+    EXPECT_EQ(body["chat_template_kwargs"], (json::Json{{"enable_thinking", true}}));
+    EXPECT_EQ(body["reasoning_effort"], "medium") << "handed to the chat template";
+    EXPECT_EQ(body["reasoning_budget_tokens"], 4096);
+    EXPECT_EQ(body["reasoning_budget_message"], "Answer now.") << "said before the forced end of thinking";
+
+    request.thinking_budget->closing.clear();
+    request.reasoning_effort.reset();
+    json::Json plain = unwrap(chat_request_body(request, Dialect::llama_server, {.thinking = true}));
+    EXPECT_FALSE(plain.contains("reasoning_budget_message")) << "no closing: the end tag alone";
+    EXPECT_FALSE(plain.contains("reasoning_effort")) << "the template's own level";
+}
+
 TEST(OpenAiProvider, TheSchemaReachesTheServerInItsOwnOrder) {
     const ModelServer server{[](const auto&) { return stream_of(llama_server_stream()); }};
     ChatRequest request = ask("Is the sentence supported?");
@@ -212,6 +241,24 @@ TEST(OpenAiProvider, RefusesWhatItCannotCarry) {
     EXPECT_ERRC(chat_request_body(thinking, Dialect::openai, {.thinking = true}), Errc::unsupported)
         << "a plain OpenAI API has no standard switch for it";
     EXPECT_OK(chat_request_body(thinking, Dialect::llama_server, {.thinking = true}));
+
+    ChatRequest top_k = ask("x");
+    top_k.top_k = 20;
+    EXPECT_ERRC(chat_request_body(top_k, Dialect::openai, {}), Errc::unsupported)
+        << "top_k, min_p, repeat_penalty and the thinking fields are llama-server's";
+    EXPECT_OK(chat_request_body(top_k, Dialect::llama_server, {}));
+    ChatRequest standard = ask("x");
+    standard.presence_penalty = 0.0;
+    EXPECT_OK(chat_request_body(standard, Dialect::openai, {})) << "presence_penalty is OpenAI's own";
+
+    ChatRequest not_a_number = ask("x");
+    not_a_number.temperature = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_ERRC(chat_request_body(not_a_number, Dialect::llama_server, {}), Errc::invalid_argument)
+        << "NaN would be sent as null: the server's default, silently";
+    ChatRequest effort_alone = ask("x");
+    effort_alone.reasoning_effort = ReasoningEffort::low;
+    EXPECT_ERRC(chat_request_body(effort_alone, Dialect::llama_server, {.thinking = true}),
+                Errc::invalid_argument);
 
     ChatRequest overriding = ask("x");
     overriding.extra = {{"model", "other"}};

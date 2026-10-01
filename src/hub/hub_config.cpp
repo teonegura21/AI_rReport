@@ -2,9 +2,12 @@
 
 #include <cstdint>
 #include <format>
+#include <limits>
+#include <set>
 #include <system_error>
 #include <utility>
 
+#include <rr/core/strings.hpp>
 #include <rr/embedded/hub_defaults.hpp>
 #include <rr/runpod/runpod.hpp>
 #include <rr/runtime_api/protocol.hpp>
@@ -113,6 +116,71 @@ Result<void> apply_llm_settings(const config::Config& config, HubSettings& setti
     return ok();
 }
 
+// An integer setting that must fit an int (a token count, top-k).
+Result<int> int_setting(const config::Config& config, const std::string& key) {
+    RR_TRY_ASSIGN(const std::int64_t value, config.get_int(key));
+    if (value < std::numeric_limits<int>::min() || value > std::numeric_limits<int>::max()) {
+        return fail(Errc::invalid_argument, std::format("{} is out of range: {}", key, value));
+    }
+    return static_cast<int>(value);
+}
+
+// One [sampling.<name>] table. Every field is required: the defaults define
+// them all, and rr_config refuses keys the defaults do not have.
+Result<llm::SamplingPreset> sampling_preset(const config::Config& config, std::string_view name) {
+    const auto key = [&](std::string_view field) { return std::format("sampling.{}.{}", name, field); };
+    llm::SamplingPreset preset;
+    RR_TRY_ASSIGN(preset.temperature, config.get_double(key("temperature")));
+    RR_TRY_ASSIGN(preset.top_p, config.get_double(key("top_p")));
+    RR_TRY_ASSIGN(preset.top_k, int_setting(config, key("top_k")));
+    RR_TRY_ASSIGN(preset.min_p, config.get_double(key("min_p")));
+    RR_TRY_ASSIGN(preset.presence_penalty, config.get_double(key("presence_penalty")));
+    RR_TRY_ASSIGN(preset.repeat_penalty, config.get_double(key("repeat_penalty")));
+    RR_TRY_ASSIGN(preset.thinking, config.get_bool(key("thinking")));
+    RR_TRY_ASSIGN(const int budget, int_setting(config, key("thinking_budget")));
+    RR_TRY_ASSIGN(std::string closing, config.get_string(key("thinking_closing")));
+    if (budget >= 0) {
+        preset.thinking_budget = llm::ThinkingBudget{.tokens = budget, .closing = std::move(closing)};
+    } else if (budget != -1) {
+        return fail(Errc::invalid_argument,
+                    std::format("{} must be a number of tokens, or -1 for none, not {}",
+                                key("thinking_budget"), budget));
+    }
+    RR_TRY_ASSIGN(const std::string effort, config.get_string(key("reasoning_effort")));
+    if (!effort.empty()) {
+        preset.reasoning_effort = llm::reasoning_effort_from_string(effort);
+        if (!preset.reasoning_effort.has_value()) {
+            return fail(Errc::invalid_argument,
+                        std::format("{} must be low, medium, high, xhigh or empty, not '{}'",
+                                    key("reasoning_effort"), effort));
+        }
+    }
+    if (const std::vector<std::string> problems = llm::preset_problems(preset); !problems.empty()) {
+        return fail(Errc::invalid_argument, std::format("sampling.{}: {}", name, join(problems, "; ")));
+    }
+    return preset;
+}
+
+// Every preset the configuration defines: the names under "sampling.".
+Result<std::map<std::string, llm::SamplingPreset, std::less<>>> sampling_presets(
+    const config::Config& config) {
+    constexpr std::string_view kSection = "sampling.";
+    std::set<std::string, std::less<>> names;
+    for (const config::Config::Entry& entry : config.entries()) {
+        const std::string_view key = entry.key;
+        if (key.starts_with(kSection)) {
+            const std::string_view rest = key.substr(kSection.size());
+            names.emplace(rest.substr(0, rest.find('.')));
+        }
+    }
+    std::map<std::string, llm::SamplingPreset, std::less<>> presets;
+    for (const std::string& name : names) {
+        RR_TRY_ASSIGN(llm::SamplingPreset preset, sampling_preset(config, name));
+        presets.emplace(name, std::move(preset));
+    }
+    return presets;
+}
+
 }  // namespace
 
 std::string_view hub_defaults() noexcept {
@@ -154,6 +222,7 @@ Result<HubSettings> hub_settings_from_config(const config::Config& config, const
     RR_TRY_ASSIGN(settings.runtime, runtime_endpoint(config, settings.runpod));
     RR_TRY_ASSIGN(settings.ready_timeout, config.get_duration("runtime.ready_timeout"));
     RR_TRY(apply_llm_settings(config, settings));
+    RR_TRY_ASSIGN(settings.sampling, sampling_presets(config));
     return settings;
 }
 

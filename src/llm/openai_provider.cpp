@@ -4,6 +4,7 @@
 #include <utility>
 
 #include <rr/core/strings.hpp>
+#include <rr/llm/sampling.hpp>
 #include <rr/net/http.hpp>
 #include <rr/net/sse.hpp>
 
@@ -29,6 +30,31 @@ json::OrderedJson content_json(const Message& message) {
         }
     }
     return parts;
+}
+
+// The fields only llama-server reads, as the request sets them. A plain
+// OpenAI-compatible server has no standard field for these.
+std::vector<std::string_view> llama_server_fields(const ChatRequest& request) {
+    std::vector<std::string_view> fields;
+    if (request.top_k.has_value()) {
+        fields.emplace_back("top_k");
+    }
+    if (request.min_p.has_value()) {
+        fields.emplace_back("min_p");
+    }
+    if (request.repeat_penalty.has_value()) {
+        fields.emplace_back("repeat_penalty");
+    }
+    if (request.thinking.has_value()) {
+        fields.emplace_back("thinking");
+    }
+    if (request.thinking_budget.has_value()) {
+        fields.emplace_back("thinking_budget");
+    }
+    if (request.reasoning_effort.has_value()) {
+        fields.emplace_back("reasoning_effort");
+    }
+    return fields;
 }
 
 bool has_images(const ChatRequest& request) {
@@ -70,13 +96,115 @@ void read_usage(const json::Json& usage, Usage& into) {
     }
 }
 
+// What the request asks that no server, or not this one, can carry: refused
+// before anything is built.
+Result<void> check_carriable(const ChatRequest& request, Dialect dialect, const ProviderCaps& caps) {
+    if (const std::vector<std::string> problems = sampling_problems(request); !problems.empty()) {
+        return fail(Errc::invalid_argument,
+                    std::format("a request to '{}' cannot be sent: {}", request.model, join(problems, "; ")));
+    }
+    if (const std::vector<std::string_view> fields = llama_server_fields(request);
+        !fields.empty() && dialect != Dialect::llama_server) {
+        return fail(Errc::unsupported,
+                    std::format("'{}' here has no standard field for {}; say it in `extra`", request.model,
+                                join(fields, ", ")));
+    }
+    if (has_images(request) && !caps.images) {
+        return fail(Errc::unsupported, std::format("'{}' takes no images", request.model));
+    }
+    if (request.json_schema.has_value() && !caps.json_schema) {
+        return fail(Errc::unsupported, std::format("'{}' cannot be held to a JSON schema", request.model));
+    }
+    if (request.thinking.has_value() && !caps.thinking) {
+        return fail(Errc::unsupported, std::format("'{}' cannot think", request.model));
+    }
+    return ok();
+}
+
+// A field the request sets, under the name the server reads.
+template <class T>
+void put(json::OrderedJson& body, const char* name, const std::optional<T>& value) {
+    if (value.has_value()) {
+        body[name] = *value;
+    }
+}
+
+void add_sampling(const ChatRequest& request, json::OrderedJson& body) {
+    put(body, "max_tokens", request.max_tokens);
+    put(body, "temperature", request.temperature);
+    put(body, "top_p", request.top_p);
+    put(body, "top_k", request.top_k);
+    put(body, "min_p", request.min_p);
+    put(body, "presence_penalty", request.presence_penalty);
+    put(body, "repeat_penalty", request.repeat_penalty);
+    put(body, "seed", request.seed);
+    if (!request.stop.empty()) {
+        body["stop"] = request.stop;
+    }
+}
+
+Result<void> add_schema(const ChatRequest& request, json::OrderedJson& body) {
+    if (!request.json_schema.has_value()) {
+        return ok();
+    }
+    // Parsed in order, so the grammar gets the fields in the order written.
+    auto schema = json::parse_ordered(*request.json_schema);
+    if (!schema.has_value()) {
+        return fail(Errc::invalid_argument, std::format("the schema for '{}' is not JSON: {}", request.model,
+                                                        schema.error().message()));
+    }
+    // OpenAI's shape: the one llama-server reads the schema from.
+    body["response_format"] = {
+        {"type", "json_schema"},
+        {"json_schema", {{"name", request.schema_name}, {"schema", std::move(*schema)}, {"strict", true}}}};
+    return ok();
+}
+
+void add_thinking(const ChatRequest& request, json::OrderedJson& body) {
+    if (!request.thinking.has_value()) {
+        return;
+    }
+    body["chat_template_kwargs"] = {{"enable_thinking", *request.thinking}};
+    if (!*request.thinking) {
+        body["reasoning_effort"] = "none";  // honoured by templates that ignore the flag above
+        return;
+    }
+    // sampling_problems() let a budget and an effort through only with thinking on.
+    if (request.reasoning_effort.has_value()) {
+        body["reasoning_effort"] = to_string(*request.reasoning_effort);  // the template's kwarg
+    }
+    if (request.thinking_budget.has_value()) {
+        body["reasoning_budget_tokens"] = request.thinking_budget->tokens;
+        if (!request.thinking_budget->closing.empty()) {
+            body["reasoning_budget_message"] = request.thinking_budget->closing;
+        }
+    }
+}
+
+// Server-specific fields, as they are. One the request already sets is a
+// conflict, refused rather than silently overwritten.
+Result<void> add_extra(const ChatRequest& request, json::OrderedJson& body) {
+    if (request.extra.is_null()) {
+        return ok();
+    }
+    if (!request.extra.is_object()) {
+        return fail(Errc::invalid_argument, "a request's `extra` must be a JSON object");
+    }
+    for (const auto& [key, value] : request.extra.items()) {
+        if (body.contains(key)) {
+            return fail(Errc::invalid_argument,
+                        std::format("`extra` may not set '{}', which the request itself sets", key));
+        }
+        body[key] = value;
+    }
+    return ok();
+}
+
 }  // namespace
 
 Result<json::OrderedJson> chat_request_body(const ChatRequest& request, Dialect dialect,
                                             const ProviderCaps& caps) {
-    if (has_images(request) && !caps.images) {
-        return fail(Errc::unsupported, std::format("'{}' takes no images", request.model));
-    }
+    RR_TRY(check_carriable(request, dialect, caps));
     json::OrderedJson messages = json::OrderedJson::array();
     for (const Message& message : request.messages) {
         messages.push_back({{"role", to_string(message.role)}, {"content", content_json(message)}});
@@ -85,61 +213,10 @@ Result<json::OrderedJson> chat_request_body(const ChatRequest& request, Dialect 
                            {"messages", std::move(messages)},
                            {"stream", true},
                            {"stream_options", {{"include_usage", true}}}};
-    if (request.max_tokens.has_value()) {
-        body["max_tokens"] = *request.max_tokens;
-    }
-    if (request.temperature.has_value()) {
-        body["temperature"] = *request.temperature;
-    }
-    if (request.top_p.has_value()) {
-        body["top_p"] = *request.top_p;
-    }
-    if (request.seed.has_value()) {
-        body["seed"] = *request.seed;
-    }
-    if (!request.stop.empty()) {
-        body["stop"] = request.stop;
-    }
-    if (request.json_schema.has_value()) {
-        if (!caps.json_schema) {
-            return fail(Errc::unsupported,
-                        std::format("'{}' cannot be held to a JSON schema", request.model));
-        }
-        // Parsed in order, so the grammar gets the fields in the order written.
-        auto schema = json::parse_ordered(*request.json_schema);
-        if (!schema.has_value()) {
-            return fail(Errc::invalid_argument, std::format("the schema for '{}' is not JSON: {}",
-                                                            request.model, schema.error().message()));
-        }
-        // OpenAI's shape: the one llama-server reads the schema from.
-        body["response_format"] = {
-            {"type", "json_schema"},
-            {"json_schema",
-             {{"name", request.schema_name}, {"schema", std::move(*schema)}, {"strict", true}}}};
-    }
-    if (request.thinking.has_value()) {
-        if (dialect != Dialect::llama_server || !caps.thinking) {
-            return fail(
-                Errc::unsupported,
-                std::format("thinking cannot be switched for '{}' here; say it in `extra`", request.model));
-        }
-        body["chat_template_kwargs"] = {{"enable_thinking", *request.thinking}};
-        if (!*request.thinking) {
-            body["reasoning_effort"] = "none";  // honoured by templates that ignore the flag above
-        }
-    }
-    if (!request.extra.is_null()) {
-        if (!request.extra.is_object()) {
-            return fail(Errc::invalid_argument, "a request's `extra` must be a JSON object");
-        }
-        for (const auto& [key, value] : request.extra.items()) {
-            if (body.contains(key)) {
-                return fail(Errc::invalid_argument,
-                            std::format("`extra` may not set '{}', which the request itself sets", key));
-            }
-            body[key] = value;
-        }
-    }
+    add_sampling(request, body);
+    RR_TRY(add_schema(request, body));
+    add_thinking(request, body);
+    RR_TRY(add_extra(request, body));
     return body;
 }
 

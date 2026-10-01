@@ -12,6 +12,7 @@ Every model call in rReport goes through `rr_llm`: the infantry's missions, the 
 | `src/llm/include/rr/llm/accounting.hpp` | `AccountedProvider`: every attempt becomes a `CallRecord` |
 | `src/llm/include/rr/llm/replay.hpp` | `RecordingProvider` and `ReplayProvider`: answers recorded once, replayed without a model |
 | `src/llm/include/rr/llm/structured.hpp` | `structured<T>()`: answers that satisfy a JSON schema and the caller's checks |
+| `src/llm/include/rr/llm/sampling.hpp` | `SamplingPreset` and `apply()`; the checks on every request's values; the rule against penalties |
 | `src/library/include/rr/library/call_log.hpp` | `CallLog`: the records, kept in the library database |
 
 ## A call, as it is wired
@@ -62,16 +63,20 @@ These facts come from llama.cpp's source at `db00347` (2026-09-30), and the fake
 
 ```json
 {"model": "commander", "messages": [...], "stream": true, "stream_options": {"include_usage": true},
- "max_tokens": 512, "temperature": 0.2, "seed": 42,
+ "max_tokens": 512, "temperature": 0.7, "top_p": 0.8, "top_k": 20, "min_p": 0.0,
+ "presence_penalty": 0.0, "repeat_penalty": 1.0, "seed": 42,
  "response_format": {"type": "json_schema", "json_schema": {"name": "atom", "schema": {...}, "strict": true}},
  "chat_template_kwargs": {"enable_thinking": false}, "reasoning_effort": "none"}
 ```
+
+With thinking on, the last line becomes `"chat_template_kwargs": {"enable_thinking": true}, "reasoning_effort": "medium", "reasoning_budget_tokens": 8192, "reasoning_budget_message": "…"` (see [Sampling](#sampling)).
 
 - **The schema goes in OpenAI's shape**, the one llama-server reads it from. llama.cpp's README also shows `{"type": "json_schema", "schema": …}`, but the server's code ignores that `schema`.
 - **The schema never reaches the prompt,** so prompts must describe the format themselves.
 - **The schema keeps its field order on the wire.** The body is built as an ordered document (`json::OrderedJson`) and serialized as such; see below.
 - **A message with one text part is sent as a plain string.** Every compatible server takes that form. Otherwise the content is an array of parts, with images as `image_url`.
-- **The dialect decides the two extensions.** `llama_server` switches thinking and reads `timings`. `openai` refuses a request that sets `thinking`, because no standard field carries it.
+- **The dialect decides the extensions.** `llama_server` reads `top_k`, `min_p`, `repeat_penalty`, the thinking fields and `timings`. `openai` refuses a request that sets any of them, because no standard field carries it (`presence_penalty` is standard, so both send it).
+- **Every value is checked first** (`sampling_problems()`), NaN included; see [Sampling](#sampling).
 
 ## Field order is part of the prompt
 
@@ -96,9 +101,51 @@ So the schema's order is the order in which the model thinks *on the page*:
 
 `Schema::compile(const Json&)` still exists for schemas built as canonical values. Their properties reach the model alphabetically, so a schema meant for a model is loaded from text.
 
+## Sampling
+
+Sampling is part of the question: the same messages at another temperature, top-k or penalty are a different call, with a different request key. Three rules follow (`rr/llm/sampling.hpp`).
+
+### 1. Every real call says how to sample
+
+A field left unset takes the server's default. llama-server's defaults are not the model cards' (temperature 0.8, top-k 40, min-p 0.05), and they change between versions. So the hub's configuration holds **presets**, one per model and mode, and missions apply one (`apply()` fills what the request leaves unset; a mission can still choose its own temperature). Neutral penalties are sent too, so a server started with a penalty flag cannot change the question.
+
+| Preset | Model, mode | temperature | top_p | top_k | min_p | thinking | budget | effort |
+|---|---|---|---|---|---|---|---|---|
+| `qwen_thinking` | Qwen3.8, the commander: planning, judging | 1.0 | 0.95 | 20 | 0 | on | 8,192 | medium |
+| `qwen_direct` | Qwen3.8: drafting | 0.7 | 0.8 | 20 | 0 | off | — | — |
+| `gemma_thinking` | Gemma 4, the infantry: escalations, judging | 1.0 | 0.95 | 64 | 0 | on | 4,096 | the model's |
+| `gemma_direct` | Gemma 4: labelling, extraction | 1.0 | 0.95 | 64 | 0 | off | — | — |
+
+The values are the model cards', as recorded when the plan was researched (2026-10-01). Two choices depart from them, on purpose:
+- `qwen_direct` has no presence penalty, where the card recommends 1.5 (rule 3);
+- `qwen_thinking` asks for medium effort, where the template's default, xhigh, over-thinks.
+
+Runbook R1 confirms the presets against the real templates, and the eval's sweeps tune them (R6).
+
+### 2. Values are checked before they are sent
+
+`sampling_problems()` runs in the provider, before any byte leaves:
+- **Ranges:** temperature ≥ 0 and finite; top_p in (0, 1]; top_k ≥ 0; min_p in [0, 1]; presence_penalty in [-2, 2]; repeat_penalty > 0; max_tokens ≥ 1.
+- **NaN fails every range.** JSON has no NaN: nlohmann writes it as `null`, which a server reads as "use your default", a silent change of question. Each check is written so that NaN fails it (`v >= low && v <= high`, never `!(v < low || v > high)`).
+- **Thinking's fields need thinking.** A thinking budget or a reasoning effort with thinking off (or left to the model) would be ignored without a word, so it is refused.
+
+### 3. No penalties where the answer must stay close to its source
+
+Repetition penalties (presence, frequency, repeat), DRY ("don't repeat yourself") and XTC ("exclude top choices") change the next token because of what was already written. In rReport's answers, repetition is the point:
+- **A structured answer repeats its keys, quotes and labels.** The tenth atom is a "claim" as legitimately as the first, but a penalty pushes it toward a label not used yet: it biases the classification.
+- **An article repeats names and terms, and quotes verbatim** (must-quote atoms, plan §3.1). A penalty pushes toward synonyms and paraphrase: it manufactures the softening and term drift that the Fidelity Ledger exists to catch. DRY penalizes repeated sequences, which is what a quote is; XTC removes the most probable tokens, often the exact word.
+
+`structured()` refuses a request that sets any of them, in its fields or in `extra` (`penalty_problems()`), before any call. The writer (plan P20) applies the same rule. Qwen3.8's card suggests the penalty against endless repetition; rReport bounds that with `max_tokens` and validation instead: a looping answer fails its checks and is asked again.
+
+### Thinking: budget and effort
+
+What llama.cpp does with them at the image's pin (`7fe450e`, `tools/server/server-common.cpp`):
+- **`reasoning_budget_tokens`** (alias `thinking_budget_tokens`). After that many tokens of thought, the sampler forces the template's end-of-thinking tag, preceded by `reasoning_budget_message`, and the model answers. It applies only when llama.cpp knows the template's thinking tags; runbook R1 checks each model. A thinking model therefore always answers, instead of spending its whole `max_tokens` thinking (Gemma 4 can loop). If a call still ends without an answer (`length`), it counts as invalid, and the retry runs with thinking off (ADR-0018).
+- **`reasoning_effort`.** `"none"` turns thinking off. Any other value is handed to the chat template as its `reasoning_effort` argument. `ReasoningEffort` is an enum (low, medium, high, xhigh), so a misspelt level fails to compile, or to load from configuration, rather than being ignored by a template.
+
 ## Answers that satisfy a schema
 
-Missions ask for data, not prose, and nothing uses an answer before it is validated (plan §8). `structured<T>()`:
+Missions ask for data, not prose, and nothing uses an answer before it is validated (plan §8). `structured<T>()` first refuses a request that sets a penalty ([Sampling](#sampling), rule 3), then:
 
 1. **Sends the model-facing schema** where the provider supports constrained decoding, and switches thinking off unless the request says otherwise. A reasoning model under a grammar can spend its budget thinking, and some parsers constrain the thinking too (llama.cpp issue #20345).
 2. **Parses and validates the answer.** A Markdown fence around the JSON is tolerated. The answer is checked against the *full* schema, then by the caller's own checks (what a schema cannot say), then converted to `T`. A conversion error is one more problem.
@@ -141,6 +188,10 @@ Tokens and GPU time are the product's cost (plan §4.3). `AccountedProvider` han
 
 Each rule was removed on purpose, and the named test was confirmed to fail. (Mutants are applied by pattern, a pattern must match exactly once, and the source is restored after each run.)
 
+Two findings from these runs were fixed before they counted:
+- **A crash is not a failure message.** Three provider mutants were first caught only because a test read a missing key through a *const* `json::Json`, whose `operator[]` asserts and aborts the whole test program. The test now reads a non-const copy, which yields null, so the expectation fails with a message.
+- **A refactor must not hide a mutant.** `chat_request_body()` grew past clang-tidy's complexity limit and was split into helpers. Every mutant against it was then run again, on the new shape.
+
 | Rule removed | Caught by |
 |---|---|
 | A call succeeded only if `[DONE]` arrived | `AnAnswerWithoutDoneIsIncomplete` |
@@ -166,6 +217,20 @@ Each rule was removed on purpose, and the named test was confirmed to fail. (Mut
 | `rr_json`: the registry loads text in order | `SchemaRegistry.SchemasLoadedFromTextKeepTheirOrder` |
 | `rr_json`: stripping keeps an ordered document's order | `ToModelFacing.KeepsTheOrderOfAnOrderedDocument` |
 | `rr_json`: validation keeps the full rules | `Schema.TheModelGetsTheFieldsInTheOrderWritten` |
+| A preset fills only what the request leaves unset, top_k included | `APresetFillsWhatTheRequestLeavesOpen` |
+| A budget and an effort come from a preset only with thinking | `ABudgetAndAnEffortComeOnlyWithThinking` |
+| NaN fails every range; infinity fails the temperature | `ValuesAreCheckedAndNanFailsEveryRange` |
+| A budget or an effort needs thinking; a budget is ≥ 0 | `ABudgetAndAnEffortNeedThinking` |
+| A preset that sets thinking's fields must think | `APresetIsCheckedAsAWhole` |
+| Penalties are found in `extra` too, a non-number included | `PenaltiesAreFoundInTheFieldsAndInExtra` |
+| Values are checked before sending | `RefusesWhatItCannotCarry` |
+| llama-server's fields are refused on a plain OpenAI server | `RefusesWhatItCannotCarry` |
+| A schema needs the capability | `RefusesWhatItCannotCarry` |
+| `top_k`, the effort, the budget and its closing are sent | `SendsSamplingAndThinkingAsLlamaServerReadsThem` |
+| An empty closing is not sent | `SendsSamplingAndThinkingAsLlamaServerReadsThem` |
+| Thinking off says `reasoning_effort: "none"` | `SendsWhatLlamaServerReads` |
+| The budget's closing is part of the key | `TheRequestKeyIsWhatTheModelSees` |
+| `structured()` refuses penalties, before any call | `RefusesPenaltiesBeforeAnyCall` |
 | One repair | `SendsAnInvalidAnswerBackWithItsProblems` |
 | Validation against the full schema, even under a grammar | `SendsAnInvalidAnswerBackWithItsProblems` |
 | Thinking off for structured calls | `AcceptsAValidAnswer` |

@@ -5,6 +5,7 @@ rr_add_test_suite(llm
         openai_provider_test.cpp
         provider_test.cpp
         replay_test.cpp
+        sampling_test.cpp
         structured_test.cpp
     DEPS
         rr::llm)
