@@ -120,7 +120,11 @@ public:
     struct Options {
         // Every line of stdout and stderr (e.g. into the log). Monitor thread.
         LineCallback on_output{};
-        // Called once when the child has ended and been reaped. Monitor thread.
+        // Called once when the child has ended and been reaped, on the
+        // monitor thread, before the end is seen: wait(), stop(), running()
+        // and exit_status() see it only once on_exit has returned (or
+        // thrown, which is reported on stderr). So it must not wait for its
+        // own process, which would wait for itself.
         std::function<void(const ExitStatus&)> on_exit{};
         // How long SIGTERM has to work before SIGKILL follows.
         std::chrono::milliseconds stop_grace{10'000};

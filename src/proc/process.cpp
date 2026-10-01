@@ -643,15 +643,24 @@ Result<ChildProcess> ChildProcess::start(const Command& command, Options options
             (void)std::fprintf(stderr, "rr::proc: output callback of process %d threw\n", shared->pid);
             status = child.kill_and_reap();
         }
+        // The end is published only once on_exit has run: whoever sees the
+        // child ended (wait(), stop(), running()) sees all that its end did.
+        if (options.on_exit) {
+            try {
+                options.on_exit(status);
+            } catch (const std::exception& error) {
+                (void)std::fprintf(stderr, "rr::proc: exit callback of process %d threw: %s\n", shared->pid,
+                                   error.what());
+            } catch (...) {
+                (void)std::fprintf(stderr, "rr::proc: exit callback of process %d threw\n", shared->pid);
+            }
+        }
         {
             const std::lock_guard lock(shared->mutex);
             shared->status = status;
             shared->ended = true;
         }
         shared->ended_cv.notify_all();
-        if (options.on_exit) {
-            options.on_exit(status);
-        }
     }};
     return ChildProcess{std::move(state)};
 }

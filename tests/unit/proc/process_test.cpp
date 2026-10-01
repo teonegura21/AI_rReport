@@ -10,6 +10,7 @@
 #include <format>
 #include <fstream>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -357,6 +358,24 @@ TEST(ChildProcess, WaitSeesANaturalExitOrTimesOut) {
     EXPECT_ERRC(child.wait(20ms), Errc::timeout);
     EXPECT_EQ(unwrap(child.wait(10s)).code, 7);
     EXPECT_EQ(reported.load(), 7);
+}
+
+TEST(ChildProcess, AnEndIsSeenOnlyOnceItsCallbackHasRun) {
+    // A slow callback: wait() must still return after it, not when the child ends.
+    std::atomic<bool> handled{false};
+    const ChildProcess child =
+        unwrap(ChildProcess::start(shell("exit 3"), {.on_exit = [&](const ExitStatus&) {
+                                       std::this_thread::sleep_for(200ms);
+                                       handled = true;
+                                   }}));
+    EXPECT_EQ(unwrap(child.wait(10s)).code, 3);
+    EXPECT_TRUE(handled.load()) << "everything the end did is seen with it";
+}
+
+TEST(ChildProcess, AnExitCallbackThatThrowsStillEnds) {
+    const ChildProcess child = unwrap(ChildProcess::start(
+        shell("exit 4"), {.on_exit = [](const ExitStatus&) { throw std::runtime_error("callback bug"); }}));
+    EXPECT_EQ(unwrap(child.wait(10s)).code, 4) << "a buggy callback never leaves a waiter hanging";
 }
 
 TEST(ChildProcess, DestroyingItStopsTheChild) {
