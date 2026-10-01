@@ -1,0 +1,8 @@
+rr_add_test_suite(knowledge
+    SOURCES
+        article_test.cpp
+        atoms_test.cpp
+        ids_test.cpp
+        transcript_test.cpp
+    DEPS
+        rr::knowledge)

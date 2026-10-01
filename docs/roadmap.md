@@ -27,8 +27,8 @@ The work is cut into thirty phases, each one commit that builds, passes CI and i
 | P9 | `rr_reason`: votes, waves, judgements, the tiers ([reasoning.md](design/reasoning.md)) | done: `80998bf` |
 | P10 | The oracle model, fault injection, mutation testing in-tree ([testing.md](design/testing.md)) | done: `cf4a4b8` |
 | **3. Text, transcript, ledger, pipeline** | | |
-| P11 | `rr_text`: sentences, numbers by value, names, quote alignment, BM25; fuzzing ([text.md](design/text.md)) | this commit |
-| P12 | `rr_knowledge`: the knowledge model's types, artifact schemas, the `[A#]` marker parser (fuzzed) | next |
+| P11 | `rr_text`: sentences, numbers by value, names, quote alignment, BM25; fuzzing ([text.md](design/text.md)) | done: `d5ccefc` |
+| P12 | `rr_knowledge`: the knowledge model's types, artifact schemas, the `[A#]` marker parser, fuzzed ([knowledge.md](design/knowledge.md)) | this commit |
 | P13 | `rr_fidelity`: the deterministic ledger checks, each with a repair message | |
 | P14 | `rr_media`, `rr_transcript`: captions → `S#` sentences with timings; auto captions re-punctuated by projection | |
 | P15 | `rr_pipeline`: stages, the executor, the stage cache; `rreport ingest / resume / jobs` | |

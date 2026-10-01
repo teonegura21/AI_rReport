@@ -71,7 +71,7 @@ Modules marked *(M0)* exist now; the rest arrive in the milestone shown.
 | `rr_text` *(M1)* | Text made comparable: UTF-8 checked and repaired, NFC to keep and a fold to compare; tokens and terms; sentences, with nothing lost; numbers by value, spoken ones too; names and mentions; quotes aligned with what was said (Smith–Waterman); BM25 retrieval. Fuzzed ([design](design/text.md)) | core, utf8proc |
 | `rr_media`, `rr_transcript` (M1) | Capture sources, captions, frames, alignment | proc, blob, text |
 | `rr_pipeline`, `rr_fidelity`, `rr_report` (M1) | Stages + executor, ledger checks, rendering | all of the above |
-| `rr_knowledge` (M1+) | VKM types, repositories, projections | db, json |
+| `rr_knowledge` *(M1)* | The knowledge model as the stages write it: the short IDs `S#`, `A#`, `V#`; the transcript; Ledger A, the atoms and fillers every sentence became (ADR-0005); the article and its `[A#]` markers, read by a fuzzed parser (ADR-0006); each artifact strictly checked against its compiled-in schema (ADR-0004) ([design](design/knowledge.md)). Repositories and projections arrive with the pipeline | core, json, text |
 | `rr_research`, `rr_hub_api` (M8–M9) | Research tools, REST/SSE for the UI and MCP | … |
 | `rr_speech` (M4) | Parakeet, diarization, Whisper: **the only CUDA code** | sherpa-onnx, whisper.cpp |
 

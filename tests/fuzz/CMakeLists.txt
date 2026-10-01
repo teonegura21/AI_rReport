@@ -41,3 +41,9 @@ rr_add_fuzz_target(text
     SOURCES text_fuzz.cpp
     DEPS rr::text
     CORPUS ${CMAKE_CURRENT_SOURCE_DIR}/corpus/text)
+
+# The article's markers, as a writer model emits them (ADR-0006).
+rr_add_fuzz_target(markers
+    SOURCES markers_fuzz.cpp
+    DEPS rr::knowledge
+    CORPUS ${CMAKE_CURRENT_SOURCE_DIR}/corpus/markers)

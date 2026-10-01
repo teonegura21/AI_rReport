@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Atoms",
+  "description": "Ledger A: what became of every sentence of the transcript. Each became one or more atoms, units of what was said, or was labelled filler from a closed list (ADR-0005; rr/knowledge/atoms.hpp).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["atoms", "fillers"],
+  "properties": {
+    "atoms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "text", "sentences", "speaker", "attributed_to", "modality", "register", "intensity", "must_quote", "quote", "names", "terms"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^A[1-9][0-9]{0,8}$"},
+          "kind": {"enum": ["claim", "fact", "number", "example", "anecdote", "aside", "joke", "hedge", "opinion", "question", "instruction", "definition", "reference", "visual"]},
+          "text": {"type": "string", "minLength": 1},
+          "sentences": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^S[1-9][0-9]{0,8}$"}},
+          "speaker": {"type": ["string", "null"], "minLength": 1},
+          "attributed_to": {"type": ["string", "null"], "minLength": 1},
+          "modality": {"enum": ["asserted", "hedged", "hypothetical", "reported", "sarcastic", "question"]},
+          "register": {"enum": ["main", "aside", "joke", "anecdote", "example"]},
+          "intensity": {"enum": ["low", "medium", "high"]},
+          "must_quote": {"type": "boolean"},
+          "quote": {"type": ["string", "null"], "minLength": 1},
+          "names": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "terms": {"type": "array", "items": {"type": "string", "minLength": 1}}
+        }
+      }
+    },
+    "fillers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sentence", "label"],
+        "properties": {
+          "sentence": {"type": "string", "pattern": "^S[1-9][0-9]{0,8}$"},
+          "label": {"enum": ["disfluency", "greeting", "repetition", "sponsor", "decorative"]}
+        }
+      }
+    }
+  }
+}

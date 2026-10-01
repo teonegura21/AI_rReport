@@ -1,0 +1,1 @@
+one [A41, A43] two [A41-A43] three [A41 and A43] four [a41] five [ A41 ] six [A041] seven [A 41] eight [S12] nine [V3] ten [A0] eleven [A] twelve [A#] thirteen [A41 above] fourteen [A1234567890] fifteen [A12

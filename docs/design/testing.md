@@ -60,7 +60,7 @@ A unit test checks the inputs its author thought of. A fuzz target checks *invar
 
 An input that broke an invariant joins the corpus once fixed, as `regression-*.bin`, and gets a named unit test, so the rule is stated where readers look.
 
-**What is fuzzed:** `rr_text` ([text.md](text.md#fuzzing)), whose fuzzer found its first bug within a second: a word of accents alone folded to an empty term. The `[A#]` marker parser joins it with P12.
+**What is fuzzed:** `rr_text` ([text.md](text.md#fuzzing)), whose fuzzer found its first bug within a second: a word of accents alone folded to an empty term. And the article's `[A#]` marker parser ([knowledge.md](knowledge.md#the-articles-markers)), which ADR-0006 calls correctness- and security-critical.
 
 ## Mutation testing
 

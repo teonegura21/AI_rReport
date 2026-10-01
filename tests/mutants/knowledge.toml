@@ -1,0 +1,355 @@
+# Mutants of rr_knowledge: the short IDs, the artifacts' own rules, and the marker parser
+# (ADR-0006). Each removes one rule and names the test that must fail without it.
+# Run: scripts/mutate.py tests/mutants/knowledge.toml
+# What they found is in docs/design/knowledge.md, "How the tests were validated".
+
+target = "rr_knowledge_tests"
+binary = "build/dev/tests/unit/knowledge/rr_knowledge_tests"
+timeout = 60
+
+[[mutant]]
+name = "ids-with-leading-zeros"
+file = "src/knowledge/include/rr/knowledge/ids.hpp"
+expect = "ShortIds.ParseOnlyTheirExactForm"
+  [[mutant.edit]]
+  from = '''|| text.front() != Letter || text[1] == '0') {'''
+  to = '''|| text.front() != Letter) {'''
+
+[[mutant]]
+name = "ids-of-any-letter"
+file = "src/knowledge/include/rr/knowledge/ids.hpp"
+expect = "ShortIds.ParseOnlyTheirExactForm"
+  [[mutant.edit]]
+  from = '''|| text.front() != Letter || text[1] == '0') {'''
+  to = '''|| text[1] == '0') {'''
+
+[[mutant]]
+name = "ids-with-any-characters"
+file = "src/knowledge/include/rr/knowledge/ids.hpp"
+expect = "ShortIds.ParseOnlyTheirExactForm"
+  [[mutant.edit]]
+  from = '''if (digit < '0' || digit > '9') {'''
+  to = '''if (digit < '0' || digit > 'z') {'''
+
+[[mutant]]
+name = "s-and-v-are-text"
+file = "src/knowledge/article.cpp"
+expect = "Article.CitationsThatAreNoMarkersAreBad"
+  [[mutant.edit]]
+  from = '''if (!atom_letter && letter != 'S' && letter != 's' && letter != 'V' && letter != 'v') {'''
+  to = '''if (!atom_letter) {'''
+
+[[mutant]]
+name = "missing-number-is-text"
+file = "src/knowledge/article.cpp"
+expect = "Article.CitationsThatAreNoMarkersAreBad"
+  [[mutant.edit]]
+  from = '''if (letter == 'A' && (rest.empty() || rest.front() == '#')) {'''
+  to = '''if (false && letter == 'A' && (rest.empty() || rest.front() == '#')) {'''
+
+[[mutant]]
+name = "footnote-a-is-a-citation"
+file = "src/knowledge/article.cpp"
+expect = "Article.BracketsThatAreNoCitationsAreText"
+  [[mutant.edit]]
+  from = '''if (letter == 'A' && (rest.empty() || rest.front() == '#')) {'''
+  to = '''if (atom_letter && (rest.empty() || rest.front() == '#')) {'''
+
+[[mutant]]
+name = "one-atom-per-marker-unexplained"
+file = "src/knowledge/article.cpp"
+expect = "Article.CitationsThatAreNoMarkersAreBad"
+  [[mutant.edit]]
+  from = '''if (numbers.size() < 2) {'''
+  to = '''if (numbers.size() < 200) {'''
+
+[[mutant]]
+name = "ranges-unexplained"
+file = "src/knowledge/article.cpp"
+expect = "Article.CitationsThatAreNoMarkersAreBad"
+  [[mutant.edit]]
+  from = '''const bool range = tail.front() == '-' || tail.starts_with("\u2013") || tail.starts_with("to");'''
+  to = '''const bool range = tail.starts_with("\u2013") || tail.starts_with("to");'''
+
+[[mutant]]
+name = "sentences-cited"
+file = "src/knowledge/article.cpp"
+expect = "Article.CitationsThatAreNoMarkersAreBad"
+  [[mutant.edit]]
+  from = '''    if (!atom_letter) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-zero-is-written-as-is"
+file = "src/knowledge/article.cpp"
+expect = "Article.CitationsThatAreNoMarkersAreBad"
+  [[mutant.edit]]
+  from = '''if (digits.find_first_not_of('0') == kNone) {'''
+  to = '''if (false && digits.find_first_not_of('0') == kNone) {'''
+
+[[mutant]]
+name = "any-number-of-digits"
+file = "src/knowledge/article.cpp"
+expect = "Article.CitationsThatAreNoMarkersAreBad"
+  [[mutant.edit]]
+  from = '''if (digits.size() - (digits.find_first_not_of('0')) > kMaxDigits) {'''
+  to = '''if (digits.size() - (digits.find_first_not_of('0')) > kMaxDigits * 11) {'''
+
+[[mutant]]
+name = "loose-spelling-trusted"
+file = "src/knowledge/article.cpp"
+expect = "Article.CitationsThatAreNoMarkersAreBad"
+  [[mutant.edit]]
+  from = '''if (content != written || digits.front() == '0') {'''
+  to = '''if (digits.front() == '0') {'''
+
+[[mutant]]
+name = "leading-zero-trusted"
+file = "src/knowledge/article.cpp"
+expect = "Article.CitationsThatAreNoMarkersAreBad"
+  [[mutant.edit]]
+  from = '''if (content != written || digits.front() == '0') {'''
+  to = '''if (content != written) {'''
+
+[[mutant]]
+name = "unclosed-trusted"
+file = "src/knowledge/article.cpp"
+expect = "Article.AnUnclosedMarkerIsBad"
+  [[mutant.edit]]
+  from = '''            if (!closed) {'''
+  to = '''            if (false && !closed) {'''
+
+[[mutant]]
+name = "escapes-ignored"
+file = "src/knowledge/article.cpp"
+expect = "Article.AnEscapedBracketIsText"
+  [[mutant.edit]]
+  from = '''if (markdown_[at] != '[' || (at > prose.begin && markdown_[at - 1] == '\\')) {'''
+  to = '''if (markdown_[at] != '[') {'''
+
+[[mutant]]
+name = "code-spans-read"
+file = "src/knowledge/article.cpp"
+expect = "Article.CodeHoldsNoMarkers"
+  [[mutant.edit]]
+  from = '''                at = code[code_index].end - 1;
+                continue;'''
+  to = '''                (void)0;'''
+
+[[mutant]]
+name = "code-runs-of-any-length"
+file = "src/knowledge/article.cpp"
+expect = "Article.CodeHoldsNoMarkers"
+  [[mutant.edit]]
+  from = '''if (end - search == opening - at) {'''
+  to = '''if (end - search >= 1) {'''
+
+[[mutant]]
+name = "leading-markers-stay"
+file = "src/knowledge/article.cpp"
+expect = "Article.AMarkerAfterTheTerminatorBelongsToItsSentence"
+  [[mutant.edit]]
+  from = '''if (!found.empty() && leading_end != kNone) {'''
+  to = '''if (false && !found.empty() && leading_end != kNone) {'''
+
+[[mutant]]
+name = "marker-only-sentences-stand-alone"
+file = "src/knowledge/article.cpp"
+expect = "Article.AMarkerAfterTheTerminatorBelongsToItsSentence"
+  [[mutant.edit]]
+  from = '''                    found.back().span.end = span.end;'''
+  to = '''                    found.push_back(CitingSentence{.span = span});'''
+
+[[mutant]]
+name = "leading-pending-dropped"
+file = "src/knowledge/article.cpp"
+expect = "Article.AMarkerAtTheStartOfABlockStaysInIt"
+  [[mutant.edit]]
+  from = '''                span.begin = pending_span.begin;'''
+  to = '''                (void)pending_span;'''
+
+[[mutant]]
+name = "digits-are-no-words"
+file = "src/knowledge/article.cpp"
+expect = "Article.AMarkerAfterTheTerminatorBelongsToItsSentence"
+  [[mutant.edit]]
+  from = '''if (kind == text::CharClass::letter || kind == text::CharClass::digit) {'''
+  to = '''if (kind == text::CharClass::digit) {'''
+
+[[mutant]]
+name = "seven-level-headings"
+file = "src/knowledge/article.cpp"
+expect = "Article.AHeadingIsOneToSixHashesAndASpace"
+  [[mutant.edit]]
+  from = '''if (level == 0 || level > kMaxLevel || (at < line.size() && !is_space(line[at]))) {'''
+  to = '''if (level == 0 || level > kMaxLevel) {'''
+
+[[mutant]]
+name = "dash-items-only"
+file = "src/knowledge/article.cpp"
+expect = "Article.BlocksAreMarkdowns"
+  [[mutant.edit]]
+  from = '''if (at < line.size() && (line[at] == '-' || line[at] == '*' || line[at] == '+')) {'''
+  to = '''if (at < line.size() && (line[at] == '*' || line[at] == '+')) {'''
+
+[[mutant]]
+name = "numbered-items-ignored"
+file = "src/knowledge/article.cpp"
+expect = "Article.BlocksAreMarkdowns"
+  [[mutant.edit]]
+  from = '''(line[at] != '.' && line[at] != ')')) {'''
+  to = '''(line[at] != '#' && line[at] != ')')) {'''
+
+[[mutant]]
+name = "quotes-ignored"
+file = "src/knowledge/article.cpp"
+expect = "Article.BlocksAreMarkdowns"
+  [[mutant.edit]]
+  from = '''if (indent > kMaxIndent || indent >= line.size() || line[indent] != '>') {'''
+  to = '''if (indent > kMaxIndent || indent >= line.size() || line[indent] != '|') {'''
+
+[[mutant]]
+name = "quote-lines-apart"
+file = "src/knowledge/article.cpp"
+expect = "Article.BlocksAreMarkdowns"
+  [[mutant.edit]]
+  from = '''if (!open.has_value() || open->kind != BlockKind::quote) {'''
+  to = '''if (true) {'''
+
+[[mutant]]
+name = "short-fences-close"
+file = "src/knowledge/article.cpp"
+expect = "Article.AFenceClosesOnlyWithOneAsLong"
+  [[mutant.edit]]
+  from = '''fence->length >= open.length &&'''
+  to = '''fence->length >= 1 &&'''
+
+[[mutant]]
+name = "code-blocks-hold-sentences"
+file = "src/knowledge/article.cpp"
+expect = "Article.CodeHoldsNoMarkers"
+  [[mutant.edit]]
+  from = '''if (open->kind != BlockKind::code && open->content_begin < open->end) {'''
+  to = '''if (open->content_begin < open->end) {'''
+
+[[mutant]]
+name = "carriage-returns-kept"
+file = "src/knowledge/article.cpp"
+expect = "Article.CarriageReturnsEndLines"
+  [[mutant.edit]]
+  from = '''if (end > begin && markdown[end - 1] == '\r') {'''
+  to = '''if (false && end > begin && markdown[end - 1] == '\r') {'''
+
+[[mutant]]
+name = "cited-repeats"
+file = "src/knowledge/article.cpp"
+expect = "Article.CitedListsEachAtomOnceInOrder"
+  [[mutant.edit]]
+  from = '''if (seen.insert(marker.atom).second) {'''
+  to = '''if (seen.insert(marker.atom).second || true) {'''
+
+[[mutant]]
+name = "space-before-markers-kept"
+file = "src/knowledge/article.cpp"
+expect = "Article.WithoutMarkersIsWhatAReaderSees"
+  [[mutant.edit]]
+  from = '''while (kept_end > at && is_space(markdown[kept_end - 1])) {'''
+  to = '''while (false && kept_end > at && is_space(markdown[kept_end - 1])) {'''
+
+[[mutant]]
+name = "leading-space-kept"
+file = "src/knowledge/article.cpp"
+expect = "Article.WithoutMarkersIsWhatAReaderSees"
+  [[mutant.edit]]
+  from = '''const std::size_t first = text.find_first_not_of(" \t");'''
+  to = '''const std::size_t first = text.empty() ? std::string::npos : 0;'''
+
+[[mutant]]
+name = "sentence-ids-unchecked"
+file = "src/knowledge/transcript.cpp"
+expect = "Transcript.SentencesRunFromS1InOrder"
+  [[mutant.edit]]
+  from = '''if (SentenceId::parse(written) != expected) {'''
+  to = '''if (!SentenceId::parse(written).has_value()) {'''
+
+[[mutant]]
+name = "backwards-spans-kept"
+file = "src/knowledge/transcript.cpp"
+expect = "Transcript.ASentenceEndsAfterItStarts"
+  [[mutant.edit]]
+  from = '''        if (!span.has_value()) {
+            return fail(Errc::invalid_argument, std::format("{} ends before it starts", written));'''
+  to = '''        if (false) {
+            return fail(Errc::invalid_argument, std::format("{} ends before it starts", written));'''
+
+[[mutant]]
+name = "sentences-out-of-order-kept"
+file = "src/knowledge/transcript.cpp"
+expect = "Transcript.SentencesAreInTheOrderSaid"
+  [[mutant.edit]]
+  from = '''span->start() < transcript.sentences.back().span.start()) {'''
+  to = '''span->start() < Millis{0}) {'''
+
+[[mutant]]
+name = "transcript-find-by-place-only"
+file = "src/knowledge/transcript.cpp"
+expect = "Transcript.FindsASentenceByItsId"
+  [[mutant.edit]]
+  from = '''    const auto found = std::ranges::find(sentences, id, &Sentence::id);'''
+  to = '''    const auto found = sentences.end();'''
+
+[[mutant]]
+name = "atom-ids-unchecked"
+file = "src/knowledge/atoms.cpp"
+expect = "Atoms.RunFromA1InOrder"
+  [[mutant.edit]]
+  from = '''if (AtomId::parse(written) != expected) {'''
+  to = '''if (!AtomId::parse(written).has_value()) {'''
+
+[[mutant]]
+name = "atom-sentences-repeat"
+file = "src/knowledge/atoms.cpp"
+expect = "Atoms.CiteTheirSentencesInOrderOnceEach"
+  [[mutant.edit]]
+  from = '''if (!sentences.empty() && *id <= sentences.back()) {'''
+  to = '''if (!sentences.empty() && *id < sentences.back()) {'''
+
+[[mutant]]
+name = "quotes-without-must-quote"
+file = "src/knowledge/atoms.cpp"
+expect = "Atoms.QuoteExactlyWhenTheyMust"
+  [[mutant.edit]]
+  from = '''if (must_quote != quote.has_value()) {'''
+  to = '''if (must_quote && !quote.has_value()) {'''
+
+[[mutant]]
+name = "fillers-repeat"
+file = "src/knowledge/atoms.cpp"
+expect = "Atoms.FillersAreInTheOrderOfTheirSentencesOneEach"
+  [[mutant.edit]]
+  from = '''if (!ledger.fillers.empty() && *sentence <= ledger.fillers.back().sentence) {'''
+  to = '''if (!ledger.fillers.empty() && *sentence < ledger.fillers.back().sentence) {'''
+
+[[mutant]]
+name = "atom-find-by-place-only"
+file = "src/knowledge/atoms.cpp"
+expect = "Atoms.AreFoundByTheirId"
+  [[mutant.edit]]
+  from = '''    const auto found = std::ranges::find(atoms, id, &Atom::id);'''
+  to = '''    const auto found = atoms.end();'''
+
+[[mutant]]
+name = "enum-names-shifted"
+file = "src/knowledge/fields.hpp"
+expect = "Atoms.EveryValueOfEveryEnumerationIsTheSchemas"
+  [[mutant.edit]]
+  from = '''            return static_cast<Enum>(index);'''
+  to = '''            return static_cast<Enum>(index == 0 ? 0 : index - 1);'''
+[[mutant]]
+name = "eight-level-headings"
+file = "src/knowledge/article.cpp"
+expect = "Article.AHeadingIsOneToSixHashesAndASpace"
+  [[mutant.edit]]
+  from = '''if (level == 0 || level > kMaxLevel || (at < line.size() && !is_space(line[at]))) {'''
+  to = '''if (level == 0 || level > kMaxLevel + 2 || (at < line.size() && !is_space(line[at]))) {'''
+

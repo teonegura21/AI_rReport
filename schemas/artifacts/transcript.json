@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Transcript",
+  "description": "What was said, sentence by sentence: S1, S2, ... in order, each with when it was said and, when known, who said it (rr/knowledge/transcript.hpp).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sentences"],
+  "properties": {
+    "sentences": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "text", "start_ms", "end_ms", "speaker"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^S[1-9][0-9]{0,8}$"},
+          "text": {"type": "string", "minLength": 1},
+          "start_ms": {"type": "integer", "minimum": 0},
+          "end_ms": {"type": "integer", "minimum": 0},
+          "speaker": {"type": ["string", "null"], "minLength": 1}
+        }
+      }
+    }
+  }
+}

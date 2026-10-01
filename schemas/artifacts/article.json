@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Article",
+  "description": "The Retold Article: Markdown whose sentences cite the atoms they retell with markers such as [A41] (ADR-0006; rr/knowledge/article.hpp).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["markdown"],
+  "properties": {
+    "markdown": {"type": "string", "minLength": 1}
+  }
+}
