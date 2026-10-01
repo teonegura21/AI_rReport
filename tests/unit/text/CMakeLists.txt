@@ -1,0 +1,11 @@
+rr_add_test_suite(text
+    SOURCES
+        align_test.cpp
+        bm25_test.cpp
+        entities_test.cpp
+        numbers_test.cpp
+        sentences_test.cpp
+        tokens_test.cpp
+        unicode_test.cpp
+    DEPS
+        rr::text)

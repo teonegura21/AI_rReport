@@ -15,6 +15,7 @@ if(RR_BUILD_RUNTIME)
 endif()
 
 if(RR_BUILD_HUB)
+    add_subdirectory(text)
     add_subdirectory(db)
     add_subdirectory(llm)
     add_subdirectory(prompt)

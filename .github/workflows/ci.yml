@@ -5,6 +5,8 @@
 #   build-test  GCC debug; Clang + ASan/UBSan; Clang + TSan — all tests green
 #   tidy        clang-tidy with warnings as errors on every rReport translation unit
 #   fetch       dependencies built from pinned git tags only (proves ADR-0012's fallback)
+#   fuzz        libFuzzer searches rr_text for inputs that break its invariants, for
+#               two minutes (every build-test job also replays the committed corpora)
 #   scripts     the pod image's entry point (shellcheck, and its tests with fake
 #               tools) and scripts/ (their tests: a fake Hugging Face Hub, the
 #               tiny model's GGUF read back)
@@ -78,6 +80,28 @@ jobs:
         run: cmake --build --preset ci-fetch
       - name: Test
         run: ctest --preset ci-fetch
+
+  fuzz:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo scripts/install-deps-ubuntu.sh --with-clang
+      - name: Configure
+        run: cmake --preset fuzz
+      - name: Build the fuzzers
+        run: cmake --build --preset fuzz --target rr_text_fuzzer
+      - name: Fuzz rr_text
+        run: |
+          mkdir -p fuzz-findings/text
+          build/fuzz/tests/fuzz/rr_text_fuzzer -max_total_time=120 -timeout=10 -rss_limit_mb=2048 \
+            -artifact_prefix=fuzz-findings/ fuzz-findings/text tests/fuzz/corpus/text
+      - name: Keep the inputs that broke an invariant
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-findings
+          path: fuzz-findings/
 
   scripts:
     runs-on: ubuntu-24.04

@@ -101,6 +101,24 @@ FetchContent_Declare(inja
 
 set(_rr_dependencies nlohmann_json tomlplusplus CLI11 httplib jsoncons BLAKE3 inja)
 
+# Unicode (rr_text): normalization, case folding, character classes. A small C
+# library whose system package has no CMake config, only pkg-config: the
+# system's through pkg-config, else the pinned tag built in-tree.
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND AND NOT RR_FORCE_FETCH)
+    pkg_check_modules(UTF8PROC QUIET IMPORTED_TARGET GLOBAL libutf8proc)
+endif()
+if(NOT TARGET PkgConfig::UTF8PROC)
+    set(UTF8PROC_INSTALL OFF CACHE BOOL "" FORCE)
+    set(UTF8PROC_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(utf8proc
+        GIT_REPOSITORY https://github.com/JuliaStrings/utf8proc.git
+        GIT_TAG v2.9.0
+        GIT_SHALLOW TRUE
+        SYSTEM)
+    list(APPEND _rr_dependencies utf8proc)
+endif()
+
 if(RR_BUILD_TESTS)
     set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
     set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
@@ -123,6 +141,11 @@ endif()
 if(TARGET blake3 AND NOT TARGET BLAKE3::blake3)
     add_library(BLAKE3::blake3 ALIAS blake3)
 endif()
+if(TARGET PkgConfig::UTF8PROC)
+    add_library(utf8proc::utf8proc ALIAS PkgConfig::UTF8PROC)
+elseif(TARGET utf8proc AND NOT TARGET utf8proc::utf8proc)
+    add_library(utf8proc::utf8proc ALIAS utf8proc)
+endif()
 if(NOT TARGET pantor::inja)  # fetched: headers only, against our nlohmann_json
     add_library(rr_inja INTERFACE)
     target_include_directories(rr_inja SYSTEM INTERFACE "${inja_SOURCE_DIR}/include")
@@ -132,7 +155,7 @@ endif()
 
 foreach(_rr_required_target IN ITEMS
         nlohmann_json::nlohmann_json tomlplusplus::tomlplusplus CLI11::CLI11
-        httplib::httplib jsoncons::jsoncons BLAKE3::blake3 pantor::inja
+        httplib::httplib jsoncons::jsoncons BLAKE3::blake3 pantor::inja utf8proc::utf8proc
         OpenSSL::Crypto CURL::libcurl SQLite::SQLite3)
     if(NOT TARGET ${_rr_required_target})
         message(FATAL_ERROR "Dependency target ${_rr_required_target} is missing after resolution")

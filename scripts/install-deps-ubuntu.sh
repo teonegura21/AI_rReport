@@ -4,7 +4,8 @@
 # This file is the single source of truth for the apt package list: the README,
 # the CI workflow and the Docker build all call it. Libraries that are not
 # packaged here (cpp-httplib >= 0.20, jsoncons, BLAKE3, inja) are fetched at
-# pinned versions by CMake (cmake/RrDependencies.cmake, ADR-0012).
+# pinned versions by CMake (cmake/RrDependencies.cmake, ADR-0012), and so is
+# any packaged one that is missing (utf8proc, from its git tag).
 #
 # Usage: sudo scripts/install-deps-ubuntu.sh [--with-clang] [--minimal]
 #   --with-clang  also install Clang 20 + clang-tidy/clang-format 20
@@ -30,7 +31,7 @@ packages=(
 
 if [[ $minimal -eq 0 ]]; then
     packages+=(
-        nlohmann-json3-dev libtomlplusplus-dev libcli11-dev
+        nlohmann-json3-dev libtomlplusplus-dev libcli11-dev libutf8proc-dev
         libgtest-dev libgmock-dev
     )
 fi

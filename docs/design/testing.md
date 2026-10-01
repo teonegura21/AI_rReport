@@ -8,6 +8,7 @@ rReport's promise is an article that is faithful to the video: every sentence ac
 |---|---|---|---|
 | L0 static | The shipped prompts and tiers render, are versioned, and are the source tree's; mutation specs still find their code | `tests/unit/prompt`, `tests/unit/reason` (tiers), `scripts/test_mutate.py` | every push |
 | L1 unit | Each module's rules, one by one, with exact expectations | `tests/unit/<module>/`: one GoogleTest binary per module, under GCC and under Clang with ASan and UBSan | every push |
+| L1 fuzz | The invariants of code that reads untrusted input, on any bytes: no crash, no out-of-bounds read, nothing lost | `tests/fuzz/`: each corpus replayed by CTest under every build; libFuzzer searching (`fuzz` preset) | every push: the replay everywhere, two minutes of search |
 | L2 component | The real executables together: the runtime with fake engines, the hub's CLI against it; and every threaded module under ThreadSanitizer | `tests/component/`, the `tsan` job | every push |
 | L3 pipeline | Whole jobs without a GPU: every stage, check, repair and escalation, on synthetic videos whose right answers are known, with faults injected | the oracle (below); stage by stage from plan P17, end to end with `kill -9` and resume from P22 | every push, as stages land |
 | L4 live | That the fake engine tells the truth: the runtime against a real llama-server, built for the CPU at the pinned commit, with a tiny model | `tests/live/`, `.github/workflows/nightly.yml` ([runtime.md](runtime.md#the-real-engine-nightly-l4)) | nightly, and when the suite changes |
@@ -51,6 +52,16 @@ rReport's promise is an article that is faithful to the video: every sentence ac
 - **The test now (P10)** runs each fault through the army against the oracle, and checks its end: repaired, rescued by another family, retried without thinking, a finding, or an error.
 - **End to end, through the fake engine (`--fake-oracle`), arrives with P22.** A call on the wire does not carry its mission kind: the tag is never sent to a model. The fake engine will therefore know a mission by its answer schema's name, which the stages set. Both land together, when there are missions to route.
 
+## Fuzzing
+
+A unit test checks the inputs its author thought of. A fuzz target checks *invariants* on whatever bytes arrive: a captions file in another encoding, a model's broken JSON. It is `LLVMFuzzerTestOneInput()`, which aborts when one breaks (`tests/fuzz/<name>_fuzz.cpp`), and it is built twice (`cmake/RrFuzzing.cmake`):
+- **the replay**, `rr_<name>_fuzz_replay`, runs the committed corpus `tests/fuzz/corpus/<name>/` under CTest (`fuzz.<name>`), in every build-test job: GCC, ASan and UBSan, TSan;
+- **the search**, `rr_<name>_fuzzer`, is linked with libFuzzer when `RR_FUZZ=ON` (preset `fuzz`: Clang, ASan, UBSan, every target instrumented for coverage). The `fuzz` CI job runs each for two minutes and uploads what broke an invariant.
+
+An input that broke an invariant joins the corpus once fixed, as `regression-*.bin`, and gets a named unit test, so the rule is stated where readers look.
+
+**What is fuzzed:** `rr_text` ([text.md](text.md#fuzzing)), whose fuzzer found its first bug within a second: a word of accents alone folded to an empty term. The `[A#]` marker parser joins it with P12.
+
 ## Mutation testing
 
 **Why.** A green suite proves the code passes its tests; it does not prove the tests can fail. So each rule is removed on purpose, a mutant: a check skipped, a bound moved, an order swapped. The test that claims the rule must then fail. Writing mutants also shows which rules no test checks at all, before anything runs, as each design note's "How the tests were validated" records.
@@ -65,7 +76,7 @@ rReport's promise is an article that is faithful to the video: every sentence ac
 
 **The specs follow the code.** `scripts/test_mutate.py` runs on every push, and checks that every spec still finds each edit's text exactly once. A refactor that moves a guarded line fails CI until its mutant is updated, so the record never silently drifts from the code it guards.
 
-**What has specs:** `prompt` (25 mutants), `agents` (64), `reason` (44) and `oracle` (21). The modules built before them were mutation-tested the same way. Their results are recorded in their design notes, and porting their specs into `tests/mutants/` is follow-up work.
+**What has specs:** `prompt` (25 mutants), `agents` (64), `reason` (44), `oracle` (21) and `text` (110). The modules built before them were mutation-tested the same way. Their results are recorded in their design notes, and porting their specs into `tests/mutants/` is follow-up work.
 
 **When to run:** before committing a change to a module's rules, and before a milestone. Never with another build reading the same sources, such as clang-tidy or a sanitizer build: it would compile a mutant.
 
@@ -75,6 +86,7 @@ rReport's promise is an article that is faithful to the video: every sentence ac
 ctest --preset dev                                   # L0–L2
 ctest --preset dev -L agents                         # one module
 build/dev/tests/unit/agents/rr_agents_tests --gtest_repeat=40 --gtest_shuffle   # flakiness
+ctest --preset dev -L fuzz                           # the fuzz corpora, replayed
 python3 -m unittest discover -s scripts -p 'test_*.py'                          # the scripts, and the specs' drift
 scripts/mutate.py tests/mutants/agents.toml          # mutation testing (about 30 minutes)
 ```

@@ -18,7 +18,7 @@ It runs on open models you control:
 
 all on a rented GPU pod, orchestrated by a C++ hub on your own machine.
 
-> **Status: M0 (foundations) in progress.** See [the plan](docs/plan.md) for the full roadmap (M0–M10, then the browser extension and the hosted SaaS).
+> **Status: M0 (foundations) done; M1 and M2, the intelligence core, in progress** ([phase by phase](docs/roadmap.md)). See [the plan](docs/plan.md) for the full roadmap (M0–M10, then the browser extension and the hosted SaaS).
 
 ## Why it's different
 
@@ -40,7 +40,7 @@ GPU pod:      rreport-runtime — CUDA-free supervisor → llama-server (command
                                                      → rr-speech-worker (Parakeet, Whisper, diarization)
 ```
 
-Details: [architecture](docs/architecture.md) · [decisions (ADRs)](docs/adr/README.md) · [glossary](docs/glossary.md).
+Details: [architecture](docs/architecture.md) · [decisions (ADRs)](docs/adr/README.md) · [glossary](docs/glossary.md) · [roadmap, phase by phase](docs/roadmap.md).
 
 ## Building
 
@@ -82,7 +82,7 @@ python3 -m unittest discover -s scripts -p 'test_*.py'
 
 A nightly job (`.github/workflows/nightly.yml`) also runs the runtime against a real llama-server, built for the CPU, with a tiny model made on the spot: [docs/design/runtime.md](docs/design/runtime.md#the-real-engine-nightly-l4) says what it checks, and how to run it yourself.
 
-Every rule a module keeps is mutation-tested: removed on purpose, and a test must fail (`scripts/mutate.py tests/mutants/<module>.toml`). [docs/design/testing.md](docs/design/testing.md) describes the test layers, the stand-ins (the fake engine, the oracle, the fault injectors) and the practice.
+Every rule a module keeps is mutation-tested: removed on purpose, and a test must fail (`scripts/mutate.py tests/mutants/<module>.toml`). Code that reads untrusted input is fuzzed: every push replays the committed corpora, and the `fuzz` job searches for new inputs with libFuzzer (`cmake --preset fuzz`). [docs/design/testing.md](docs/design/testing.md) describes the test layers, the stand-ins (the fake engine, the oracle, the fault injectors) and the practice.
 
 ## Running the pod
 

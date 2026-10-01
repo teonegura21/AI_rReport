@@ -22,6 +22,7 @@ option(RR_BUILD_RUNTIME "Build the runtime supervisor (rreport-runtime)" ON)
 option(RR_BUILD_TESTS "Build the unit tests" ON)
 option(RR_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(RR_FORCE_FETCH "Ignore system packages and build pinned dependency versions" OFF)
+option(RR_FUZZ "Build libFuzzer targets (Clang, with a sanitizer; cmake/RrFuzzing.cmake)" OFF)
 set(RR_SANITIZE "" CACHE STRING "Sanitizers to enable: 'address;undefined', 'thread', or empty")
 set(RR_CLANG_TIDY "" CACHE STRING
     "clang-tidy command line applied to rReport targets only (never to dependencies)")
@@ -46,6 +47,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(RrToolchainCheck)   # fail early, with an explanation, on unsupported compilers
 include(RrSanitizers)       # global: must precede dependencies so they are instrumented too
+include(RrFuzzing)          # global too: libFuzzer's coverage instrumentation (RR_FUZZ)
 include(RrWarnings)
 include(RrModule)
 include(RrEmbed)
@@ -64,4 +66,4 @@ if(RR_BUILD_TESTS)
 endif()
 
 message(STATUS "rReport ${PROJECT_VERSION}: hub=${RR_BUILD_HUB} runtime=${RR_BUILD_RUNTIME} "
-               "tests=${RR_BUILD_TESTS} sanitize='${RR_SANITIZE}' werror=${RR_WARNINGS_AS_ERRORS}")
+               "tests=${RR_BUILD_TESTS} sanitize='${RR_SANITIZE}' fuzz=${RR_FUZZ} werror=${RR_WARNINGS_AS_ERRORS}")

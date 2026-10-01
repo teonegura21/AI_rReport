@@ -42,6 +42,16 @@
       "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "RR_SANITIZE": "thread" }
     },
     {
+      "name": "fuzz",
+      "displayName": "Clang · libFuzzer targets · AddressSanitizer + UBSan",
+      "inherits": ["base", "clang"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "RR_SANITIZE": "address;undefined",
+        "RR_FUZZ": "ON"
+      }
+    },
+    {
       "name": "tidy",
       "displayName": "Clang · clang-tidy on every translation unit",
       "inherits": ["base", "clang"],
@@ -77,6 +87,7 @@
     { "name": "dev", "configurePreset": "dev" },
     { "name": "dev-clang", "configurePreset": "dev-clang" },
     { "name": "tsan", "configurePreset": "tsan" },
+    { "name": "fuzz", "configurePreset": "fuzz" },
     { "name": "tidy", "configurePreset": "tidy" },
     { "name": "release", "configurePreset": "release" },
     { "name": "runtime-release", "configurePreset": "runtime-release" },

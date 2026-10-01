@@ -1,0 +1,901 @@
+# Mutants of rr_text: each removes one rule of text handling and names the test that
+# must fail without it. Run: scripts/mutate.py tests/mutants/text.toml
+# What they found is in docs/design/text.md, "How the tests were validated".
+
+target = "rr_text_tests"
+binary = "build/dev/tests/unit/text/rr_text_tests"
+timeout = 60
+
+[[mutant]]
+name = "fold-keeps-case"
+file = "src/text/unicode.cpp"
+expect = "Unicode.FoldMakesTheWaysOfWritingOneTextEqual"
+  [[mutant.edit]]
+  from = '''UTF8PROC_CASEFOLD | UTF8PROC_STRIPMARK));'''
+  to = '''UTF8PROC_STRIPMARK));'''
+
+[[mutant]]
+name = "fold-keeps-accents"
+file = "src/text/unicode.cpp"
+expect = "Unicode.FoldMakesTheWaysOfWritingOneTextEqual"
+  [[mutant.edit]]
+  from = '''UTF8PROC_CASEFOLD | UTF8PROC_STRIPMARK));'''
+  to = '''UTF8PROC_CASEFOLD));'''
+
+[[mutant]]
+name = "fold-keeps-ligatures"
+file = "src/text/unicode.cpp"
+expect = "Unicode.FoldMakesTheWaysOfWritingOneTextEqual"
+  [[mutant.edit]]
+  from = '''mapped(text, UTF8PROC_STABLE | UTF8PROC_COMPOSE | UTF8PROC_COMPAT |'''
+  to = '''mapped(text, UTF8PROC_STABLE | UTF8PROC_COMPOSE | 0 |'''
+
+[[mutant]]
+name = "fold-keeps-curly-apostrophes"
+file = "src/text/unicode.cpp"
+expect = "Unicode.FoldMakesTheWaysOfWritingOneTextEqual"
+  [[mutant.edit]]
+  from = '''folded = replace_all(folded, apostrophe, "'");'''
+  to = '''folded = replace_all(folded, apostrophe, apostrophe);'''
+
+[[mutant]]
+name = "nfc-decomposes"
+file = "src/text/unicode.cpp"
+expect = "Unicode.NfcComposes"
+  [[mutant.edit]]
+  from = '''return mapped(text, UTF8PROC_STABLE | UTF8PROC_COMPOSE);'''
+  to = '''return mapped(text, UTF8PROC_STABLE | UTF8PROC_DECOMPOSE);'''
+
+[[mutant]]
+name = "repair-drops-invalid-bytes"
+file = "src/text/unicode.cpp"
+expect = "Unicode.RepairReplacesEachInvalidByte"
+  [[mutant.edit]]
+  from = '''            repaired += kReplacement;'''
+  to = '''            repaired += kReplacement.substr(0, 0);'''
+
+[[mutant]]
+name = "tab-is-a-control"
+file = "src/text/unicode.cpp"
+expect = "Unicode.ClassifiesCharacters"
+  [[mutant.edit]]
+  from = '''return code_point >= 0x09 && code_point <= 0x0D ? CharClass::space : CharClass::other;'''
+  to = '''return code_point >= 0x0A && code_point <= 0x0D ? CharClass::space : CharClass::other;'''
+
+[[mutant]]
+name = "titlecase-not-upper"
+file = "src/text/unicode.cpp"
+expect = "Unicode.KnowsCase"
+  [[mutant.edit]]
+  from = '''return category == UTF8PROC_CATEGORY_LU || category == UTF8PROC_CATEGORY_LT;'''
+  to = '''return category == UTF8PROC_CATEGORY_LU;'''
+
+[[mutant]]
+name = "initial-quote-not-opening"
+file = "src/text/unicode.cpp"
+expect = "Unicode.KnowsOpeningAndClosingPunctuation"
+  [[mutant.edit]]
+  from = '''return category == UTF8PROC_CATEGORY_PS || category == UTF8PROC_CATEGORY_PI;'''
+  to = '''return category == UTF8PROC_CATEGORY_PS;'''
+
+[[mutant]]
+name = "final-quote-not-closing"
+file = "src/text/unicode.cpp"
+expect = "Unicode.KnowsOpeningAndClosingPunctuation"
+  [[mutant.edit]]
+  from = '''return category == UTF8PROC_CATEGORY_PE || category == UTF8PROC_CATEGORY_PF;'''
+  to = '''return category == UTF8PROC_CATEGORY_PE;'''
+
+[[mutant]]
+name = "digit-from-its-own-zero"
+file = "src/text/unicode.cpp"
+expect = "Unicode.ReadsTheDigitsOfAnyScript"
+  [[mutant.edit]]
+  from = '''while (first > 0 && is_digit(first - 1)) {'''
+  to = '''while (false && first > 0 && is_digit(first - 1)) {'''
+
+[[mutant]]
+name = "digit-sets-not-of-ten"
+file = "src/text/unicode.cpp"
+expect = "Unicode.ReadsTheDigitsOfAnyScript"
+  [[mutant.edit]]
+  from = '''return static_cast<int>((code_point - first) % 10);'''
+  to = '''return static_cast<int>((code_point - first) % 100);'''
+
+[[mutant]]
+name = "thousands-of-any-length"
+file = "src/text/tokens.cpp"
+expect = "Tokens.ACommaBeforeExactlyThreeDigitsSeparatesThousands"
+  [[mutant.edit]]
+  from = '''return at + 4 == points.size() || !is_digit(points[at + 4]);'''
+  to = '''return true;'''
+
+[[mutant]]
+name = "thousands-of-two-digits"
+file = "src/text/tokens.cpp"
+expect = "Tokens.ACommaBeforeExactlyThreeDigitsSeparatesThousands"
+  [[mutant.edit]]
+  from = '''for (std::size_t digit = at + 1; digit <= at + 3; ++digit) {'''
+  to = '''for (std::size_t digit = at + 1; digit <= at + 2; ++digit) {'''
+
+[[mutant]]
+name = "apostrophe-splits-words"
+file = "src/text/tokens.cpp"
+expect = "Tokens.AnApostropheBetweenLettersStaysInTheWord"
+  [[mutant.edit]]
+  from = '''if (is_apostrophe(points[end].value) && between_letters) {'''
+  to = '''if (false && is_apostrophe(points[end].value) && between_letters) {'''
+
+[[mutant]]
+name = "apostrophe-joins-anything"
+file = "src/text/tokens.cpp"
+expect = "Tokens.AnApostropheBetweenLettersStaysInTheWord"
+  [[mutant.edit]]
+  from = '''end > at && end + 1 < points.size() && is_letter(points[end - 1]) && is_letter(points[end + 1]);'''
+  to = '''end > at && end + 1 < points.size() && (is_letter(points[end - 1]) || true);'''
+
+[[mutant]]
+name = "decimal-point-after-a-letter"
+file = "src/text/tokens.cpp"
+expect = "Tokens.APointBetweenDigitsIsADecimalPoint"
+  [[mutant.edit]]
+  from = '''const bool between_digits = !has_letter && end > at && end + 1 < points.size() &&'''
+  to = '''const bool between_digits = end > at && end + 1 < points.size() &&'''
+
+[[mutant]]
+name = "marks-make-numbers"
+file = "src/text/tokens.cpp"
+expect = "Tokens.AWordOfMarksAloneIsNoTerm"
+  [[mutant.edit]]
+  from = '''Token{.kind = has_letter || kind == CharClass::mark ? TokenKind::word : TokenKind::number,'''
+  to = '''Token{.kind = has_letter ? TokenKind::word : TokenKind::number,'''
+
+[[mutant]]
+name = "empty-terms-kept"
+file = "src/text/tokens.cpp"
+expect = "Tokens.AWordOfMarksAloneIsNoTerm"
+  [[mutant.edit]]
+  from = '''if (term.empty()) {'''
+  to = '''if (term.empty() && false) {'''
+
+[[mutant]]
+name = "spaces-are-tokens"
+file = "src/text/tokens.cpp"
+expect = "Tokens.SpacesAndControlsSeparateAndAreNoTokens"
+  [[mutant.edit]]
+  from = '''if (kind == CharClass::space || kind == CharClass::other) {'''
+  to = '''if (kind == CharClass::other) {'''
+
+[[mutant]]
+name = "ideographic-needs-space"
+file = "src/text/sentences.cpp"
+expect = "Sentences.IdeographicTerminatorsNeedNoSpace"
+  [[mutant.edit]]
+  from = '''if (!ideographic && end < points_.size() && !is_blank(at(end))) {'''
+  to = '''if (!(ideographic && false) && end < points_.size() && !is_blank(at(end))) {'''
+
+[[mutant]]
+name = "lowercase-after-question-ends"
+file = "src/text/sentences.cpp"
+expect = "Sentences.ALowercaseWordContinuesAfterAQuestionOrExclamation"
+  [[mutant.edit]]
+  from = '''return !is_lower(at(*next));'''
+  to = '''return true;'''
+
+[[mutant]]
+name = "ellipsis-always-ends"
+file = "src/text/sentences.cpp"
+expect = "Sentences.AnEllipsisEndsOneOnlyBeforeACapital"
+  [[mutant.edit]]
+  from = '''            return starts_sentence(at(*next));'''
+  to = '''            return true;'''
+
+[[mutant]]
+name = "ellipsis-never-ends"
+file = "src/text/sentences.cpp"
+expect = "Sentences.AnEllipsisEndsOneOnlyBeforeACapital"
+  [[mutant.edit]]
+  from = '''            return starts_sentence(at(*next));'''
+  to = '''            return false && starts_sentence(at(*next));'''
+
+[[mutant]]
+name = "title-ends-sentences"
+file = "src/text/sentences.cpp"
+expect = "Sentences.AnAbbreviationThatNeverEndsOneDoesNot"
+  [[mutant.edit]]
+  from = '''            case lexicon::Abbreviation::title:
+                return false;'''
+  to = '''            case lexicon::Abbreviation::title:
+                return !is_lower(at(next));'''
+
+[[mutant]]
+name = "terminal-ends-before-any-capital"
+file = "src/text/sentences.cpp"
+expect = "Sentences.AnAbbreviationThatOftenEndsOneDoesBeforeAFunctionWord"
+  [[mutant.edit]]
+  from = '''            case lexicon::Abbreviation::terminal:
+                return starts_new_sentence(next);'''
+  to = '''            case lexicon::Abbreviation::terminal:
+                return starts_sentence(at(next));'''
+
+[[mutant]]
+name = "terminal-never-ends"
+file = "src/text/sentences.cpp"
+expect = "Sentences.AnAbbreviationThatOftenEndsOneDoesBeforeAFunctionWord"
+  [[mutant.edit]]
+  from = '''            case lexicon::Abbreviation::terminal:
+                return starts_new_sentence(next);'''
+  to = '''            case lexicon::Abbreviation::terminal:
+                return false && starts_new_sentence(next);'''
+
+[[mutant]]
+name = "numbering-inverted"
+file = "src/text/sentences.cpp"
+expect = "Sentences.ANumberingAbbreviationDoesNotEndOneBeforeANumber"
+  [[mutant.edit]]
+  from = '''if (classify(at(next)) == CharClass::digit) {'''
+  to = '''if (classify(at(next)) != CharClass::digit) {'''
+
+[[mutant]]
+name = "initials-ignored"
+file = "src/text/sentences.cpp"
+expect = "Sentences.AnInitialDoesNotEndOneBeforeAName"
+  [[mutant.edit]]
+  from = '''const bool initial = period - word == 1 && is_upper(at(word));'''
+  to = '''const bool initial = false && period - word == 1 && is_upper(at(word));'''
+
+[[mutant]]
+name = "any-capital-starts-a-sentence"
+file = "src/text/sentences.cpp"
+expect = "Sentences.AnInitialDoesNotEndOneBeforeAName"
+  [[mutant.edit]]
+  from = '''return !is_upper(at(next)) || lexicon::is_function_word(folded(next, word_after(next)));'''
+  to = '''return !is_upper(at(next)) || true;'''
+
+[[mutant]]
+name = "function-words-start-nothing"
+file = "src/text/sentences.cpp"
+expect = "Sentences.AnInitialDoesNotEndOneBeforeAName"
+  [[mutant.edit]]
+  from = '''return !is_upper(at(next)) || lexicon::is_function_word(folded(next, word_after(next)));'''
+  to = '''return !is_upper(at(next)) || false;'''
+
+[[mutant]]
+name = "period-before-lowercase-ends"
+file = "src/text/sentences.cpp"
+expect = "Sentences.APeriodBeforeALowercaseWordEndsNothing"
+  [[mutant.edit]]
+  from = '''return !is_lower(at(next));'''
+  to = '''return true;'''
+
+[[mutant]]
+name = "paragraph-needs-three-breaks"
+file = "src/text/sentences.cpp"
+expect = "Sentences.AParagraphBreakAlwaysEndsOne"
+  [[mutant.edit]]
+  from = '''if (line_breaks(index, end) >= 2) {'''
+  to = '''if (line_breaks(index, end) >= 3) {'''
+
+[[mutant]]
+name = "crlf-is-two-breaks"
+file = "src/text/sentences.cpp"
+expect = "Sentences.AParagraphBreakAlwaysEndsOne"
+  [[mutant.edit]]
+  from = '''breaks += index + 1 < last && at(index + 1) == U'\n' ? 0 : 1;'''
+  to = '''breaks += 1;'''
+
+[[mutant]]
+name = "paragraph-separator-is-one-break"
+file = "src/text/sentences.cpp"
+expect = "Sentences.AParagraphBreakAlwaysEndsOne"
+  [[mutant.edit]]
+  from = '''breaks += 2;'''
+  to = '''breaks += 1;'''
+
+[[mutant]]
+name = "closing-quotes-not-closers"
+file = "src/text/sentences.cpp"
+expect = "Sentences.ClosingQuotesAndBracketsBelongToTheSentence"
+  [[mutant.edit]]
+  from = '''return code_point == U'"' || code_point == U'\'' || is_closing(code_point);'''
+  to = '''return code_point == U'"' || code_point == U'\'';'''
+
+[[mutant]]
+name = "opening-quotes-not-skipped"
+file = "src/text/sentences.cpp"
+expect = "Sentences.AnEllipsisEndsOneOnlyBeforeACapital"
+  [[mutant.edit]]
+  from = '''           is_opening(code_point);'''
+  to = '''           false;'''
+
+[[mutant]]
+name = "fragments-dropped"
+file = "src/text/sentences.cpp"
+expect = "Sentences.AFragmentWithoutAWordJoinsTheSentenceBefore"
+  [[mutant.edit]]
+  from = '''joined.back().last = range.last;'''
+  to = '''(void)0;'''
+
+[[mutant]]
+name = "leading-fragments-dropped"
+file = "src/text/sentences.cpp"
+expect = "Sentences.AFragmentAtTheStartJoinsTheSentenceAfter"
+  [[mutant.edit]]
+  from = '''range.first = *leading;'''
+  to = '''(void)*leading;'''
+
+[[mutant]]
+name = "fragments-stand-alone"
+file = "src/text/sentences.cpp"
+expect = "Sentences.AFragmentWithoutAWordJoinsTheSentenceBefore"
+  [[mutant.edit]]
+  from = '''if (!has_word(range)) {'''
+  to = '''if (false && !has_word(range)) {'''
+
+[[mutant]]
+name = "dotted-abbreviations-cut"
+file = "src/text/sentences.cpp"
+expect = "Sentences.AnAbbreviationThatNeverEndsOneDoesNot"
+  [[mutant.edit]]
+  from = '''(at(begin - 1) == U'.' && begin >= 2 && is_word_part(at(begin - 2))))) {'''
+  to = '''(false && at(begin - 1) == U'.' && begin >= 2 && is_word_part(at(begin - 2))))) {'''
+
+[[mutant]]
+name = "years-from-ten"
+file = "src/text/numbers.cpp"
+expect = "Numbers.PairsOutsideTheCenturiesOfYearsAreTwoNumbers"
+  [[mutant.edit]]
+  from = '''century->value < 15 || century->value > 20) {'''
+  to = '''century->value < 10 || century->value > 20) {'''
+
+[[mutant]]
+name = "years-not-read"
+file = "src/text/numbers.cpp"
+expect = "Numbers.YearsSaidInPairsAreRead"
+  [[mutant.edit]]
+  from = '''rest.has_value() && rest->value >= 10) {'''
+  to = '''rest.has_value() && rest->value >= 100) {'''
+
+[[mutant]]
+name = "oh-years-not-read"
+file = "src/text/numbers.cpp"
+expect = "Numbers.YearsSaidInPairsAreRead"
+  [[mutant.edit]]
+  from = '''            if (unit.has_value() && unit->kind == Kind::unit && unit->value >= 1) {
+                return Reading{.value = (century->value * 100) + unit->value,'''
+  to = '''            if (unit.has_value() && unit->kind == Kind::unit && unit->value >= 10) {
+                return Reading{.value = (century->value * 100) + unit->value,'''
+
+[[mutant]]
+name = "group-before-a-larger-scale-kept"
+file = "src/text/numbers.cpp"
+expect = "Numbers.NumbersInARowStayApart"
+  [[mutant.edit]]
+  from = '''if (after.has_value() && after->kind == Kind::scale && after->value >= last_scale) {'''
+  to = '''if (false && after.has_value() && after->kind == Kind::scale && after->value >= last_scale) {'''
+
+[[mutant]]
+name = "hundreds-tail-before-hundred-kept"
+file = "src/text/numbers.cpp"
+expect = "Numbers.NumbersInARowStayApart"
+  [[mutant.edit]]
+  from = '''(!after.has_value() || after->kind != Kind::hundred)) {'''
+  to = '''(true || !after.has_value() || after->kind != Kind::hundred)) {'''
+
+[[mutant]]
+name = "and-after-hundred-refused"
+file = "src/text/numbers.cpp"
+expect = "Numbers.HundredsAndScalesMultiply"
+  [[mutant.edit]]
+  from = '''const std::size_t rest_at = is(reading->end, "and") ? reading->end + 1 : reading->end;'''
+  to = '''const std::size_t rest_at = reading->end;'''
+
+[[mutant]]
+name = "dozen-ignored"
+file = "src/text/numbers.cpp"
+expect = "Numbers.HundredsAndScalesMultiply"
+  [[mutant.edit]]
+  from = '''} else if (word.has_value() && word->kind == Kind::dozen && whole) {'''
+  to = '''} else if (false && word.has_value() && word->kind == Kind::dozen && whole) {'''
+
+[[mutant]]
+name = "and-a-half-ignored"
+file = "src/text/numbers.cpp"
+expect = "Numbers.FractionsOfAWholeAreRead"
+  [[mutant.edit]]
+  from = '''            reading.value += 0.5;'''
+  to = '''            reading.value += 0.0;'''
+
+[[mutant]]
+name = "and-a-half-after-scale-ignored"
+file = "src/text/numbers.cpp"
+expect = "Numbers.FractionsOfAWholeAreRead"
+  [[mutant.edit]]
+  from = '''total += 0.5 * scale->value;'''
+  to = '''total += 0.0 * scale->value;'''
+
+[[mutant]]
+name = "point-ignored"
+file = "src/text/numbers.cpp"
+expect = "Numbers.FractionsOfAWholeAreRead"
+  [[mutant.edit]]
+  from = '''if (!is(reading.end, "point") || reading.value != std::floor(reading.value) ||'''
+  to = '''if (true || reading.value != std::floor(reading.value) ||'''
+
+[[mutant]]
+name = "range-percent-not-shared"
+file = "src/text/numbers.cpp"
+expect = "Numbers.ARangeSharesItsUnit"
+  [[mutant.edit]]
+  from = '''            if (high.percent) {
+                low.percent = true;'''
+  to = '''            if (high.percent) {
+                low.percent = false;'''
+
+[[mutant]]
+name = "range-scale-not-shared"
+file = "src/text/numbers.cpp"
+expect = "Numbers.ARangeSharesItsUnit"
+  [[mutant.edit]]
+  from = '''low.reading.value *= upper.scale;'''
+  to = '''low.reading.value *= 1.0;'''
+
+[[mutant]]
+name = "range-scale-always-shared"
+file = "src/text/numbers.cpp"
+expect = "Numbers.AScaleIsSharedOnlyByAComparableNumber"
+  [[mutant.edit]]
+  from = '''plain.value <= 10.0 * (upper.value / upper.scale)) {'''
+  to = '''plain.value <= 1e300) {'''
+
+[[mutant]]
+name = "range-scale-only-upwards"
+file = "src/text/numbers.cpp"
+expect = "Numbers.AScaleIsSharedOnlyByAComparableNumber"
+  [[mutant.edit]]
+  from = '''plain.value <= 10.0 * (upper.value / upper.scale)) {'''
+  to = '''plain.value <= 1.0 * (upper.value / upper.scale)) {'''
+
+[[mutant]]
+name = "or-is-no-range"
+file = "src/text/numbers.cpp"
+expect = "Numbers.ARangeSharesItsUnit"
+  [[mutant.edit]]
+  from = '''               is(index, "or");'''
+  to = '''               false;'''
+
+[[mutant]]
+name = "minus-after-a-word-is-a-sign"
+file = "src/text/numbers.cpp"
+expect = "Numbers.AHyphenAfterAWordOrNumberIsNoSign"
+  [[mutant.edit]]
+  from = '''(!sign->joined || opens(index - 1));'''
+  to = '''(!sign->joined || true);'''
+
+[[mutant]]
+name = "minus-after-a-bracket-refused"
+file = "src/text/numbers.cpp"
+expect = "Numbers.SignsMakeNegatives"
+  [[mutant.edit]]
+  from = '''(!sign->joined || opens(index - 1));'''
+  to = '''(!sign->joined);'''
+
+[[mutant]]
+name = "percent-sign-ignored"
+file = "src/text/numbers.cpp"
+expect = "Numbers.PercentsAreMarked"
+  [[mutant.edit]]
+  from = '''if (is(found.end, "%") || is(found.end, "\u066A") || is(found.end, "percent")) {'''
+  to = '''if (is(found.end, "\u066A") || is(found.end, "percent")) {'''
+
+[[mutant]]
+name = "per-cent-ignored"
+file = "src/text/numbers.cpp"
+expect = "Numbers.PercentsAreMarked"
+  [[mutant.edit]]
+  from = '''} else if (is(found.end, "per") && is(found.end + 1, "cent")) {'''
+  to = '''} else if (false && is(found.end, "per") && is(found.end + 1, "cent")) {'''
+
+[[mutant]]
+name = "ordinal-percentages"
+file = "src/text/numbers.cpp"
+expect = "Numbers.AnOrdinalIsNoPercentage"
+  [[mutant.edit]]
+  from = '''if (!reading->ordinal) {'''
+  to = '''if (true) {'''
+
+[[mutant]]
+name = "pronoun-one-read"
+file = "src/text/numbers.cpp"
+expect = "Numbers.OneAsAPronounIsNoNumber"
+  [[mutant.edit]]
+  from = '''return std::ranges::find(kPronounDeterminers, before) != kPronounDeterminers.end() ||'''
+  to = '''return std::ranges::find(kPronounDeterminers, before) == kPronounDeterminers.end() ||'''
+
+[[mutant]]
+name = "one-another-read"
+file = "src/text/numbers.cpp"
+expect = "Numbers.OneAsAPronounIsNoNumber"
+  [[mutant.edit]]
+  from = '''                   is(index + 1, "another");'''
+  to = '''                   is(index + 1, "anotherx");'''
+
+[[mutant]]
+name = "second-as-time-read"
+file = "src/text/numbers.cpp"
+expect = "Numbers.SecondAsTimeIsNoNumber"
+  [[mutant.edit]]
+  from = '''return std::ranges::find(kTimeDeterminers, before) != kTimeDeterminers.end();'''
+  to = '''return std::ranges::find(kTimeDeterminers, before) == kTimeDeterminers.end();'''
+
+[[mutant]]
+name = "fraction-words-ignored"
+file = "src/text/numbers.cpp"
+expect = "Numbers.FractionsArePassedOver"
+  [[mutant.edit]]
+  from = '''if (next != nullptr && std::ranges::binary_search(kFractionWords, next->folded)) {'''
+  to = '''if (next != nullptr && false && std::ranges::binary_search(kFractionWords, next->folded)) {'''
+
+[[mutant]]
+name = "ordinals-are-no-fractions"
+file = "src/text/numbers.cpp"
+expect = "Numbers.FractionsArePassedOver"
+  [[mutant.edit]]
+  from = '''return word.ordinal && word.value >= 3 && word.kind != Kind::hundred && word.kind != Kind::scale;'''
+  to = '''return word.ordinal && word.value >= 30 && word.kind != Kind::hundred && word.kind != Kind::scale;'''
+
+[[mutant]]
+name = "thousandth-of-read"
+file = "src/text/numbers.cpp"
+expect = "Numbers.FractionsArePassedOver"
+  [[mutant.edit]]
+  from = '''if (ordinal_multiplier && is(reading.end, "of")) {'''
+  to = '''if (false && ordinal_multiplier && is(reading.end, "of")) {'''
+
+[[mutant]]
+name = "a-third-of-read"
+file = "src/text/numbers.cpp"
+expect = "Numbers.FractionsArePassedOver"
+  [[mutant.edit]]
+  from = '''is_fraction_ordinal(*word) && (before == "a" || before == "an") &&'''
+  to = '''is_fraction_ordinal(*word) && (before == "x" || before == "an") &&'''
+
+[[mutant]]
+name = "decades-not-read"
+file = "src/text/numbers.cpp"
+expect = "Numbers.ADecadeIsItsFirstYear"
+  [[mutant.edit]]
+  from = '''if (!ordinal && tail != "s") {'''
+  to = '''if (!ordinal) {'''
+
+[[mutant]]
+name = "rd-not-ordinal"
+file = "src/text/numbers.cpp"
+expect = "Numbers.OrdinalsAreMarked"
+  [[mutant.edit]]
+  from = '''const bool ordinal = tail == "st" || tail == "nd" || tail == "rd" || tail == "th";'''
+  to = '''const bool ordinal = tail == "st" || tail == "nd" || tail == "th";'''
+
+[[mutant]]
+name = "point-after-a-word-starts-a-number"
+file = "src/text/numbers.cpp"
+expect = "Numbers.APointThatStartsANumberIsADecimalPoint"
+  [[mutant.edit]]
+  from = '''const bool starts = !found->joined || (lexemes_[index - 1].kind != TokenKind::word &&'''
+  to = '''const bool starts = true || (lexemes_[index - 1].kind != TokenKind::word &&'''
+
+[[mutant]]
+name = "spaced-hyphen-joins"
+file = "src/text/numbers.cpp"
+expect = "Numbers.AHyphenJoinsOnlyTheWordsItTouches"
+  [[mutant.edit]]
+  from = '''hyphen->joined && after != nullptr && after->joined;'''
+  to = '''after != nullptr;'''
+
+[[mutant]]
+name = "values-compared-exactly"
+file = "src/text/numbers.cpp"
+expect = "Numbers.ValuesAreComparedWithinARoundingError"
+  [[mutant.edit]]
+  from = '''kRelativeTolerance * std::max(std::abs(lhs), std::abs(rhs));'''
+  to = '''kRelativeTolerance * 0.0 * std::max(std::abs(lhs), std::abs(rhs));'''
+
+[[mutant]]
+name = "values-compared-loosely"
+file = "src/text/numbers.cpp"
+expect = "Numbers.ValuesAreComparedWithinARoundingError"
+  [[mutant.edit]]
+  from = '''kRelativeTolerance * std::max(std::abs(lhs), std::abs(rhs));'''
+  to = '''kRelativeTolerance * 1e9 * std::max(std::abs(lhs), std::abs(rhs));'''
+
+[[mutant]]
+name = "same-number-ignores-percent"
+file = "src/text/numbers.cpp"
+expect = "Numbers.ANumberIsItsValueAndItsUnit"
+  [[mutant.edit]]
+  from = '''return same_value(lhs.value, rhs.value) && lhs.percent == rhs.percent && lhs.ordinal == rhs.ordinal;'''
+  to = '''return same_value(lhs.value, rhs.value) && lhs.ordinal == rhs.ordinal;'''
+
+[[mutant]]
+name = "same-number-ignores-ordinal"
+file = "src/text/numbers.cpp"
+expect = "Numbers.ANumberIsItsValueAndItsUnit"
+  [[mutant.edit]]
+  from = '''return same_value(lhs.value, rhs.value) && lhs.percent == rhs.percent && lhs.ordinal == rhs.ordinal;'''
+  to = '''return same_value(lhs.value, rhs.value) && lhs.percent == rhs.percent;'''
+
+[[mutant]]
+name = "mixed-form-is-words"
+file = "src/text/numbers.cpp"
+expect = "Numbers.KnowWhereTheyAreAndHowTheyAreWritten"
+  [[mutant.edit]]
+  from = '''    if (reading.words && reading.digits) {
+        return NumberForm::mixed;'''
+  to = '''    if (false && reading.words && reading.digits) {
+        return NumberForm::mixed;'''
+
+[[mutant]]
+name = "infinity-read"
+file = "src/text/numbers.cpp"
+expect = "Numbers.AValueTooLargeIsNotRead"
+  [[mutant.edit]]
+  from = '''if (!reading.has_value() || !std::isfinite(reading->value) || is_not_a_number(index, *reading)) {'''
+  to = '''if (!reading.has_value() || is_not_a_number(index, *reading)) {'''
+
+[[mutant]]
+name = "i-is-a-name"
+file = "src/text/entities.cpp"
+expect = "Names.IIsNoName"
+  [[mutant.edit]]
+  from = '''word.capitalized = capitals > 0 && !is_pronoun_i(word.folded);'''
+  to = '''word.capitalized = capitals > 0 && !is_pronoun_i(word.folded + "x");'''
+
+[[mutant]]
+name = "one-capital-makes-an-acronym"
+file = "src/text/entities.cpp"
+expect = "Names.FunctionWordsAtTheHeadAreLeftOut"
+  [[mutant.edit]]
+  from = '''word.acronym = letters >= 2 && capitals == letters;'''
+  to = '''word.acronym = letters >= 2 && capitals >= 1;'''
+
+[[mutant]]
+name = "capitals-sentences-read"
+file = "src/text/entities.cpp"
+expect = "Names.CaseSaysNothingInASentenceInCapitals"
+  [[mutant.edit]]
+  from = '''return words >= 3;'''
+  to = '''return words >= 300;'''
+
+[[mutant]]
+name = "possessive-continues-a-name"
+file = "src/text/entities.cpp"
+expect = "Names.APossessiveEndsAName"
+  [[mutant.edit]]
+  from = '''while (index < words_.size() && !is_possessive(last)) {'''
+  to = '''while (index < words_.size()) {'''
+
+[[mutant]]
+name = "possessive-kept"
+file = "src/text/entities.cpp"
+expect = "Names.APossessiveEndsAName"
+  [[mutant.edit]]
+  from = '''.end = words_[last].token.span.end - possessive_size(last)};'''
+  to = '''.end = words_[last].token.span.end};'''
+
+[[mutant]]
+name = "numbers-after-numbers"
+file = "src/text/entities.cpp"
+expect = "Names.ANumberMayFollowACapitalizedWord"
+  [[mutant.edit]]
+  from = '''                words_[index - 1].capitalized) {  // "Apollo 11"'''
+  to = '''                true) {  // "Apollo 11"'''
+
+[[mutant]]
+name = "connectors-need-no-name-after"
+file = "src/text/entities.cpp"
+expect = "Names.ConnectorsJoinCapitalizedWords"
+  [[mutant.edit]]
+  from = '''            words_[next].capitalized || (numbers_may_follow && words_[next].token.kind == TokenKind::number);'''
+  to = '''            true || (numbers_may_follow && words_[next].token.kind == TokenKind::number);'''
+
+[[mutant]]
+name = "one-connector-only"
+file = "src/text/entities.cpp"
+expect = "Names.ConnectorsJoinCapitalizedWords"
+  [[mutant.edit]]
+  from = '''            if (is_connector(next)) {
+                ++next;'''
+  to = '''            if (false && is_connector(next)) {
+                ++next;'''
+
+[[mutant]]
+name = "ampersand-splits"
+file = "src/text/entities.cpp"
+expect = "Names.AmpersandsAndJoiningHyphensJoin"
+  [[mutant.edit]]
+  from = '''} else if (is_symbol(next, U'&') || is_joining_hyphen(next)) {'''
+  to = '''} else if (is_joining_hyphen(next)) {'''
+
+[[mutant]]
+name = "hyphen-joins-untouched"
+file = "src/text/entities.cpp"
+expect = "Names.AHyphenJoinsOnlyWordsItTouches"
+  [[mutant.edit]]
+  from = '''return (is_symbol(index, U'-') || is_symbol(index, U'\u2010')) && touches_previous(index) &&'''
+  to = '''return (is_symbol(index, U'-') || is_symbol(index, U'\u2010')) && true &&'''
+
+[[mutant]]
+name = "title-period-splits"
+file = "src/text/entities.cpp"
+expect = "Names.TitlesAndInitialsKeepTheirPeriod"
+  [[mutant.edit]]
+  from = '''return initial || lexicon::abbreviation(before.folded) == lexicon::Abbreviation::title;'''
+  to = '''return initial;'''
+
+[[mutant]]
+name = "initial-period-splits"
+file = "src/text/entities.cpp"
+expect = "Names.TitlesAndInitialsKeepTheirPeriod"
+  [[mutant.edit]]
+  from = '''const bool initial = before.capitalized && code_points(text_of(text_, before.token.span)).size() == 1;'''
+  to = '''const bool initial = before.capitalized && code_points(text_of(text_, before.token.span)).size() == 100;'''
+
+[[mutant]]
+name = "function-words-at-the-head-kept"
+file = "src/text/entities.cpp"
+expect = "Names.FunctionWordsAtTheHeadAreLeftOut"
+  [[mutant.edit]]
+  from = '''const bool function_word = lexicon::is_function_word(head.folded) && !head.acronym;'''
+  to = '''const bool function_word = false && lexicon::is_function_word(head.folded) && !head.acronym;'''
+
+[[mutant]]
+name = "sentence-start-is-a-name"
+file = "src/text/entities.cpp"
+expect = "Names.ASingleCapitalizedWordThatStartsASentenceOrQuoteIsNone"
+  [[mutant.edit]]
+  from = '''if (first == last && starts_clause(first) && !head.inner_capital) {'''
+  to = '''if (false && first == last && starts_clause(first) && !head.inner_capital) {'''
+
+[[mutant]]
+name = "quote-start-is-no-clause"
+file = "src/text/entities.cpp"
+expect = "Names.ASingleCapitalizedWordThatStartsASentenceOrQuoteIsNone"
+  [[mutant.edit]]
+  from = '''(is_opening(before.first) || before.first == U'"' || before.first == U':');'''
+  to = '''(is_opening(before.first) || before.first == U':');'''
+
+[[mutant]]
+name = "colon-starts-no-clause"
+file = "src/text/entities.cpp"
+expect = "Names.ASingleCapitalizedWordThatStartsASentenceOrQuoteIsNone"
+  [[mutant.edit]]
+  from = '''(is_opening(before.first) || before.first == U'"' || before.first == U':');'''
+  to = '''(is_opening(before.first) || before.first == U'"');'''
+
+[[mutant]]
+name = "possessive-mentions-nothing"
+file = "src/text/entities.cpp"
+expect = "Mentions.APossessiveMentionsTheTerm"
+  [[mutant.edit]]
+  from = '''(last && have.size() == want.size() + 2 && have.starts_with(want) && have.ends_with("'s"));'''
+  to = '''(last && false && have.size() == want.size() + 2 && have.starts_with(want) && have.ends_with("'s"));'''
+
+[[mutant]]
+name = "mentions-overlap"
+file = "src/text/entities.cpp"
+expect = "Mentions.DoNotOverlap"
+  [[mutant.edit]]
+  from = '''index += wanted.size();'''
+  to = '''index += 1;'''
+
+[[mutant]]
+name = "verbatim-ignores-edits"
+file = "src/text/align.cpp"
+expect = "Align.AWordTheTextAddsIsAGap"
+  [[mutant.edit]]
+  from = '''return quote_terms > 0 && matched == quote_terms && edits == 0;'''
+  to = '''return quote_terms > 0 && matched == quote_terms;'''
+
+[[mutant]]
+name = "empty-quote-verbatim"
+file = "src/text/align.cpp"
+expect = "Align.AQuoteWithoutWordsIsNeverVerbatim"
+  [[mutant.edit]]
+  from = '''return quote_terms > 0 && matched == quote_terms && edits == 0;'''
+  to = '''return matched == quote_terms && edits == 0;'''
+
+[[mutant]]
+name = "mismatch-counted-as-match"
+file = "src/text/align.cpp"
+expect = "Align.ASoftenedQuoteIsNotVerbatim"
+  [[mutant.edit]]
+  from = '''cell.matched += equal ? 1 : 0;'''
+  to = '''cell.matched += 1;'''
+
+[[mutant]]
+name = "gaps-not-counted"
+file = "src/text/align.cpp"
+expect = "Align.AWordTheTextAddsIsAGap"
+  [[mutant.edit]]
+  from = '''            cell.edits += 1;'''
+  to = '''            cell.edits += 0;'''
+
+[[mutant]]
+name = "tie-goes-to-the-last"
+file = "src/text/align.cpp"
+expect = "Align.TheFirstOfEqualPlacesIsChosen"
+  [[mutant.edit]]
+  from = '''(cell.score > 0 && cell.score == top.score && column < top_text_end)) {'''
+  to = '''(cell.score > 0 && cell.score == top.score && column > top_text_end)) {'''
+
+[[mutant]]
+name = "path-start-lost"
+file = "src/text/align.cpp"
+expect = "Align.OnlyTheAlignedStretchIsReported"
+  [[mutant.edit]]
+  from = '''cell = diagonal.score > 0 ? diagonal : Cell{.quote_first = row - 1, .text_first = column - 1};'''
+  to = '''cell = diagonal.score > 0 ? diagonal : Cell{.quote_first = 0 * row, .text_first = 0 * column};'''
+
+[[mutant]]
+name = "gaps-cost-nothing"
+file = "src/text/align.cpp"
+expect = "Align.ALocalAlignmentRestartsRatherThanCarryALoss"
+  [[mutant.edit]]
+  from = '''if (gap_from->score + scores.gap > cell.score) {'''
+  to = '''if (gap_from->score > cell.score) {'''
+
+[[mutant]]
+name = "idf-flat"
+file = "src/text/bm25.cpp"
+expect = "Bm25.ARareTermWeighsMoreThanACommonOne"
+  [[mutant.edit]]
+  from = '''const double idf = std::log(1.0 + ((passages - holding + 0.5) / (holding + 0.5)));'''
+  to = '''const double idf = (std::log(1.0 + ((passages - holding + 0.5) / (holding + 0.5))) * 0.0) + 1.0;'''
+
+[[mutant]]
+name = "no-saturation"
+file = "src/text/bm25.cpp"
+expect = "Bm25.RepetitionsSaturate"
+  [[mutant.edit]]
+  from = '''scores[posting.passage] += idf * count * (params_.k1 + 1.0) / (count + saturation);'''
+  to = '''scores[posting.passage] += idf * count * (params_.k1 + 1.0) / (1.0 + saturation);'''
+
+[[mutant]]
+name = "length-ignored"
+file = "src/text/bm25.cpp"
+expect = "Bm25.ALongerPassageWeighsLessWithB"
+  [[mutant.edit]]
+  from = '''const double saturation = params_.k1 * (1.0 - params_.b + params_.b * length / average_length);'''
+  to = '''const double saturation = params_.k1 * (1.0 - params_.b + params_.b + (0.0 * length / average_length));'''
+
+[[mutant]]
+name = "query-repetitions-count"
+file = "src/text/bm25.cpp"
+expect = "Bm25.AQueryTermCountsOnce"
+  [[mutant.edit]]
+  from = '''if (seen.insert(term.folded).second) {'''
+  to = '''if (seen.insert(term.folded).second || true) {'''
+
+[[mutant]]
+name = "tie-goes-to-the-later-passage"
+file = "src/text/bm25.cpp"
+expect = "Bm25.TiesGoToTheEarlierPassage"
+  [[mutant.edit]]
+  from = '''return lhs.score != rhs.score ? lhs.score > rhs.score : lhs.passage < rhs.passage;'''
+  to = '''return lhs.score != rhs.score ? lhs.score > rhs.score : lhs.passage > rhs.passage;'''
+
+[[mutant]]
+name = "passages-without-terms-kept"
+file = "src/text/bm25.cpp"
+expect = "Bm25.PassagesWithoutAQueryTermAreLeftOut"
+  [[mutant.edit]]
+  from = '''        if (holds[passage]) {'''
+  to = '''        if (true) {'''
+
+[[mutant]]
+name = "top-ignored"
+file = "src/text/bm25.cpp"
+expect = "Bm25.TopLimitsTheHits"
+  [[mutant.edit]]
+  from = '''const auto kept = static_cast<std::ptrdiff_t>(std::min(top, hits.size()));'''
+  to = '''const auto kept = static_cast<std::ptrdiff_t>(hits.size());'''

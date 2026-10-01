@@ -21,6 +21,7 @@ endif()
 # The runtime keeps no durable state of its own (the hub is the source of
 # truth, ADR-0001), so it never links SQLite.
 if(RR_BUILD_HUB)
+    add_subdirectory(text)      # text made comparable: tokens, sentences, numbers, names, alignment
     add_subdirectory(db)
     add_subdirectory(llm)       # calling models
     add_subdirectory(prompt)    # the prompts: templates, versions, rendering, token estimates

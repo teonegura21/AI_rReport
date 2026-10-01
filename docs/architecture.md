@@ -68,7 +68,8 @@ Modules marked *(M0)* exist now; the rest arrive in the milestone shown.
 | `rr_library` *(M0)* | A library's database (ADR-0008): its schema (`migrations/`, compiled in) and repositories: the model-call log, a job's memo of its calls (ADR-0020), the battle log of its missions (ADR-0011) | core, db, json, llm, agents |
 | `rr_runtime_client` *(M0)* | The hub's side of the pod: the runtime protocol, readiness, the runtime's model provider, `PodManager` | runtime_api, runpod, net, llm |
 | `rr_hub` *(M0)* | The hub's configuration; `ModelStack`, the providers every model call goes through (the runtime only, ADR-0017); operator tools: `doctor`, `bench` ([design](design/hub.md)) | config, runtime_client, library, llm |
-| `rr_media`, `rr_text`, `rr_transcript` (M1) | Capture sources, captions, frames, alignment | proc, blob |
+| `rr_text` *(M1)* | Text made comparable: UTF-8 checked and repaired, NFC to keep and a fold to compare; tokens and terms; sentences, with nothing lost; numbers by value, spoken ones too; names and mentions; quotes aligned with what was said (Smith–Waterman); BM25 retrieval. Fuzzed ([design](design/text.md)) | core, utf8proc |
+| `rr_media`, `rr_transcript` (M1) | Capture sources, captions, frames, alignment | proc, blob, text |
 | `rr_pipeline`, `rr_fidelity`, `rr_report` (M1) | Stages + executor, ledger checks, rendering | all of the above |
 | `rr_knowledge` (M1+) | VKM types, repositories, projections | db, json |
 | `rr_research`, `rr_hub_api` (M8–M9) | Research tools, REST/SSE for the UI and MCP | … |
