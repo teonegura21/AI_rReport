@@ -4,6 +4,7 @@
 #include <rr/llm/openai_provider.hpp>
 
 #include <chrono>
+#include <format>
 #include <functional>
 #include <limits>
 #include <mutex>
@@ -117,13 +118,17 @@ TEST(OpenAiProvider, ReadsAStreamedAnswer) {
     const OpenAiProvider provider = provider_for(server, {.api_key = Secret{"sekrit"}});
     std::vector<std::string> deltas;
     const StreamSink sink{
-        .on_content = [&](std::string_view text) { deltas.push_back("content:" + std::string{text}); },
-        .on_reasoning = [&](std::string_view text) { deltas.push_back("thought:" + std::string{text}); }};
+        .on_content = [&](std::size_t,
+                          std::string_view text) { deltas.push_back("content:" + std::string{text}); },
+        .on_reasoning = [&](std::size_t,
+                            std::string_view text) { deltas.push_back("thought:" + std::string{text}); }};
     const ChatResponse answer = unwrap(provider.chat(ask("capital of France?"), sink, {}));
 
-    EXPECT_EQ(answer.content, "Paris");
-    EXPECT_EQ(answer.reasoning, "The user wants a capital.");
-    EXPECT_EQ(answer.finish, FinishReason::stop);
+    ASSERT_EQ(answer.choices.size(), 1U);
+    EXPECT_EQ(answer.first().content, "Paris");
+    EXPECT_EQ(answer.first().reasoning, "The user wants a capital.");
+    EXPECT_EQ(answer.first().finish, FinishReason::stop);
+    EXPECT_EQ(answer.first().completion_tokens, 6);
     EXPECT_EQ(answer.model, "commander");
     EXPECT_EQ(answer.usage,
               (Usage{.prompt_tokens = 237, .completion_tokens = 6, .cached_prompt_tokens = 236}));
@@ -172,6 +177,7 @@ TEST(OpenAiProvider, SendsWhatLlamaServerReads) {
 
 TEST(OpenAiProvider, SendsSamplingAndThinkingAsLlamaServerReadsThem) {
     ChatRequest request = ask("plan the article");
+    request.n = 3;
     request.top_k = 20;
     request.min_p = 0.05;
     request.presence_penalty = 0.0;
@@ -182,6 +188,7 @@ TEST(OpenAiProvider, SendsSamplingAndThinkingAsLlamaServerReadsThem) {
     // Not const: a const operator[] asserts on a missing key, which aborts the
     // whole test program; this one yields null, and the expectation fails.
     json::Json body = unwrap(chat_request_body(request, Dialect::llama_server, {.thinking = true}));
+    EXPECT_EQ(body["n"], 3) << "OpenAI's own field";
     EXPECT_EQ(body["top_k"], 20);
     EXPECT_EQ(body["min_p"], 0.05);
     EXPECT_EQ(body["presence_penalty"], 0.0);
@@ -193,7 +200,7 @@ TEST(OpenAiProvider, SendsSamplingAndThinkingAsLlamaServerReadsThem) {
 
     request.thinking_budget->closing.clear();
     request.reasoning_effort.reset();
-    json::Json plain = unwrap(chat_request_body(request, Dialect::llama_server, {.thinking = true}));
+    const json::Json plain = unwrap(chat_request_body(request, Dialect::llama_server, {.thinking = true}));
     EXPECT_FALSE(plain.contains("reasoning_budget_message")) << "no closing: the end tag alone";
     EXPECT_FALSE(plain.contains("reasoning_effort")) << "the template's own level";
 }
@@ -267,12 +274,109 @@ TEST(OpenAiProvider, RefusesWhatItCannotCarry) {
     EXPECT_ERRC(chat_request_body(overriding, Dialect::llama_server, {}), Errc::invalid_argument);
 }
 
+// llama-server's stream for n = 2: the choices' chunks interleave, and each
+// choice ends with its finish chunk and its usage, written together. Choice
+// 1 finishes first.
+std::vector<std::string> two_choices_stream() {
+    return {
+        event(
+            R"({"choices":[{"delta":{"content":null,"role":"assistant"},"finish_reason":null,"index":0}],"model":"commander"})"),
+        event(
+            R"({"choices":[{"delta":{"content":null,"role":"assistant"},"finish_reason":null,"index":1}],"model":"commander"})"),
+        event(
+            R"({"choices":[{"delta":{"content":"Par"},"finish_reason":null,"index":0}],"model":"commander"})"),
+        event(
+            R"({"choices":[{"delta":{"content":"Ly"},"finish_reason":null,"index":1}],"model":"commander"})"),
+        event(
+            R"({"choices":[{"delta":{"content":"on"},"finish_reason":null,"index":1}],"model":"commander"})"),
+        event(R"({"choices":[{"delta":{},"finish_reason":"stop","index":1}],"model":"commander"})"),
+        event(
+            R"({"choices":[],"model":"commander","usage":{"completion_tokens":2,"prompt_tokens":237,"total_tokens":239,"prompt_tokens_details":{"cached_tokens":236}},"timings":{"prompt_per_second":30.0,"predicted_per_second":40.0}})"),
+        event(
+            R"({"choices":[{"delta":{"content":"is"},"finish_reason":null,"index":0}],"model":"commander"})"),
+        event(R"({"choices":[{"delta":{},"finish_reason":"length","index":0}],"model":"commander"})"),
+        event(
+            R"({"choices":[],"model":"commander","usage":{"completion_tokens":3,"prompt_tokens":237,"total_tokens":240,"prompt_tokens_details":{"cached_tokens":236}},"timings":{"prompt_per_second":32.3,"predicted_per_second":50.0}})"),
+        event("[DONE]"),
+    };
+}
+
+ChatRequest two_drafts() {
+    ChatRequest request = ask("a city, please");
+    request.n = 2;
+    return request;
+}
+
+TEST(OpenAiProvider, ReadsEveryChoiceByItsIndex) {
+    const ModelServer server{[](const auto&) { return stream_of(two_choices_stream()); }};
+    std::vector<std::string> deltas;
+    const StreamSink sink{.on_content = [&](std::size_t choice, std::string_view text) {
+        deltas.push_back(std::format("{}:{}", choice, text));
+    }};
+    const ChatResponse answer = unwrap(provider_for(server).chat(two_drafts(), sink, {}));
+    EXPECT_EQ(server.last_body()["n"], 2);
+
+    ASSERT_EQ(answer.choices.size(), 2U);
+    EXPECT_EQ(answer.choices[0],
+              (Choice{.content = "Paris", .finish = FinishReason::length, .completion_tokens = 3}));
+    EXPECT_EQ(answer.choices[1],
+              (Choice{.content = "Lyon", .finish = FinishReason::stop, .completion_tokens = 2}))
+        << "each usage chunk belongs to the choice that finished just before it";
+    EXPECT_EQ(answer.usage,
+              (Usage{.prompt_tokens = 237, .completion_tokens = 5, .cached_prompt_tokens = 236}))
+        << "the prompt counts once (read once, copied); the completions add up";
+    EXPECT_EQ(answer.least_complete_finish(), FinishReason::length) << "one choice was cut short";
+    EXPECT_EQ(answer.generation_tokens_per_second, 90.0) << "the choices generate side by side";
+    EXPECT_EQ(answer.prompt_tokens_per_second, 32.3) << "choice 0's: the one that read the prompt";
+    EXPECT_EQ(deltas, (std::vector<std::string>{"0:Par", "1:Ly", "1:on", "0:is"}));
+}
+
+TEST(OpenAiProvider, AStreamMustFinishEveryChoiceItWasAskedFor) {
+    std::vector<std::string> unfinished = two_choices_stream();
+    unfinished.erase(unfinished.begin() + 5);  // choice 1's finish
+    const ModelServer lost{[&unfinished](const auto&) { return stream_of(unfinished); }};
+    const auto incomplete = provider_for(lost).chat(two_drafts(), {}, {});
+    ASSERT_ERRC(incomplete, Errc::unsupported);
+    EXPECT_THAT(incomplete.error().message(), HasSubstr("choice 1 of 2 unfinished"));
+
+    const ModelServer extra{[](const auto&) { return stream_of(two_choices_stream()); }};
+    const auto unasked = provider_for(extra).chat(ask("one city"), {}, {});
+    ASSERT_ERRC(unasked, Errc::unsupported);
+    EXPECT_THAT(unasked.error().message(), HasSubstr("choice 1 of a request for 1"));
+
+    for (const char* index : {R"("one")", "-1", "1.5"}) {
+        const std::vector<std::string> odd{
+            event(std::format(
+                R"({{"choices":[{{"delta":{{"content":"x"}},"finish_reason":"stop","index":{}}}]}})", index)),
+            event("[DONE]")};
+        const ModelServer server{[&odd](const auto&) { return stream_of(odd); }};
+        EXPECT_ERRC(provider_for(server).chat(ask("x"), {}, {}), Errc::unsupported) << "index " << index;
+    }
+}
+
+TEST(OpenAiProvider, AServerThatReportsUsageOnceIsTakenAtItsWord) {
+    // Both choices' own reports replaced by one for the whole call, at the end.
+    std::vector<std::string> once = two_choices_stream();
+    once.erase(once.begin() + 9);
+    once.erase(once.begin() + 6);
+    once.insert(
+        once.end() - 1,
+        event(
+            R"({"choices":[],"usage":{"completion_tokens":5,"prompt_tokens":237,"prompt_tokens_details":{"cached_tokens":236}}})"));
+    const ModelServer server{[&once](const auto&) { return stream_of(once); }};
+    const ChatResponse answer = unwrap(provider_for(server).chat(two_drafts(), {}, {}));
+    EXPECT_EQ(answer.usage,
+              (Usage{.prompt_tokens = 237, .completion_tokens = 5, .cached_prompt_tokens = 236}));
+    EXPECT_EQ(answer.choices[0].completion_tokens, 0) << "the call's total is credited to no one choice";
+    EXPECT_EQ(answer.choices[1].completion_tokens, 0);
+}
+
 TEST(OpenAiProvider, IgnoresKeepAliveComments) {
     std::vector<std::string> stream = llama_server_stream();
     stream.insert(stream.begin() + 3, ": keep-alive\n\n");
     stream.insert(stream.begin(), ": keep-alive\n\n");
     const ModelServer server{[&stream](const auto&) { return stream_of(stream); }};
-    EXPECT_EQ(unwrap(provider_for(server).chat(ask("hi"), {}, {})).content, "Paris");
+    EXPECT_EQ(unwrap(provider_for(server).chat(ask("hi"), {}, {})).first().content, "Paris");
 }
 
 TEST(OpenAiProvider, AnAnswerWithoutDoneIsIncomplete) {

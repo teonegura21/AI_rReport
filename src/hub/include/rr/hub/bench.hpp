@@ -7,7 +7,9 @@
 //   measures the pod as it is configured:
 //     * the commander, one request at a time (its passes are sequential):
 //       time to the first token, prompt tokens per second, generated tokens
-//       per second;
+//       per second. With `choices` above 1, each request asks for that many
+//       answers at once (n), as the pipeline asks for k drafts: the prompt is
+//       read once, and the generated speed is the answers' together;
 //     * the infantry, at 1, 4, 8, 16 and 32 requests at once: the total
 //       tokens per second of the squad. Parallel slots are what makes it
 //       fast; above the engine's slots requests wait for a slot, and the
@@ -18,6 +20,8 @@
 //   Every request asks for exactly `output_tokens` tokens (llama-server's
 //   ignore_eos), at temperature 0 with a fixed seed and thinking off, and the
 //   commander's prompt is not served from the cache, so runs are comparable.
+//   (Several answers need sampling: those requests use temperature 1, which
+//   changes the tokens but not their number.)
 //   Speeds are the engine's own ("timings") where it reports them.
 //
 // Thread-safety: run_bench() is reentrant.
@@ -47,6 +51,7 @@ struct BenchOptions {
     int prompt_tokens = 2000;  // about; the prompt is built to roughly this size
     int output_tokens = 256;
     int rounds = 3;                          // commander requests, one after another
+    int choices = 1;                         // answers per commander request (n), at most its slots
     std::optional<double> price_per_hour{};  // USD
     std::chrono::milliseconds vram_poll{std::chrono::seconds{1}};
 };
@@ -54,6 +59,7 @@ struct BenchOptions {
 struct CommanderResult {
     std::string model{};
     int rounds = 0;
+    int choices = 1;  // answers per request
     std::chrono::milliseconds first_token_p50{};
     double prompt_tokens_per_second = 0;
     double generation_tokens_per_second = 0;

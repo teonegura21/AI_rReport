@@ -83,6 +83,11 @@ std::vector<std::string> sampling_problems(const ChatRequest& request) {
     check(problems, request.repeat_penalty, "repeat_penalty", "a finite number > 0",
           [](double value) { return std::isfinite(value) && value > 0.0; });
     check(problems, request.max_tokens, "max_tokens", ">= 1", [](int value) { return value >= 1; });
+    check(problems, request.n, "n", ">= 1", [](int value) { return value >= 1; });
+    // Greedy decoding ignores the seed: every choice would be the same answer.
+    if (request.n.value_or(1) > 1 && request.temperature == 0.0) {
+        problems.emplace_back("n > 1 needs a temperature above 0: at 0 every choice is the same answer");
+    }
     if (request.thinking_budget.has_value() && request.thinking_budget->tokens < 0) {
         problems.push_back(
             std::format("a thinking budget must be >= 0 tokens, not {}", request.thinking_budget->tokens));

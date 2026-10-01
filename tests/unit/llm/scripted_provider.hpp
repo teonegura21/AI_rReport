@@ -1,7 +1,7 @@
 // A provider that plays a script, for testing what wraps providers.
 //
 // Each call takes the script's next step (an answer or an error), records the
-// request it was given, and streams the answer's reasoning and content to the
+// request it was given, and streams each choice's reasoning and content to the
 // sink. `during_call` runs inside each call (to advance a FakeClock, say).
 #pragma once
 
@@ -44,11 +44,14 @@ public:
             during_call();
         }
         if (step.has_value()) {
-            if (sink.on_reasoning && !step->reasoning.empty()) {
-                sink.on_reasoning(step->reasoning);
-            }
-            if (sink.on_content && !step->content.empty()) {
-                sink.on_content(step->content);
+            for (std::size_t index = 0; index < step->choices.size(); ++index) {
+                const Choice& choice = step->choices[index];
+                if (sink.on_reasoning && !choice.reasoning.empty()) {
+                    sink.on_reasoning(index, choice.reasoning);
+                }
+                if (sink.on_content && !choice.content.empty()) {
+                    sink.on_content(index, choice.content);
+                }
             }
         }
         return step;
@@ -70,10 +73,22 @@ private:
 
 // An answer with `content` that finished normally.
 inline ChatResponse answer(std::string content) {
-    return ChatResponse{.content = std::move(content),
-                        .finish = FinishReason::stop,
-                        .usage = {.prompt_tokens = 10, .completion_tokens = 5},
-                        .model = "scripted-model"};
+    return ChatResponse{
+        .choices = {Choice{
+            .content = std::move(content), .finish = FinishReason::stop, .completion_tokens = 5}},
+        .usage = {.prompt_tokens = 10, .completion_tokens = 5},
+        .model = "scripted-model"};
+}
+
+// Answers to a request for n, one per text, each finished normally.
+inline ChatResponse answers(const std::vector<std::string>& contents) {
+    ChatResponse response{.usage = {.prompt_tokens = 10}, .model = "scripted-model"};
+    for (const std::string& content : contents) {
+        response.choices.push_back(
+            Choice{.content = content, .finish = FinishReason::stop, .completion_tokens = 5});
+        response.usage.completion_tokens += 5;
+    }
+    return response;
 }
 
 // A one-message request to `model`.

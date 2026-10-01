@@ -47,6 +47,7 @@ TEST(Chat, TheJsonFormLeavesUnsetFieldsOut) {
     full.presence_penalty = 0.0;
     full.repeat_penalty = 1.0;
     full.seed = 7;
+    full.n = 3;
     full.stop = {"END"};
     full.json_schema = R"({"type":"object"})";
     full.schema_name = "atoms";
@@ -56,7 +57,7 @@ TEST(Chat, TheJsonFormLeavesUnsetFieldsOut) {
     full.extra = {{"cache_prompt", true}};
     const json::Json document = to_json(full);
     for (const char* field : {"max_tokens", "temperature", "top_p", "top_k", "min_p", "presence_penalty",
-                              "repeat_penalty", "seed", "stop", "json_schema", "schema_name", "thinking",
+                              "repeat_penalty", "seed", "n", "stop", "json_schema", "schema_name", "thinking",
                               "thinking_budget", "reasoning_effort", "extra"}) {
         EXPECT_TRUE(document.contains(field)) << field;
     }
@@ -83,6 +84,9 @@ TEST(Chat, TheRequestKeyIsWhatTheModelSees) {
     ChatRequest extra = ask("hi");
     extra.extra = {{"id_slot", 2}};
     EXPECT_NE(request_key("runtime", extra), key) << "server-specific extras are";
+    ChatRequest samples = ask("hi");
+    samples.n = 3;
+    EXPECT_NE(request_key("runtime", samples), key) << "how many answers are asked for is";
     ChatRequest neutral = ask("hi");
     neutral.repeat_penalty = 1.0;
     EXPECT_NE(request_key("runtime", neutral), key)

@@ -24,6 +24,10 @@
 //                           five tokens, tok0 … tok4)
 //   "reply_by_turn": [...]  the n-th text for a conversation with n assistant
 //                           turns so far (a model that fixes its answer)
+//   "n": N                  the OpenAI field: N choices (at most 16), streamed
+//                           interleaved, each with its finish and usage
+//   "replies": [...]        with n: choice i answers replies[i] (default: the
+//                           same answer for every choice)
 //   "reasoning": "text"     think this first (delta.reasoning_content)
 //   "max_tokens": N         the OpenAI field: at most N pieces, reasoning
 //                           included ("length" when the answer is cut)
@@ -159,6 +163,42 @@ std::vector<std::string> pieces(std::string_view text) {
     return out;
 }
 
+// The answer for one choice: `reply` (else the model's own, five tokens, or
+// max_tokens of them with ignore_eos), cut at max_tokens.
+rr::fake_engine::ChoicePlan choice_plan(const std::optional<std::string>& reply,
+                                        const std::vector<std::string>& reasoning,
+                                        const rr::json::Json& body) {
+    rr::fake_engine::ChoicePlan choice{.reasoning = reasoning};
+    const int max_tokens = knob(body, "max_tokens", -1);
+    if (reply.has_value()) {
+        choice.content = pieces(*reply);
+    } else {
+        // The model's own answer is five tokens. ignore_eos makes it go on past
+        // its end, to exactly max_tokens: a benchmark's fixed-length run.
+        const bool run_to_limit = knob(body, "ignore_eos", false) && max_tokens >= 0;
+        const int count = run_to_limit ? std::min(max_tokens, 100'000) : 5;
+        for (int index = 0; index < count; ++index) {
+            choice.content.push_back(std::format("tok{}", index));
+        }
+        if (run_to_limit) {
+            choice.finish_reason = "length";
+        }
+    }
+    if (max_tokens >= 0) {
+        const auto limit = static_cast<std::size_t>(max_tokens);
+        if (choice.reasoning.size() + choice.content.size() > limit) {
+            choice.finish_reason = "length";
+            if (choice.reasoning.size() >= limit) {
+                choice.reasoning.resize(limit);
+                choice.content.clear();
+            } else {
+                choice.content.resize(limit - choice.reasoning.size());
+            }
+        }
+    }
+    return choice;
+}
+
 // What to stream for `body` (see the knobs above).
 rr::fake_engine::StreamPlan plan_for(const rr::json::Json& body, const Options& options) {
     rr::fake_engine::StreamPlan plan{.model = options.alias, .token_ms = options.token_ms};
@@ -201,36 +241,20 @@ rr::fake_engine::StreamPlan plan_for(const rr::json::Json& body, const Options& 
             reply = chosen.get<std::string>();
         }
     }
-    if (const auto reasoning = body.find("reasoning"); reasoning != body.end() && reasoning->is_string()) {
-        plan.reasoning = pieces(reasoning->get<std::string>());
+    std::vector<std::string> reasoning;
+    if (const auto thought = body.find("reasoning"); thought != body.end() && thought->is_string()) {
+        reasoning = pieces(thought->get<std::string>());
     }
-    const int max_tokens = knob(body, "max_tokens", -1);
-    if (reply.has_value()) {
-        plan.content = pieces(*reply);
-    } else {
-        // The model's own answer is five tokens. ignore_eos makes it go on past
-        // its end, to exactly max_tokens: a benchmark's fixed-length run.
-        const bool run_to_limit = knob(body, "ignore_eos", false) && max_tokens >= 0;
-        const int count = run_to_limit ? std::min(max_tokens, 100'000) : 5;
-        plan.content.clear();
-        for (int index = 0; index < count; ++index) {
-            plan.content.push_back(std::format("tok{}", index));
+    const auto replies = body.find("replies");
+    const int choices = std::clamp(knob(body, "n", 1), 1, 16);
+    plan.choices.clear();
+    for (int index = 0; index < choices; ++index) {
+        std::optional<std::string> own = reply;
+        if (replies != body.end() && replies->is_array() && std::cmp_less(index, replies->size()) &&
+            (*replies)[static_cast<std::size_t>(index)].is_string()) {
+            own = (*replies)[static_cast<std::size_t>(index)].get<std::string>();
         }
-        if (run_to_limit) {
-            plan.finish_reason = "length";
-        }
-    }
-    if (max_tokens >= 0) {
-        const auto limit = static_cast<std::size_t>(max_tokens);
-        if (plan.reasoning.size() + plan.content.size() > limit) {
-            plan.finish_reason = "length";
-            if (plan.reasoning.size() >= limit) {
-                plan.reasoning.resize(limit);
-                plan.content.clear();
-            } else {
-                plan.content.resize(limit - plan.reasoning.size());
-            }
-        }
+        plan.choices.push_back(choice_plan(own, reasoning, body));
     }
     return plan;
 }
@@ -256,37 +280,40 @@ rr::Result<void> stream_answer(HttpServer::ChunkWriter& writer, const rr::fake_e
     if (!wait_for(writer, std::chrono::milliseconds{script.first_token_ms})) {  // reading the prompt
         return left();
     }
-    if (!send(rr::fake_engine::role_event(plan))) {
-        return left();
-    }
-    std::vector<std::string> tokens;
-    tokens.reserve(plan.reasoning.size() + plan.content.size());
-    for (const std::string& piece : plan.reasoning) {
-        tokens.push_back(rr::fake_engine::reasoning_event(plan, piece));
-    }
-    for (const std::string& piece : plan.content) {
-        tokens.push_back(rr::fake_engine::content_event(plan, piece));
-    }
-    for (std::size_t index = 0; index < tokens.size(); ++index) {
-        if (std::cmp_equal(index, script.break_after)) {
+    // Role chunks and tokens, the choices interleaved; tokens are counted for
+    // break_after and error_after, and paced.
+    int tokens_sent = 0;
+    for (const rr::fake_engine::Scheduled& event : rr::fake_engine::body_events(plan)) {
+        if (event.token && tokens_sent == script.break_after) {
             if (script.break_mid_event) {
-                const std::string event = rr::net::format_sse_event(tokens[index]);
-                (void)writer.write(
-                    std::string_view{event}.substr(0, event.find('\n') + 1));  // one whole line
+                const std::string text = rr::net::format_sse_event(event.data);
+                (void)writer.write(std::string_view{text}.substr(0, text.find('\n') + 1));  // one whole line
             }
             return rr::fail(rr::Errc::internal, "the fake engine broke off");  // truncates the transfer
         }
-        if (std::cmp_equal(index, script.error_after)) {
+        if (event.token && tokens_sent == script.error_after) {
             (void)send(
                 R"({"error":{"code":500,"message":"the fake engine failed mid-answer","type":"server_error"}})");
             return rr::ok();  // llama-server ends the stream after an error, without [DONE]
         }
-        if (!send(tokens[index]) || !wait_for(writer, std::chrono::milliseconds{plan.token_ms})) {
+        if (!send(event.data)) {
+            return left();
+        }
+        if (event.token) {
+            ++tokens_sent;
+            if (!wait_for(writer, std::chrono::milliseconds{plan.token_ms})) {
+                return left();
+            }
+        }
+    }
+    // Each choice's finish chunk, and its usage written with it.
+    for (std::size_t index = 0; index < plan.choices.size(); ++index) {
+        if (!send(rr::fake_engine::finish_event(plan, index)) ||
+            (plan.include_usage && !send(rr::fake_engine::usage_event(plan, index)))) {
             return left();
         }
     }
-    if (!send(rr::fake_engine::finish_event(plan)) ||
-        (plan.include_usage && !send(rr::fake_engine::usage_event(plan))) || !send("[DONE]")) {
+    if (!send("[DONE]")) {
         return left();
     }
     return rr::ok();

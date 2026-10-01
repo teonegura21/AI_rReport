@@ -28,10 +28,11 @@ TEST(RetryingProvider, TriesTransientFailuresAgainAndRestartsTheStream) {
     const RetryingProvider retrying{inner, net::RetryPolicy{.max_attempts = 3}, kNoPause};
 
     std::vector<std::string> events;
-    const StreamSink sink{.on_content = [&](std::string_view text) { events.emplace_back(text); },
-                          .on_restart = [&] { events.emplace_back("<restart>"); }};
+    const StreamSink sink{
+        .on_content = [&](std::size_t, std::string_view text) { events.emplace_back(text); },
+        .on_restart = [&] { events.emplace_back("<restart>"); }};
     const ChatResponse response = unwrap(retrying.chat(ask("hi"), sink, {}));
-    EXPECT_EQ(response.content, "done");
+    EXPECT_EQ(response.first().content, "done");
     EXPECT_EQ(inner.requests().size(), 3U);
     EXPECT_EQ(events, (std::vector<std::string>{"<restart>", "<restart>", "done"}))
         << "every new attempt is announced before its text";

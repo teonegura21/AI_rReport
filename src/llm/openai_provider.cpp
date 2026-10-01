@@ -1,5 +1,6 @@
 #include <rr/llm/openai_provider.hpp>
 
+#include <algorithm>
 #include <format>
 #include <utility>
 
@@ -138,6 +139,7 @@ void add_sampling(const ChatRequest& request, json::OrderedJson& body) {
     put(body, "presence_penalty", request.presence_penalty);
     put(body, "repeat_penalty", request.repeat_penalty);
     put(body, "seed", request.seed);
+    put(body, "n", request.n);
     if (!request.stop.empty()) {
         body["stop"] = request.stop;
     }
@@ -220,6 +222,15 @@ Result<json::OrderedJson> chat_request_body(const ChatRequest& request, Dialect 
     return body;
 }
 
+ChatStreamReader::ChatStreamReader(const StreamSink& sink, std::size_t choices,
+                                   std::function<void()> on_first_token)
+    : sink_(&sink)
+    , on_first_token_(std::move(on_first_token))
+    , finished_(std::max<std::size_t>(choices, 1), false)
+    , generation_speeds_(finished_.size()) {
+    response_.choices.resize(finished_.size());
+}
+
 Result<void> ChatStreamReader::on_event(std::string_view data) {
     if (data == "[DONE]") {
         done_ = true;
@@ -238,32 +249,65 @@ Result<void> ChatStreamReader::on_event(std::string_view data) {
     if (const auto model = string_at(chunk, "model"); model.has_value() && response_.model.empty()) {
         response_.model = std::string{*model};
     }
-    if (const auto choices = chunk.find("choices");
-        choices != chunk.end() && choices->is_array() && !choices->empty()) {
-        read_choice(choices->front());
+    if (const auto choices = chunk.find("choices"); choices != chunk.end() && choices->is_array()) {
+        for (const json::Json& choice : *choices) {
+            RR_TRY(read_choice(choice));
+        }
     }
-    if (const auto usage = chunk.find("usage"); usage != chunk.end() && usage->is_object()) {
-        read_usage(*usage, response_.usage);
+    read_report(chunk);
+    return ok();
+}
+
+Result<void> ChatStreamReader::read_choice(const json::Json& choice) {
+    // A server may leave the index out when there is one choice. JSON's
+    // parser keeps every whole number >= 0 as unsigned: anything else (a
+    // negative or fractional number, a string) is no index.
+    std::size_t index = 0;
+    if (const auto found = choice.find("index"); found != choice.end()) {
+        if (!found->is_number_unsigned()) {
+            return fail(
+                Errc::unsupported,
+                std::format("the server streamed a choice index that is not one: {}", json::dump(*found)));
+        }
+        index = found->get<std::size_t>();
     }
-    if (const auto timings = chunk.find("timings"); timings != chunk.end() && timings->is_object()) {
-        response_.prompt_tokens_per_second = number_at(*timings, "prompt_per_second");
-        response_.generation_tokens_per_second = number_at(*timings, "predicted_per_second");
+    if (index >= finished_.size()) {
+        return fail(Errc::unsupported, std::format("the server streamed choice {} of a request for {}", index,
+                                                   finished_.size()));
+    }
+    Choice& answer = response_.choices[index];
+    if (const auto delta = choice.find("delta"); delta != choice.end() && delta->is_object()) {
+        deliver(index, string_at(*delta, "reasoning_content"), answer.reasoning, sink_->on_reasoning);
+        deliver(index, string_at(*delta, "content"), answer.content, sink_->on_content);
+    }
+    if (const auto finish = string_at(choice, "finish_reason"); finish.has_value()) {
+        answer.finish = finish_reason_from_string(*finish);
+        finished_[index] = true;
+        last_finished_ = index;
     }
     return ok();
 }
 
-void ChatStreamReader::read_choice(const json::Json& choice) {
-    if (const auto delta = choice.find("delta"); delta != choice.end() && delta->is_object()) {
-        deliver(string_at(*delta, "reasoning_content"), response_.reasoning, sink_->on_reasoning);
-        deliver(string_at(*delta, "content"), response_.content, sink_->on_content);
+// Usage and timings. llama-server writes a choice's finish chunk and its
+// usage chunk ("choices": []) together, with the timings on the last of
+// them: both belong to the choice that just finished.
+void ChatStreamReader::read_report(const json::Json& chunk) {
+    if (const auto usage = chunk.find("usage"); usage != chunk.end() && usage->is_object()) {
+        UsageReport report{.choice = last_finished_, .usage = {}};
+        read_usage(*usage, report.usage);
+        usage_reports_.push_back(report);
     }
-    if (const auto finish = string_at(choice, "finish_reason"); finish.has_value()) {
-        response_.finish = finish_reason_from_string(*finish);
+    if (const auto timings = chunk.find("timings"); timings != chunk.end() && timings->is_object()) {
+        const std::size_t choice = last_finished_.value_or(0);
+        generation_speeds_[choice] = number_at(*timings, "predicted_per_second");
+        if (!prompt_speed_.has_value() || choice == 0) {
+            prompt_speed_ = number_at(*timings, "prompt_per_second");  // choice 0 read the prompt
+        }
     }
 }
 
-void ChatStreamReader::deliver(std::optional<std::string_view> piece, std::string& answer,
-                               const std::function<void(std::string_view)>& listener) {
+void ChatStreamReader::deliver(std::size_t choice, std::optional<std::string_view> piece, std::string& answer,
+                               const std::function<void(std::size_t, std::string_view)>& listener) {
     if (!piece.has_value() || piece->empty()) {  // the role chunk's content is null
         return;
     }
@@ -275,8 +319,52 @@ void ChatStreamReader::deliver(std::optional<std::string_view> piece, std::strin
     }
     answer += *piece;
     if (listener) {
-        listener(*piece);
+        listener(choice, *piece);
     }
+}
+
+Result<ChatResponse> ChatStreamReader::take() {
+    for (std::size_t index = 0; index < finished_.size(); ++index) {
+        if (!finished_[index]) {
+            return fail(Errc::unsupported,
+                        std::format("the server ended the stream with choice {} of {} unfinished", index,
+                                    finished_.size()));
+        }
+    }
+    // One report per choice (llama-server): each choice's own tokens; the
+    // prompt counts once (each choice reports the same, copied prompt), and
+    // the completions add up. Anything else (a server that reports once, for
+    // the whole call): the last report is the call's.
+    std::vector<bool> reported(finished_.size(), false);
+    bool per_choice = usage_reports_.size() == finished_.size();
+    for (const UsageReport& report : usage_reports_) {
+        per_choice = per_choice && report.choice.has_value() && !reported[*report.choice];
+        if (report.choice.has_value()) {
+            reported[*report.choice] = true;
+        }
+    }
+    if (per_choice) {
+        for (const UsageReport& report : usage_reports_) {
+            if (report.choice.has_value()) {  // always, when each report is a choice's
+                response_.choices[*report.choice].completion_tokens = report.usage.completion_tokens;
+            }
+            response_.usage.prompt_tokens =
+                std::max(response_.usage.prompt_tokens, report.usage.prompt_tokens);
+            response_.usage.cached_prompt_tokens =
+                std::max(response_.usage.cached_prompt_tokens, report.usage.cached_prompt_tokens);
+            response_.usage.completion_tokens += report.usage.completion_tokens;
+        }
+    } else if (!usage_reports_.empty()) {
+        response_.usage = usage_reports_.back().usage;
+    }
+    response_.prompt_tokens_per_second = prompt_speed_;
+    for (const std::optional<double>& speed : generation_speeds_) {
+        if (speed.has_value()) {
+            response_.generation_tokens_per_second =
+                response_.generation_tokens_per_second.value_or(0.0) + *speed;
+        }
+    }
+    return std::move(response_);
 }
 
 OpenAiProvider::OpenAiProvider(const net::HttpClient& http, OpenAiOptions options)
@@ -304,8 +392,10 @@ Result<ChatResponse> OpenAiProvider::chat(const ChatRequest& request, const Stre
 
     const auto started = Clock::now();
     std::optional<milliseconds> first_token;
+    // n was checked by chat_request_body() (sampling_problems(): n >= 1).
     ChatStreamReader reader{
-        sink, [&] { first_token = std::chrono::duration_cast<milliseconds>(Clock::now() - started); }};
+        sink, static_cast<std::size_t>(request.n.value_or(1)),
+        [&] { first_token = std::chrono::duration_cast<milliseconds>(Clock::now() - started); }};
     net::SseParser parser;
     const auto context = std::format("while calling '{}' at {}", request.model, options_.name);
     auto response = http_->stream(
@@ -331,7 +421,7 @@ Result<ChatResponse> OpenAiProvider::chat(const ChatRequest& request, const Stre
             Errc::network,
             std::format("the answer ended without its [DONE], so it may be incomplete ({})", context));
     }
-    ChatResponse answer = reader.take();
+    RR_TRY_ASSIGN(ChatResponse answer, with_context(reader.take(), context));
     answer.first_token = first_token;
     answer.duration = std::chrono::duration_cast<milliseconds>(Clock::now() - started);
     return answer;

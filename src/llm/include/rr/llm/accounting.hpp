@@ -43,11 +43,14 @@ struct CallRecord {
     std::string model{};
     CallTag tag{};
     std::string request_key{};
-    std::optional<Error> error{};          // how the attempt failed; nullopt if it succeeded
-    std::optional<FinishReason> finish{};  // for a success
+    std::optional<Error> error{};  // how the attempt failed; nullopt if it succeeded
+    // For a success: the least complete way a choice ended
+    // (ChatResponse::least_complete_finish()), so a cut-short answer shows.
+    std::optional<FinishReason> finish{};
     Usage usage{};
-    json::Json request{};   // to_json() of the request
-    json::Json response{};  // {"content": …, "reasoning": …}; an empty object after a failure
+    json::Json request{};  // to_json() of the request
+    // {"choices": [{"content": …, "reasoning": …}, …]}; an empty object after a failure
+    json::Json response{};
 };
 
 class CallRecorder {

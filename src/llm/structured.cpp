@@ -29,7 +29,7 @@ std::string_view unfenced(std::string_view text) {
 std::vector<std::string> problems_with(const ChatResponse& response, const json::Schema& schema,
                                        const AnswerCheck& check, json::Json& value) {
     std::vector<std::string> problems;
-    auto parsed = json::parse(unfenced(response.content));
+    auto parsed = json::parse(unfenced(response.first().content));
     if (!parsed.has_value()) {
         problems.push_back(std::format("it is not JSON: {}", parsed.error().message()));
     } else {
@@ -45,7 +45,7 @@ std::vector<std::string> problems_with(const ChatResponse& response, const json:
             value = std::move(*parsed);
         }
     }
-    if (!problems.empty() && response.finish == FinishReason::length) {
+    if (!problems.empty() && response.first().finish == FinishReason::length) {
         problems.emplace_back("the answer was cut off at the token limit, so it must be shorter");
     }
     return problems;
@@ -75,6 +75,13 @@ Result<StructuredAnswer> structured_json(const LlmProvider& provider, ChatReques
                     std::format("a structured answer from '{}' cannot be asked with penalties: {}",
                                 request.model, join(penalties, "; ")));
     }
+    if (request.n.value_or(1) != 1) {
+        return fail(
+            Errc::invalid_argument,
+            std::format("structured_json() takes one answer from '{}', not n = {}: each sample needs its "
+                        "own validation and repair",
+                        request.model, request.n.value_or(1)));
+    }
     const ProviderCaps caps = provider.caps();
     if (caps.json_schema) {
         request.json_schema = schema.model_facing();
@@ -98,7 +105,7 @@ Result<StructuredAnswer> structured_json(const LlmProvider& provider, ChatReques
                         std::format("'{}' gave no usable answer in {} attempt(s); the last one: {}",
                                     request.model, repairs + 1, join(problems, "; ")));
         }
-        request.messages.push_back(Message::assistant(response.content));
+        request.messages.push_back(Message::assistant(response.first().content));
         request.messages.push_back(
             Message::user(replace_all(options.repair_instruction, "{problems}", as_lines(problems))));
     }

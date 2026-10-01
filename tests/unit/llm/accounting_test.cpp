@@ -58,7 +58,7 @@ TEST(AccountedProvider, RecordsEachCallWithItsCost) {
     request.tag = {.purpose = "bench", .job_id = "J1"};
     const auto started = clock.now();
     const ChatResponse response = unwrap(accounted.chat(request, {}, {}));
-    EXPECT_EQ(response.content, "fine");
+    EXPECT_EQ(response.first().content, "fine");
 
     const std::vector<CallRecord> calls = recorder.calls();
     ASSERT_EQ(calls.size(), 1U);
@@ -74,7 +74,30 @@ TEST(AccountedProvider, RecordsEachCallWithItsCost) {
     EXPECT_EQ(call.finish, FinishReason::stop);
     EXPECT_EQ(call.usage, response.usage);
     EXPECT_EQ(call.request, to_json(request));
-    EXPECT_EQ(call.response["content"], "fine");
+    // Compared whole: a const operator[] on a missing key would abort the test program.
+    EXPECT_EQ(
+        call.response,
+        (json::Json{{"choices", json::Json::array({json::Json{{"content", "fine"}, {"reasoning", ""}}})}}));
+}
+
+TEST(AccountedProvider, ACallOfManyChoicesIsRecordedAsTheLeastCompleteOfThem) {
+    const FakeClock clock;
+    ChatResponse drafts = testing::answers({"one", "two"});
+    drafts.choices[1].finish = FinishReason::length;
+    const ScriptedProvider inner{{drafts}};
+    MemoryRecorder recorder;
+    const AccountedProvider accounted{inner, recorder, clock};
+    ChatRequest request = ask("two drafts");
+    request.n = 2;
+    ASSERT_OK(accounted.chat(request, {}, {}));
+
+    const CallRecord call = recorder.calls().at(0);
+    EXPECT_EQ(call.finish, FinishReason::length) << "a cut-short draft shows in the record";
+    EXPECT_EQ(call.usage, drafts.usage);
+    EXPECT_EQ(
+        call.response,
+        (json::Json{{"choices", json::Json::array({json::Json{{"content", "one"}, {"reasoning", ""}},
+                                                   json::Json{{"content", "two"}, {"reasoning", ""}}})}}));
 }
 
 TEST(AccountedProvider, RecordsFailuresToo) {
@@ -115,7 +138,7 @@ TEST(AccountedProvider, AnAnswerOutlivesAFailureToRecordIt) {
     MemoryRecorder recorder;
     recorder.refuse_all();
     const AccountedProvider accounted{inner, recorder, clock};
-    EXPECT_EQ(unwrap(accounted.chat(ask("hi"), {}, {})).content, "already paid for");
+    EXPECT_EQ(unwrap(accounted.chat(ask("hi"), {}, {})).first().content, "already paid for");
 }
 
 }  // namespace

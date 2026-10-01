@@ -49,12 +49,13 @@ Every call streams (plan §4.1): RunPod's proxy cuts connections that stay silen
 
 ### What llama-server sends
 
-These facts come from llama.cpp's source at `db00347` (2026-09-30), and the fake engine reproduces them:
+These facts come from llama.cpp's source (first read at `db00347`, then checked again at the image's pin, `7fe450e`), and the fake engine reproduces them:
 
 - **The role chunk.** The first chunk's delta is `{"role": "assistant", "content": null}`, sent with the first token: the prompt is read in silence.
+- **Every choice chunk carries its `index`.** With n choices (below), their chunks interleave.
 - **Deltas.** Thinking arrives as `delta.reasoning_content` (the default `--reasoning-format` is `deepseek`), the answer as `delta.content`. Keys absent from a delta are missing, not null.
 - **The finish chunk** has `"delta": {}` and `finish_reason`: `stop`, `length` or `tool_calls`.
-- **Usage** is sent only when `stream_options.include_usage` asks for it: a last chunk with `"choices": []`, whose `prompt_tokens` counts cached tokens too (`prompt_tokens_details.cached_tokens`).
+- **Usage** is sent only when `stream_options.include_usage` asks for it: a chunk with `"choices": []`, whose `prompt_tokens` counts cached tokens too (`prompt_tokens_details.cached_tokens`). There is one per choice, written together with that choice's finish chunk (`format_oai_sse()` writes a result's chunks as one string).
 - **`timings`** ride on the last JSON chunk: `prompt_per_second`, `predicted_per_second` and the rest. The engine's own speeds are what `bench` reports.
 - **Errors.** Before the stream, an error is a plain JSON error with its status: 400 for a prompt longer than the context, 503 while loading. Mid-answer it is one error event, then the end, with no `[DONE]`.
 - **Busy slots queue.** A queued streamed request gets no headers until a slot frees up. That silence is why the runtime answers `200` early and fills it with keep-alives.
@@ -143,6 +144,30 @@ What llama.cpp does with them at the image's pin (`7fe450e`, `tools/server/serve
 - **`reasoning_budget_tokens`** (alias `thinking_budget_tokens`). After that many tokens of thought, the sampler forces the template's end-of-thinking tag, preceded by `reasoning_budget_message`, and the model answers. It applies only when llama.cpp knows the template's thinking tags; runbook R1 checks each model. A thinking model therefore always answers, instead of spending its whole `max_tokens` thinking (Gemma 4 can loop). If a call still ends without an answer (`length`), it counts as invalid, and the retry runs with thinking off (ADR-0018).
 - **`reasoning_effort`.** `"none"` turns thinking off. Any other value is handed to the chat template as its `reasoning_effort` argument. `ReasoningEffort` is an enum (low, medium, high, xhigh), so a misspelt level fails to compile, or to load from configuration, rather than being ignored by a template.
 
+## Several answers from one prompt (`n`)
+
+Test-time compute samples: k drafts of a section, k labellings of a window (ADR-0018). `ChatRequest::n` asks for them in one request, and llama-server makes that cheap. Its behaviour at `7fe450e`:
+- **The prompt is read once.** The request's task gets n − 1 child tasks. When the parent has read the prompt, its attention cache is *copied* to the children's slots (`copy_state_to()`), so k samples cost one prompt.
+- **Choice i is sampled with the seed + i** (`server_task::add_child()`). This is why derived seeds are spaced as ADR-0020 says.
+- **It needs n free slots at once.** Until they are free, the request waits. With fewer slots in all it would wait forever, so a caller must never ask a model for more choices than its slots (`bench --n` checks this; the army's limiter will take k slots for k choices, plan P4).
+- **Choice 0 is the request itself**, and the children are 1 … n − 1 (`server_response_reader::post_tasks()`).
+
+How rReport reads such an answer (`ChatStreamReader`):
+
+| | Rule | Why |
+|---|---|---|
+| Pieces | Each delta goes to its choice, by `index`, and the sink is told which (`on_content(choice, text)`) | The choices' tokens interleave |
+| A choice's tokens | The usage chunk that follows a choice's finish chunk is that choice's | llama-server writes the two together |
+| The call's tokens | Prompt: counted once (the largest any choice reports). Cached: likewise. Completions: summed | Each child reports the whole prompt, copied, not read again |
+| A server that reports once | Taken at its word as the call's total, and credited to no one choice | OpenAI-style servers send one usage for the whole call |
+| Speeds | Prompt speed: choice 0's. Generation: summed | The choices generate side by side |
+| Endings | Every choice must finish, or the call fails (`unsupported`); `least_complete_finish()` says `length` if any was cut | A stream that loses a choice is not an answer |
+| Indexes | One the request did not ask for, or one that is not a whole number ≥ 0, is refused | It is not llama-server's stream |
+
+Two rules guard the request itself:
+- **`n` > 1 needs sampling.** At temperature 0 every choice would be the same answer, so such a request is refused (`sampling_problems()`).
+- **`structured_json()` takes one answer.** Each sample needs its own validation and repair conversation, which the army's squads will run (plan P8).
+
 ## Answers that satisfy a schema
 
 Missions ask for data, not prose, and nothing uses an answer before it is validated (plan §8). `structured<T>()` first refuses a request that sets a penalty ([Sampling](#sampling), rule 3), then:
@@ -160,6 +185,7 @@ Pipeline tests (layer L3) run whole videos without a GPU:
 
 - **Keys.** A recording is `<directory>/<request key>.json`. The key is BLAKE3 over the canonical JSON of what the model sees, prefixed with the provider's name. Unset fields are left out of that JSON, so adding a field to `ChatRequest` later changes no existing key. The schema enters as its text, so its field order is part of the key.
 - **Files.** A recording keeps the request, pretty-printed, so people can read it and review its diff. It is written atomically (`write_file_atomically()`).
+- **Format 2.** A recording's response is a list of choices, so requests with `n` replay too, each choice to its index. A recording without `"format": 2` (format 1 held one answer) is refused, never guessed at: record the call again. No format-1 recording was ever committed.
 - **What is recorded.** Only successes. A replayed transient failure would make a test depend on luck.
 - **Replay is strict.** A request without a recording fails with `not_found` and names its key. A recording copied under another call's name is refused as `integrity`.
 
@@ -167,7 +193,7 @@ Pipeline tests (layer L3) run whole videos without a GPU:
 
 Tokens and GPU time are the product's cost (plan §4.3). `AccountedProvider` hands one `CallRecord` per attempt to a `CallRecorder`. `rr_library`'s `CallLog` keeps records in the library database (`migrations/0001_accounting.sql`):
 
-- **`llm_calls`** holds one row per attempt: start, duration, time to the first token, provider, model, tag, request key, status (`ok` or the error class), finish reason and tokens.
+- **`llm_calls`** holds one row per attempt: start, duration, time to the first token, provider, model, tag, request key, status (`ok` or the error class), finish reason and tokens. With n choices the finish reason is the least complete one (`length` if any answer was cut), and the tokens are the call's, as above.
   - Attempts of one call share a request key, so a flaky pod shows up as several rows, not one slow call.
   - A CHECK ties `status` and `error` together.
 - **`llm_call_payloads`** holds what was sent and received, apart from the numbers, so `prune_payloads()` can apply a retention policy without touching the accounting.
@@ -191,6 +217,12 @@ Each rule was removed on purpose, and the named test was confirmed to fail. (Mut
 Two findings from these runs were fixed before they counted:
 - **A crash is not a failure message.** Three provider mutants were first caught only because a test read a missing key through a *const* `json::Json`, whose `operator[]` asserts and aborts the whole test program. The test now reads a non-const copy, which yields null, so the expectation fails with a message.
 - **A refactor must not hide a mutant.** `chat_request_body()` grew past clang-tidy's complexity limit and was split into helpers. Every mutant against it was then run again, on the new shape.
+- **Tests too kind to tell rules apart.** Before the `n` mutants ran, three tests were sharpened so that a wrong rule could not pass them by coincidence:
+  - the "reports once" stream now carries a true total, and no choice may be credited with it;
+  - the two choices report different prompt speeds, so "first seen" differs from "choice 0's";
+  - an index that is not a whole number is tried, as a string, a negative and a fraction.
+
+  The bounds check on an index has no mutant: without it, an unasked-for index would be written past the end of the choices, which only a sanitizer reports reliably. It is left to the ASan build, which runs `AStreamMustFinishEveryChoiceItWasAskedFor`.
 
 | Rule removed | Caught by |
 |---|---|
@@ -231,6 +263,18 @@ Two findings from these runs were fixed before they counted:
 | Thinking off says `reasoning_effort: "none"` | `SendsWhatLlamaServerReads` |
 | The budget's closing is part of the key | `TheRequestKeyIsWhatTheModelSees` |
 | `structured()` refuses penalties, before any call | `RefusesPenaltiesBeforeAnyCall` |
+| Each piece goes to its choice's index, and the sink is told which | `ReadsEveryChoiceByItsIndex` |
+| A usage chunk is credited to the choice that just finished | `ReadsEveryChoiceByItsIndex` |
+| The prompt counts once; completions and speeds add up; prompt speed is choice 0's | `ReadsEveryChoiceByItsIndex` |
+| `n` is sent, and is part of the key | `SendsSamplingAndThinkingAsLlamaServerReadsThem`, `TheRequestKeyIsWhatTheModelSees` |
+| The least complete finish is reported | `ReadsEveryChoiceByItsIndex` |
+| Every choice must finish | `AStreamMustFinishEveryChoiceItWasAskedFor` |
+| A total reported once is credited to no choice | `AServerThatReportsUsageOnceIsTakenAtItsWord` |
+| `n` ≥ 1, and `n` > 1 needs sampling | `ValuesAreCheckedAndNanFailsEveryRange`, `SeveralAnswersNeedSampling` |
+| `structured()` takes one answer | `TakesOneAnswer` |
+| Recordings carry their format; an older one is refused | `RecordsAnswersAndReplaysThemWithoutAModel`, `ARecordingInAnOlderFormatIsRefusedNotGuessedAt` |
+| Replay streams each choice to its index | `EveryChoiceIsRecordedAndReplayedToItsIndex` |
+| The record's finish is the least complete choice's | `ACallOfManyChoicesIsRecordedAsTheLeastCompleteOfThem` |
 | One repair | `SendsAnInvalidAnswerBackWithItsProblems` |
 | Validation against the full schema, even under a grammar | `SendsAnInvalidAnswerBackWithItsProblems` |
 | Thinking off for structured calls | `AcceptsAValidAnswer` |

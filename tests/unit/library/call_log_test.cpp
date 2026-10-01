@@ -32,7 +32,8 @@ llm::CallRecord a_call(std::string id, std::chrono::system_clock::time_point sta
         .finish = llm::FinishReason::stop,
         .usage = {.prompt_tokens = 1200, .completion_tokens = 300, .cached_prompt_tokens = 1000},
         .request = json::Json{{"model", "commander"}},
-        .response = json::Json{{"content", "An article."}, {"reasoning", ""}},
+        .response = json::Json{{"choices", json::Json::array(
+                                               {json::Json{{"content", "An article."}, {"reasoning", ""}}})}},
     };
 }
 

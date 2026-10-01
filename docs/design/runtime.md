@@ -252,6 +252,7 @@ Any failure stops the pod through RunPod's API instead of exiting, because RunPo
 | `reasoning` | Thinking before the answer |
 | `max_tokens` | The OpenAI field: at most that many pieces (`length` when the answer is cut) |
 | `ignore_eos` | llama-server's field: with no `reply`, the answer runs to exactly `max_tokens` tokens, as `rreport bench` asks. Without it the answer ends by itself after five tokens, so a benchmark that forgot it would be caught |
+| `n`, `replies` | The OpenAI field: n choices (at most 16), streamed as llama-server streams them. Each choice's role chunk comes first, the choices' tokens interleave, then each choice's finish and usage, written together; every choice reports the whole prompt. `replies[i]` is choice i's answer; by default every choice gives the same one |
 
 It probes its client every 10 ms while silent, as llama-server does, and exits when its parent goes away, so a crashed test leaves no orphans.
 

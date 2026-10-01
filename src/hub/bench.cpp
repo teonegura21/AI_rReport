@@ -48,16 +48,24 @@ T percentile_95(std::vector<T> values) {
     return values[std::max<std::size_t>(rank, 1) - 1];
 }
 
-llm::ChatRequest bench_request(const std::string& model, std::string prompt, int output_tokens) {
-    return llm::ChatRequest{.model = model,
-                            .messages = {llm::Message::user(std::move(prompt))},
-                            .max_tokens = output_tokens,
-                            .temperature = 0.0,
-                            .seed = 1,
-                            .thinking = false,
-                            // Exactly max_tokens tokens, each prompt read in full.
-                            .extra = {{"ignore_eos", true}, {"cache_prompt", false}},
-                            .tag = {.purpose = "bench"}};
+llm::ChatRequest bench_request(const std::string& model, std::string prompt, int output_tokens,
+                               int choices = 1) {
+    llm::ChatRequest request{.model = model,
+                             .messages = {llm::Message::user(std::move(prompt))},
+                             .max_tokens = output_tokens,
+                             .temperature = 0.0,
+                             .seed = 1,
+                             .thinking = false,
+                             // Exactly max_tokens tokens, each prompt read in full.
+                             .extra = {{"ignore_eos", true}, {"cache_prompt", false}},
+                             .tag = {.purpose = "bench"}};
+    if (choices > 1) {
+        // Several answers need sampling: at temperature 0 they would all be the
+        // same, and such a request is refused. Each still runs to max_tokens.
+        request.n = choices;
+        request.temperature = 1.0;
+    }
+    return request;
 }
 
 milliseconds first_token_of(const llm::ChatResponse& answer) {
@@ -122,7 +130,7 @@ Result<CommanderResult> bench_commander(const llm::LlmProvider& provider, const 
         }
         RR_TRY_ASSIGN(const llm::ChatResponse answer,
                       with_context(provider.chat(bench_request(model, bench_prompt(options.prompt_tokens),
-                                                               options.output_tokens),
+                                                               options.output_tokens, options.choices),
                                                  {}, stop),
                                    std::format("benchmarking the commander '{}'", model)));
         first_tokens.push_back(first_token_of(answer));
@@ -131,6 +139,7 @@ Result<CommanderResult> bench_commander(const llm::LlmProvider& provider, const 
     }
     return CommanderResult{.model = model,
                            .rounds = options.rounds,
+                           .choices = options.choices,
                            .first_token_p50 = median(first_tokens),
                            .prompt_tokens_per_second = median(prompt_speeds),
                            .generation_tokens_per_second = median(generation_speeds)};
@@ -234,6 +243,13 @@ Result<BenchResult> run_bench(const llm::LlmProvider& provider, const runtime_cl
                                 health.profile));
     }
 
+    // llama-server starts a request for n answers only when n slots are free at
+    // once: with fewer slots in all, it would hold the request forever.
+    if (commander != nullptr && options.choices > commander->slots) {
+        return fail(Errc::invalid_argument,
+                    std::format("{} answers per request need {} commander slots at once, and '{}' has {}",
+                                options.choices, options.choices, commander->model, commander->slots));
+    }
     const VramWatch vram{runtime, options.vram_poll};
     if (commander != nullptr) {
         RR_TRY_ASSIGN(result.commander, bench_commander(provider, commander->model, options, stop, progress));
@@ -272,10 +288,13 @@ std::string to_markdown(const BenchResult& result) {
     if (result.commander.has_value()) {
         const CommanderResult& commander = *result.commander;
         text += std::format(
-            "\n## Commander `{}`\n\n| first token (p50) | prompt tok/s | generated tok/s | per million "
+            "\n## Commander `{}`{}\n\n| first token (p50) | prompt tok/s | generated tok/s | per million "
             "generated |\n"
             "|---:|---:|---:|---:|\n| {} ms | {:.0f} | {:.1f} | {} |\n",
-            commander.model, commander.first_token_p50.count(), commander.prompt_tokens_per_second,
+            commander.model,
+            commander.choices > 1 ? std::format(", {} answers per request", commander.choices)
+                                  : std::string{},
+            commander.first_token_p50.count(), commander.prompt_tokens_per_second,
             commander.generation_tokens_per_second,
             dollars_per_million(result.price_per_hour, commander.generation_tokens_per_second));
     }
@@ -315,6 +334,7 @@ json::Json to_json(const BenchResult& result) {
         document["commander"] = {
             {"model", result.commander->model},
             {"rounds", result.commander->rounds},
+            {"choices", result.commander->choices},
             {"first_token_p50_ms", result.commander->first_token_p50.count()},
             {"prompt_tokens_per_second", result.commander->prompt_tokens_per_second},
             {"generation_tokens_per_second", result.commander->generation_tokens_per_second}};

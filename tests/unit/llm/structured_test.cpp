@@ -99,7 +99,7 @@ TEST(Structured, SendsAnInvalidAnswerBackWithItsProblems) {
         {answer(R"({"title": "It", "year": "1986"})"), answer(R"j({"title": "It (novel)", "year": 1986})j")},
         kLlamaServer};
     std::vector<std::string> events;
-    const StreamSink sink{.on_content = [&](std::string_view) { events.emplace_back("text"); },
+    const StreamSink sink{.on_content = [&](std::size_t, std::string_view) { events.emplace_back("text"); },
                           .on_restart = [&] { events.emplace_back("<restart>"); }};
     const auto book = unwrap(structured<Book>(model, ask("a book"), book_schema(), to_book, sink, {}));
     EXPECT_EQ(book.value.title, "It (novel)");
@@ -114,6 +114,16 @@ TEST(Structured, SendsAnInvalidAnswerBackWithItsProblems) {
     EXPECT_THAT(instruction, HasSubstr("- /title (minLength)")) << "the full schema's rules count";
     EXPECT_THAT(instruction, HasSubstr("- /year (type)"));
     EXPECT_THAT(instruction, HasSubstr("corrected JSON only"));
+}
+
+TEST(Structured, TakesOneAnswer) {
+    const ScriptedProvider model{{answer(R"({"title": "Dune", "year": 1965})")}, kLlamaServer};
+    ChatRequest samples = ask("a book");
+    samples.n = 3;
+    const auto result = structured<Book>(model, samples, book_schema(), to_book, {}, {});
+    ASSERT_ERRC(result, Errc::invalid_argument);
+    EXPECT_THAT(result.error().message(), HasSubstr("its own validation and repair"));
+    EXPECT_TRUE(model.requests().empty());
 }
 
 TEST(Structured, RefusesPenaltiesBeforeAnyCall) {
@@ -163,7 +173,7 @@ TEST(Structured, TheCallersChecksAndTheConversionAreProblemsToo) {
 
 TEST(Structured, SaysWhenAnAnswerWasCutShort) {
     ChatResponse cut = answer(R"({"title": "War and Pea)");
-    cut.finish = FinishReason::length;
+    cut.first().finish = FinishReason::length;
     const ScriptedProvider model{{cut, answer(R"({"title": "War and Peace", "year": 1869})")}, kLlamaServer};
     ASSERT_OK(structured<Book>(model, ask("a book"), book_schema(), to_book, {}, {}));
     EXPECT_THAT(model.requests().at(1).messages.back().text(), HasSubstr("cut off at the token limit"));

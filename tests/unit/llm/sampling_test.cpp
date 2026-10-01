@@ -95,6 +95,23 @@ TEST(Sampling, ValuesAreCheckedAndNanFailsEveryRange) {
                 ElementsAre(HasSubstr("repeat_penalty")));
     EXPECT_THAT(problems_with([](ChatRequest& r) { r.max_tokens = 0; }),
                 ElementsAre(HasSubstr("max_tokens")));
+    EXPECT_THAT(problems_with([](ChatRequest& r) { r.n = 0; }), ElementsAre(HasSubstr("n must be")));
+}
+
+TEST(Sampling, SeveralAnswersNeedSampling) {
+    ChatRequest greedy = ask("three drafts");
+    greedy.n = 3;
+    greedy.temperature = 0.0;
+    EXPECT_THAT(sampling_problems(greedy), ElementsAre(HasSubstr("every choice is the same answer")))
+        << "greedy decoding ignores the seed: three copies of one answer, at three times the cost";
+    greedy.temperature = 0.7;
+    EXPECT_THAT(sampling_problems(greedy), IsEmpty());
+    greedy.temperature.reset();
+    EXPECT_THAT(sampling_problems(greedy), IsEmpty()) << "the server's default samples";
+    ChatRequest one = ask("one draft");
+    one.n = 1;
+    one.temperature = 0.0;
+    EXPECT_THAT(sampling_problems(one), IsEmpty());
 }
 
 TEST(Sampling, ABudgetAndAnEffortNeedThinking) {

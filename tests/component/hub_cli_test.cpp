@@ -1,6 +1,7 @@
 // The rreport executable, driven from the outside against a real
 // rreport-runtime (with fake engines: a commander, and infantry with four
 // slots) and a fake RunPod API: what an operator runs before the first video.
+#include <algorithm>
 #include <chrono>
 #include <csignal>
 #include <filesystem>
@@ -39,8 +40,8 @@ using Clock = std::chrono::steady_clock;
 constexpr std::string_view kToken = "hub-cli-token";
 constexpr std::string_view kWeights = "pretend these are gigabytes of weights";
 
-// rreport-runtime serving a commander ("chat") and infantry ("squad", four
-// slots), both fake, on free ports.
+// rreport-runtime serving a commander ("chat", two slots, for answers drawn
+// two at a time) and infantry ("squad", four slots), both fake, on free ports.
 class Runtime {
 public:
     Runtime() {
@@ -63,6 +64,7 @@ sha256 = "{0}"
 name = "test"
   [[profile.engine]]
   model = "chat"
+  slots = 2
   extra_args = ["--fake-token-ms", "2"]
   [[profile.engine]]
   model = "squad"
@@ -240,6 +242,30 @@ TEST_F(Hub, BenchMeasuresThePodAndKeepsTheResults) {
         unwrap(library::open_database(data_dir() / "libraries" / "default" / "library.db"));
     const library::CallLog calls{library};
     EXPECT_EQ(unwrap(calls.list({.purpose = "bench"})).size(), 11U);
+}
+
+TEST_F(Hub, BenchAsksTheCommanderForSeveralAnswersAtOnce) {
+    const std::filesystem::path out = home() / "drafts.json";
+    const proc::RunResult drafts = rreport({"bench", "--n", "2", "--parallel", "1", "--output-tokens", "8",
+                                            "--rounds", "1", "--prompt-tokens", "32", "--out", out.string()});
+    ASSERT_EQ(drafts.status.code, 0) << drafts.stdout_text << drafts.stderr_text;
+    EXPECT_THAT(drafts.stdout_text, HasSubstr("## Commander `chat`, 2 answers per request"));
+    EXPECT_EQ(unwrap(json::parse(unwrap(read_file(out))))["commander"]["choices"], 2);
+
+    db::Database library =
+        unwrap(library::open_database(data_dir() / "libraries" / "default" / "library.db"));
+    const std::vector<llm::CallRecord> calls = unwrap(library::CallLog{library}.list({.purpose = "bench"}));
+    const auto commander =
+        std::ranges::find_if(calls, [](const llm::CallRecord& call) { return call.model == "chat"; });
+    ASSERT_NE(commander, calls.end());
+    EXPECT_EQ(commander->usage.completion_tokens, 16) << "two answers of exactly eight tokens, one call";
+
+    // A short call timeout: without the check, llama-server would hold this request.
+    const proc::RunResult too_many =
+        rreport({"bench", "--n", "3", "--parallel", "1", "--rounds", "1"}, {"llm.call_timeout=20s"});
+    EXPECT_EQ(too_many.status.code, 1);
+    EXPECT_THAT(too_many.stderr_text, HasSubstr("3 answers per request need 3 commander slots at once"))
+        << "llama-server would hold such a request forever";
 }
 
 TEST_F(Hub, BenchTimesAColdStart) {

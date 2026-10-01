@@ -98,6 +98,9 @@ The GPU is the product's main running cost. Which one to rent is decided by meas
 
 **Method.**
 - **The commander** is measured one request at a time, `--rounds` times (its passes are sequential): time to the first token, then the prompt and generation speeds that the engine itself reports in `timings`.
+- **Several answers at once (`--n K`).** Each commander request asks for K answers, as the pipeline asks for k drafts (ADR-0018). The prompt is read once and copied to K slots, and the generated speed is the answers' together.
+  - K may not exceed the commander's slots, and the bench refuses it before any call: llama-server starts such a request only when K slots are free at once, so with fewer slots in all it would hold the request forever.
+  - K answers need sampling (at temperature 0 they would all be the same answer, and such a request is refused), so these requests use temperature 1. Every answer still runs to exactly `--output-tokens` tokens.
 - **The infantry** is measured at 1, 4, 8, 16 and 32 requests at once (`--parallel`). The squad's worth is its **total** tokens per second. Levels above the engine's `slots` are marked "queued", because llama-server makes extra requests wait for a slot.
 - **Peak VRAM** is sampled from the runtime's health report every second while the load runs.
 - **Cold start (`--cold-start`).** The pod is stopped first, and timed from the start until every engine is ready. It includes the image start and model loading from the network volume.
@@ -153,6 +156,8 @@ Each rule was removed on purpose, and the named test was confirmed to fail.
 | Levels above the slots are marked "queued" | `BenchMeasuresThePodAndKeepsTheResults` |
 | Every answer runs to `--output-tokens` (`ignore_eos`) | `BenchMeasuresThePodAndKeepsTheResults` |
 | Every bench call is accounted for | `BenchMeasuresThePodAndKeepsTheResults` |
+| `--n` above the commander's slots is refused before any call | `BenchAsksTheCommanderForSeveralAnswersAtOnce` |
+| `--n` samples (temperature 1) | `BenchAsksTheCommanderForSeveralAnswersAtOnce` |
 | RunPod's price is used | `BenchMeasuresThePodAndKeepsTheResults` |
 | `--cold-start` stops the pod first | `BenchTimesAColdStart` |
 | The cold start is timed | `BenchTimesAColdStart` |

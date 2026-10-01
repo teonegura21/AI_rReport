@@ -1,6 +1,7 @@
 #include <rr/llm/replay.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <format>
 #include <system_error>
 #include <utility>
@@ -14,10 +15,20 @@ namespace {
 // Recordings are text answers; a file this large is not one of ours.
 constexpr std::size_t kMaxRecordingBytes = std::size_t{64} << 20U;
 
+// The recordings' format. 2: a response is a list of choices (requests with
+// n). Format 1 (no "format" field) held one answer; it is refused, not
+// guessed at: record the call again.
+constexpr std::int64_t kRecordingFormat = 2;
+
 json::Json response_to_json(const ChatResponse& response) {
-    return {{"content", response.content},
-            {"reasoning", response.reasoning},
-            {"finish_reason", to_string(response.finish)},
+    json::Json choices = json::Json::array();
+    for (const Choice& choice : response.choices) {
+        choices.push_back({{"content", choice.content},
+                           {"reasoning", choice.reasoning},
+                           {"finish_reason", to_string(choice.finish)},
+                           {"completion_tokens", choice.completion_tokens}});
+    }
+    return {{"choices", std::move(choices)},
             {"model", response.model},
             {"usage",
              {{"prompt_tokens", response.usage.prompt_tokens},
@@ -25,12 +36,26 @@ json::Json response_to_json(const ChatResponse& response) {
               {"cached_prompt_tokens", response.usage.cached_prompt_tokens}}}};
 }
 
+Result<Choice> choice_from_json(const json::Json& document) {
+    Choice choice;
+    RR_TRY_ASSIGN(choice.content, json::get_string(document, "content"));
+    RR_TRY_ASSIGN(choice.reasoning, json::get_string(document, "reasoning"));
+    RR_TRY_ASSIGN(const std::string finish, json::get_string(document, "finish_reason"));
+    choice.finish = finish_reason_from_string(finish);
+    RR_TRY_ASSIGN(choice.completion_tokens, json::get_int(document, "completion_tokens"));
+    return choice;
+}
+
 Result<ChatResponse> response_from_json(const json::Json& document) {
     ChatResponse response;
-    RR_TRY_ASSIGN(response.content, json::get_string(document, "content"));
-    RR_TRY_ASSIGN(response.reasoning, json::get_string(document, "reasoning"));
-    RR_TRY_ASSIGN(const std::string finish, json::get_string(document, "finish_reason"));
-    response.finish = finish_reason_from_string(finish);
+    RR_TRY_ASSIGN(const json::Json* choices, json::find(document, "choices"));
+    if (!choices->is_array() || choices->empty()) {
+        return fail(Errc::invalid_argument, "'choices' must be a list of at least one answer");
+    }
+    for (const json::Json& entry : *choices) {
+        RR_TRY_ASSIGN(Choice choice, choice_from_json(entry));
+        response.choices.push_back(std::move(choice));
+    }
     RR_TRY_ASSIGN(response.model, json::get_string(document, "model"));
     RR_TRY_ASSIGN(response.usage.prompt_tokens, json::get_int(document, "usage.prompt_tokens"));
     RR_TRY_ASSIGN(response.usage.completion_tokens, json::get_int(document, "usage.completion_tokens"));
@@ -41,6 +66,14 @@ Result<ChatResponse> response_from_json(const json::Json& document) {
 // The response stored in a recording file's text, checked to be filed under `key`.
 Result<ChatResponse> parse_recording(std::string_view text, std::string_view key) {
     RR_TRY_ASSIGN(const json::Json document, json::parse(text));
+    const std::int64_t format =
+        document.contains("format") ? json::get_int(document, "format").value_or(-1) : 1;
+    if (format != kRecordingFormat) {
+        return fail(Errc::integrity,
+                    std::format("it is in format {}, and this version reads format {}: record "
+                                "the call again",
+                                format, kRecordingFormat));
+    }
     RR_TRY_ASSIGN(const std::string recorded_key, json::get_string(document, "key"));
     if (recorded_key != key) {
         return fail(Errc::integrity, std::format("it records the call {}", recorded_key));
@@ -82,7 +115,8 @@ Result<void> Recordings::store(std::string_view provider, const ChatRequest& req
         return fail(Errc::io, std::format("cannot create '{}': {}", directory_.string(), error.message()));
     }
     const std::string key = request_key(provider, request);
-    const json::Json recording{{"key", key},
+    const json::Json recording{{"format", kRecordingFormat},
+                               {"key", key},
                                {"provider", provider},
                                {"request", to_json(request)},
                                {"response", response_to_json(response)}};
@@ -116,11 +150,14 @@ Result<ChatResponse> ReplayProvider::chat(const ChatRequest& request, const Stre
         return fail(Errc::cancelled, "the call was cancelled");
     }
     RR_TRY_ASSIGN(ChatResponse response, recordings_.load(request_key(name_, request)));
-    if (!response.reasoning.empty() && sink.on_reasoning) {
-        sink.on_reasoning(response.reasoning);
-    }
-    if (!response.content.empty() && sink.on_content) {
-        sink.on_content(response.content);
+    for (std::size_t index = 0; index < response.choices.size(); ++index) {
+        const Choice& choice = response.choices[index];
+        if (!choice.reasoning.empty() && sink.on_reasoning) {
+            sink.on_reasoning(index, choice.reasoning);
+        }
+        if (!choice.content.empty() && sink.on_content) {
+            sink.on_content(index, choice.content);
+        }
     }
     response.first_token = std::chrono::milliseconds{0};
     response.duration = std::chrono::milliseconds{0};

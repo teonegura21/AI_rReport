@@ -70,7 +70,8 @@ void apply(const SamplingPreset& preset, ChatRequest& request);
 // What is wrong with the request's sampling values (empty: nothing):
 //   * temperature ≥ 0; top_p in (0, 1]; top_k ≥ 0; min_p in [0, 1];
 //     presence_penalty in [-2, 2]; repeat_penalty > 0; max_tokens ≥ 1;
-//     a thinking budget ≥ 0 tokens. NaN fails every range;
+//     n ≥ 1; a thinking budget ≥ 0 tokens. NaN fails every range;
+//   * n > 1 at temperature 0 (greedy: every choice the same answer);
 //   * a thinking budget or a reasoning effort needs thinking = true.
 [[nodiscard]] std::vector<std::string> sampling_problems(const ChatRequest& request);
 

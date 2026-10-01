@@ -1,7 +1,10 @@
 #include <rr/llm/chat.hpp>
 
+#include <algorithm>
 #include <array>
 #include <utility>
+
+#include <rr/core/assert.hpp>
 
 namespace rr::llm {
 
@@ -64,6 +67,32 @@ std::optional<ReasoningEffort> reasoning_effort_from_string(std::string_view nam
     return std::nullopt;
 }
 
+const Choice& ChatResponse::first() const {
+    RR_ASSERT(!choices.empty(), "a response has at least one choice");
+    return choices.front();
+}
+
+Choice& ChatResponse::first() {
+    RR_ASSERT(!choices.empty(), "a response has at least one choice");
+    return choices.front();
+}
+
+FinishReason ChatResponse::least_complete_finish() const noexcept {
+    // From complete to least complete.
+    constexpr std::array<FinishReason, 4> kByCompleteness{FinishReason::stop, FinishReason::other,
+                                                          FinishReason::content_filter, FinishReason::length};
+    const auto rank = [&](FinishReason reason) {
+        return std::ranges::find(kByCompleteness, reason) - kByCompleteness.begin();
+    };
+    FinishReason least = FinishReason::stop;
+    for (const Choice& choice : choices) {
+        if (rank(choice.finish) > rank(least)) {
+            least = choice.finish;
+        }
+    }
+    return choices.empty() ? FinishReason::other : least;
+}
+
 FinishReason finish_reason_from_string(std::string_view name) noexcept {
     if (name == "stop") {
         return FinishReason::stop;
@@ -114,6 +143,9 @@ json::Json to_json(const ChatRequest& request) {
     }
     if (request.seed.has_value()) {
         document["seed"] = *request.seed;
+    }
+    if (request.n.has_value()) {
+        document["n"] = *request.n;
     }
     if (!request.stop.empty()) {
         document["stop"] = request.stop;

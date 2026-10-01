@@ -3,19 +3,22 @@
 // tests that check what arrives share it, so the two cannot drift apart.
 //
 // llama-server's stream for POST /v1/chat/completions with "stream": true
-// (llama.cpp db00347, 2026-09-30):
+// (llama.cpp 7fe450e), for each choice (one, unless the request asks for n):
 //   1. a chunk whose delta is {"role": "assistant", "content": null}, sent
-//      with the first token (the prompt is read in silence);
+//      with the choice's first token (the prompt is read in silence);
 //   2. a chunk per token: delta.reasoning_content while the model thinks,
 //      then delta.content;
 //   3. a chunk with "delta": {} and the finish_reason ("stop", "length");
 //   4. with stream_options.include_usage: a chunk with "choices": [] and the
-//      usage. "timings" ride on the last of these JSON chunks;
-//   5. "[DONE]".
-// The fake's chunks are deterministic ("id" and "created" are fixed), so
-// tests can compare events exactly.
+//      choice's usage, written together with its finish chunk. "timings" ride
+//      on the last of these JSON chunks.
+// Every choice chunk carries its "index"; the choices' tokens interleave. One
+// "[DONE]" ends the stream. The fake's chunks are deterministic ("id" and
+// "created" are fixed), so tests can compare events exactly.
 #pragma once
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <format>
 #include <string>
@@ -27,11 +30,16 @@
 
 namespace rr::fake_engine {
 
-struct StreamPlan {
-    std::string model = "fake";
+// One answer: what it thinks and says, in pieces, and how it ends.
+struct ChoicePlan {
     std::vector<std::string> reasoning{};  // reasoning_content pieces, before the content
     std::vector<std::string> content{};
     std::string finish_reason = "stop";
+};
+
+struct StreamPlan {
+    std::string model = "fake";
+    std::vector<ChoicePlan> choices{ChoicePlan{}};  // by index
     bool include_usage = false;
     std::int64_t prompt_tokens = 1;
     int token_ms = 20;  // the engine's pace, reported in "timings"
@@ -41,7 +49,7 @@ struct StreamPlan {
 inline StreamPlan default_plan(std::string model) {
     StreamPlan plan{.model = std::move(model)};
     for (int index = 0; index < 5; ++index) {
-        plan.content.push_back(std::format("tok{}", index));
+        plan.choices[0].content.push_back(std::format("tok{}", index));
     }
     return plan;
 }
@@ -59,29 +67,29 @@ inline std::string chunk(const StreamPlan& plan, json::Json choices,
     return json::dump(document);
 }
 
-inline json::Json one_choice(json::Json delta, json::Json finish_reason = nullptr) {
-    return json::Json::array(
-        {json::Json{{"delta", std::move(delta)}, {"finish_reason", std::move(finish_reason)}, {"index", 0}}});
+inline json::Json one_choice(json::Json delta, json::Json finish_reason = nullptr, std::size_t index = 0) {
+    return json::Json::array({json::Json{
+        {"delta", std::move(delta)}, {"finish_reason", std::move(finish_reason)}, {"index", index}}});
 }
 
-inline std::string role_event(const StreamPlan& plan) {
-    return chunk(plan, one_choice(json::Json{{"content", nullptr}, {"role", "assistant"}}));
+inline std::string role_event(const StreamPlan& plan, std::size_t choice = 0) {
+    return chunk(plan, one_choice(json::Json{{"content", nullptr}, {"role", "assistant"}}, nullptr, choice));
 }
 
-inline std::string content_event(const StreamPlan& plan, std::string_view text) {
-    return chunk(plan, one_choice(json::Json{{"content", text}}));
+inline std::string content_event(const StreamPlan& plan, std::string_view text, std::size_t choice = 0) {
+    return chunk(plan, one_choice(json::Json{{"content", text}}, nullptr, choice));
 }
 
-inline std::string reasoning_event(const StreamPlan& plan, std::string_view text) {
-    return chunk(plan, one_choice(json::Json{{"reasoning_content", text}}));
+inline std::string reasoning_event(const StreamPlan& plan, std::string_view text, std::size_t choice = 0) {
+    return chunk(plan, one_choice(json::Json{{"reasoning_content", text}}, nullptr, choice));
 }
 
-inline std::int64_t completion_tokens(const StreamPlan& plan) {
-    return static_cast<std::int64_t>(plan.reasoning.size() + plan.content.size());
+inline std::int64_t completion_tokens(const ChoicePlan& choice) {
+    return static_cast<std::int64_t>(choice.reasoning.size() + choice.content.size());
 }
 
-inline json::Json timings(const StreamPlan& plan) {
-    const std::int64_t predicted = completion_tokens(plan);
+inline json::Json timings(const StreamPlan& plan, std::size_t choice) {
+    const std::int64_t predicted = completion_tokens(plan.choices.at(choice));
     const double pace = plan.token_ms > 0 ? 1000.0 / plan.token_ms : 1'000'000.0;
     return {{"cache_n", 0},
             {"prompt_n", plan.prompt_tokens},
@@ -92,34 +100,71 @@ inline json::Json timings(const StreamPlan& plan) {
             {"predicted_per_second", pace}};
 }
 
-inline std::string finish_event(const StreamPlan& plan) {
-    return chunk(plan, one_choice(json::Json::object(), plan.finish_reason),
-                 plan.include_usage ? json::Json::object() : json::Json{{"timings", timings(plan)}});
+inline std::string finish_event(const StreamPlan& plan, std::size_t choice = 0) {
+    return chunk(plan, one_choice(json::Json::object(), plan.choices.at(choice).finish_reason, choice),
+                 plan.include_usage ? json::Json::object() : json::Json{{"timings", timings(plan, choice)}});
 }
 
-inline std::string usage_event(const StreamPlan& plan) {
-    const std::int64_t completion = completion_tokens(plan);
+// The choice's usage. Every choice reports the whole prompt: llama-server
+// copies the prompt, read once, to each choice's slot.
+inline std::string usage_event(const StreamPlan& plan, std::size_t choice = 0) {
+    const std::int64_t completion = completion_tokens(plan.choices.at(choice));
     return chunk(plan, json::Json::array(),
                  {{"usage",
                    {{"completion_tokens", completion},
                     {"prompt_tokens", plan.prompt_tokens},
                     {"prompt_tokens_details", {{"cached_tokens", 0}}},
                     {"total_tokens", plan.prompt_tokens + completion}}},
-                  {"timings", timings(plan)}});
+                  {"timings", timings(plan, choice)}});
+}
+
+// One event of the stream's body, before the finish chunks.
+struct Scheduled {
+    std::string data;
+    bool token = false;  // a token, not a role chunk
+};
+
+// The role and token events of every choice, interleaved one round at a
+// time, as parallel slots produce them: each choice's role chunk first.
+inline std::vector<Scheduled> body_events(const StreamPlan& plan) {
+    std::vector<std::vector<Scheduled>> queues;
+    for (std::size_t index = 0; index < plan.choices.size(); ++index) {
+        const ChoicePlan& choice = plan.choices[index];
+        std::vector<Scheduled> queue{{.data = role_event(plan, index), .token = false}};
+        for (const std::string& piece : choice.reasoning) {
+            queue.push_back({.data = reasoning_event(plan, piece, index), .token = true});
+        }
+        for (const std::string& piece : choice.content) {
+            queue.push_back({.data = content_event(plan, piece, index), .token = true});
+        }
+        queues.push_back(std::move(queue));
+    }
+    std::vector<Scheduled> all;
+    std::size_t longest = 0;
+    for (const auto& queue : queues) {
+        longest = std::max(longest, queue.size());
+    }
+    for (std::size_t round = 0; round < longest; ++round) {
+        for (const auto& queue : queues) {
+            if (round < queue.size()) {
+                all.push_back(queue[round]);
+            }
+        }
+    }
+    return all;
 }
 
 // Every event's data, in order, "[DONE]" last.
 inline std::vector<std::string> events(const StreamPlan& plan) {
-    std::vector<std::string> all{role_event(plan)};
-    for (const std::string& piece : plan.reasoning) {
-        all.push_back(reasoning_event(plan, piece));
+    std::vector<std::string> all;
+    for (Scheduled& event : body_events(plan)) {
+        all.push_back(std::move(event.data));
     }
-    for (const std::string& piece : plan.content) {
-        all.push_back(content_event(plan, piece));
-    }
-    all.push_back(finish_event(plan));
-    if (plan.include_usage) {
-        all.push_back(usage_event(plan));
+    for (std::size_t index = 0; index < plan.choices.size(); ++index) {
+        all.push_back(finish_event(plan, index));
+        if (plan.include_usage) {
+            all.push_back(usage_event(plan, index));
+        }
     }
     all.emplace_back("[DONE]");
     return all;

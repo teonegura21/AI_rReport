@@ -32,5 +32,5 @@ CREATE INDEX llm_calls_by_request ON llm_calls (request_key);
 CREATE TABLE llm_call_payloads (
     call_id  TEXT PRIMARY KEY REFERENCES llm_calls (id) ON DELETE CASCADE,
     request  TEXT NOT NULL,  -- canonical JSON of the request (rr::llm::to_json)
-    response TEXT NOT NULL   -- {"content": …, "reasoning": …}; {} after a failure
+    response TEXT NOT NULL   -- {"choices": [{"content": …, "reasoning": …}, …]}; {} after a failure
 ) STRICT;

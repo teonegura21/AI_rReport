@@ -29,9 +29,13 @@ Result<ChatResponse> AccountedProvider::chat(const ChatRequest& request, const S
     call.duration = std::chrono::duration_cast<std::chrono::milliseconds>(clock_->steady_now() - started);
     if (result.has_value()) {
         call.first_token = result->first_token;
-        call.finish = result->finish;
+        call.finish = result->least_complete_finish();
         call.usage = result->usage;
-        call.response = json::Json{{"content", result->content}, {"reasoning", result->reasoning}};
+        json::Json choices = json::Json::array();
+        for (const Choice& choice : result->choices) {
+            choices.push_back({{"content", choice.content}, {"reasoning", choice.reasoning}});
+        }
+        call.response = json::Json{{"choices", std::move(choices)}};
     } else {
         call.error = result.error();
     }

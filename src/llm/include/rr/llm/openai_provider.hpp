@@ -17,28 +17,34 @@
 //     * a 2xx answer that is not an event stream is refused
 //       (Errc::unsupported) rather than waited out.
 //
-//   What llama-server sends (llama.cpp db00347): a role chunk whose content
-//   is null; delta.reasoning_content while a model thinks (its chain of
-//   thought, kept apart); delta.content; a finish chunk; with
-//   stream_options.include_usage, a last chunk with "choices": [] and the
-//   usage; "timings" on the last JSON chunk.
+//   What llama-server sends (llama.cpp 7fe450e): for each choice, a role
+//   chunk whose content is null; delta.reasoning_content while the model
+//   thinks (its chain of thought, kept apart); delta.content; a finish
+//   chunk; and, with stream_options.include_usage, a chunk with
+//   "choices": [] and that choice's usage. "timings" ride on a choice's last
+//   chunk. Every choice chunk carries its "index"; with n choices their
+//   chunks interleave, but one choice's finish and usage chunks are written
+//   together, so a usage chunk belongs to the choice that just finished.
+//   One "[DONE]" ends the stream.
 //
-//   Dialects differ in two extensions. llama-server switches thinking with
-//   chat_template_kwargs.enable_thinking (and reasoning_effort "none" to be
-//   sure it is off) and reports "timings". A plain OpenAI-compatible API gets
-//   neither: a request that sets `thinking` is refused there, since the
-//   extension that would carry it is server-specific (use `extra`).
+//   Dialects differ in their extensions. llama-server reads top_k, min_p,
+//   repeat_penalty and the thinking fields, and reports "timings". A plain
+//   OpenAI-compatible API gets none of them: a request that sets one is
+//   refused there, since the field that would carry it is server-specific
+//   (use `extra`).
 //
 // Thread-safety: thread-safe (the HttpClient is).
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include <rr/core/result.hpp>
 #include <rr/core/secret.hpp>
@@ -89,31 +95,47 @@ private:
 [[nodiscard]] Result<json::OrderedJson> chat_request_body(const ChatRequest& request, Dialect dialect,
                                                           const ProviderCaps& caps);
 
-// Assembles a streamed answer from its events' data.
+// Assembles a streamed answer, every choice of it, from its events' data.
 class ChatStreamReader {
 public:
-    // `on_first_token` runs once, at the first non-empty content or reasoning.
-    explicit ChatStreamReader(const StreamSink& sink, std::function<void()> on_first_token = {})
-        : sink_(&sink)
-        , on_first_token_(std::move(on_first_token)) {}
+    // `choices`: how many answers the request asked for (n, at least 1).
+    // `on_first_token` runs once, at the first non-empty content or reasoning
+    // of any choice.
+    ChatStreamReader(const StreamSink& sink, std::size_t choices, std::function<void()> on_first_token = {});
 
     // One event. Fails with the error an error event carries, or
-    // Errc::unsupported for a chunk that is not JSON.
+    // Errc::unsupported for a chunk that is not JSON or names a choice the
+    // request did not ask for.
     [[nodiscard]] Result<void> on_event(std::string_view data);
 
     [[nodiscard]] bool done() const noexcept { return done_; }  // "[DONE]" arrived
-    [[nodiscard]] ChatResponse take() { return std::move(response_); }
+
+    // The answer: every choice, the call's usage and speeds. Errc::unsupported
+    // if a choice never finished, for the stream then lacks part of it.
+    [[nodiscard]] Result<ChatResponse> take();
 
 private:
-    void read_choice(const json::Json& choice);
+    // A usage chunk, and the choice that finished just before it.
+    struct UsageReport {
+        std::optional<std::size_t> choice;
+        Usage usage;
+    };
+
+    [[nodiscard]] Result<void> read_choice(const json::Json& choice);
+    void read_report(const json::Json& chunk);
     // One piece of text, reasoning or content: the first token if it is one,
-    // kept in `answer`, and passed to `listener`.
-    void deliver(std::optional<std::string_view> piece, std::string& answer,
-                 const std::function<void(std::string_view)>& listener);
+    // kept in `answer`, and passed to `listener` with its choice.
+    void deliver(std::size_t choice, std::optional<std::string_view> piece, std::string& answer,
+                 const std::function<void(std::size_t, std::string_view)>& listener);
 
     const StreamSink* sink_;
     std::function<void()> on_first_token_;
     ChatResponse response_{};
+    std::vector<bool> finished_;
+    std::optional<std::size_t> last_finished_{};
+    std::vector<UsageReport> usage_reports_{};
+    std::vector<std::optional<double>> generation_speeds_;  // by choice
+    std::optional<double> prompt_speed_{};
     bool done_ = false;
     bool any_token_ = false;
 };

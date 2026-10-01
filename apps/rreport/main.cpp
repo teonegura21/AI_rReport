@@ -431,6 +431,10 @@ int run(int argc, char** argv) {
         ->check(CLI::Range(1, 100'000));
     bench_command->add_option("--rounds", bench_flags.options.rounds, "Commander requests")
         ->check(CLI::Range(1, 100));
+    bench_command
+        ->add_option("--n", bench_flags.options.choices,
+                     "Answers per commander request, as k drafts are asked for (at most its slots)")
+        ->check(CLI::Range(1, 64));
     bench_command->add_option("--price-per-hour", bench_flags.options.price_per_hour,
                               "The pod's price in USD (default: RunPod's)");
     bench_command->add_flag("--cold-start", bench_flags.cold_start, "Stop the pod first, and time its start");

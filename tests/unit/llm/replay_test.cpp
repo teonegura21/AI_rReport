@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -17,6 +18,7 @@ namespace rr::llm {
 namespace {
 
 using testing::answer;
+using testing::answers;
 using testing::ask;
 using ::testing::HasSubstr;
 using testing::ScriptedProvider;
@@ -28,7 +30,7 @@ TEST(Replay, RecordsAnswersAndReplaysThemWithoutAModel) {
     const testkit::TempDir dir;
     const Recordings recordings{dir / "recordings"};
     ChatResponse live = answer("the capital is Paris");
-    live.reasoning = "The user asks about France.";
+    live.first().reasoning = "The user asks about France.";
     live.usage.cached_prompt_tokens = 4;
     const ScriptedProvider model{{live}, kCaps, "runtime"};
     const RecordingProvider recording{model, recordings};
@@ -42,18 +44,61 @@ TEST(Replay, RecordsAnswersAndReplaysThemWithoutAModel) {
     const ReplayProvider replay{"runtime", kCaps, recordings};
     std::string streamed;
     std::string thought;
-    const StreamSink sink{.on_content = [&](std::string_view text) { streamed += text; },
-                          .on_reasoning = [&](std::string_view text) { thought += text; }};
+    const StreamSink sink{.on_content = [&](std::size_t, std::string_view text) { streamed += text; },
+                          .on_reasoning = [&](std::size_t, std::string_view text) { thought += text; }};
     const ChatResponse replayed = unwrap(replay.chat(ask("capital of France?"), sink, {}));
-    EXPECT_EQ(replayed.content, live.content);
-    EXPECT_EQ(replayed.reasoning, live.reasoning);
-    EXPECT_EQ(replayed.finish, live.finish);
+    EXPECT_EQ(replayed.choices, live.choices) << "content, reasoning, finish and tokens";
     EXPECT_EQ(replayed.usage, live.usage);
     EXPECT_EQ(replayed.model, live.model);
-    EXPECT_EQ(streamed, live.content);
-    EXPECT_EQ(thought, live.reasoning);
+    EXPECT_EQ(streamed, live.first().content);
+    EXPECT_EQ(thought, live.first().reasoning);
     EXPECT_EQ(replay.name(), "runtime");
     EXPECT_TRUE(replay.caps().json_schema);
+}
+
+TEST(Replay, EveryChoiceIsRecordedAndReplayedToItsIndex) {
+    const testkit::TempDir dir;
+    const Recordings recordings{dir / "recordings"};
+    ChatRequest drafts = ask("three drafts, please");
+    drafts.n = 3;
+    drafts.temperature = 0.7;
+    ChatResponse live = answers({"first draft", "second draft", "third draft"});
+    live.choices[2].finish = FinishReason::length;
+    const ScriptedProvider model{{live}, kCaps, "runtime"};
+    ASSERT_OK(RecordingProvider(model, recordings).chat(drafts, {}, {}));
+
+    std::vector<std::string> streamed(3);
+    const StreamSink sink{
+        .on_content = [&](std::size_t choice, std::string_view text) { streamed.at(choice) += text; }};
+    const ChatResponse replayed = unwrap(ReplayProvider("runtime", kCaps, recordings).chat(drafts, sink, {}));
+    EXPECT_EQ(replayed.choices, live.choices);
+    EXPECT_EQ(replayed.usage, live.usage);
+    EXPECT_EQ(streamed, (std::vector<std::string>{"first draft", "second draft", "third draft"}))
+        << "each choice reaches the sink under its own index";
+}
+
+TEST(Replay, ARecordingInAnOlderFormatIsRefusedNotGuessedAt) {
+    const testkit::TempDir dir;
+    const Recordings recordings{dir / "recordings"};
+    const std::string key = request_key("runtime", ask("hi"));
+    std::filesystem::create_directories(dir / "recordings");
+    // Format 1: one answer, no "format" field.
+    ASSERT_OK(write_file_atomically(
+        recordings.path_for(key),
+        json::dump(json::Json{
+            {"key", key},
+            {"provider", "runtime"},
+            {"request", to_json(ask("hi"))},
+            {"response",
+             {{"content", "hello"},
+              {"reasoning", ""},
+              {"finish_reason", "stop"},
+              {"model", "m"},
+              {"usage", {{"prompt_tokens", 1}, {"completion_tokens", 1}, {"cached_prompt_tokens", 0}}}}}})));
+    const auto replayed = ReplayProvider("runtime", kCaps, recordings).chat(ask("hi"), {}, {});
+    ASSERT_ERRC(replayed, Errc::integrity);
+    EXPECT_THAT(replayed.error().message(), HasSubstr("format 1"));
+    EXPECT_THAT(replayed.error().message(), HasSubstr("record the call again"));
 }
 
 TEST(Replay, AnUnrecordedCallFailsAndNamesItsKey) {

@@ -24,6 +24,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -122,6 +123,10 @@ struct ChatRequest {
     std::optional<double> presence_penalty{};  // 0: off
     std::optional<double> repeat_penalty{};    // 1: off
     std::optional<std::int64_t> seed{};
+    // Answers to draw from one reading of the prompt (unset: 1). llama-server
+    // reads the prompt once and copies it to n slots, so n samples cost one
+    // prompt; it needs n free slots at once, and gives choice i the seed + i.
+    std::optional<int> n{};
     std::vector<std::string> stop{};
     // Constrained output: the model-facing schema as compact JSON text
     // (json::Schema::model_facing()), and a name for it (some APIs require
@@ -166,27 +171,52 @@ struct Usage {
     friend bool operator==(const Usage&, const Usage&) = default;
 };
 
-struct ChatResponse {
+// One answer of a call: the only one, or one of the request's n.
+struct Choice {
     std::string content{};
     std::string reasoning{};  // chain of thought, when the server reports it apart
     FinishReason finish = FinishReason::other;
+    std::int64_t completion_tokens = 0;  // this answer's own, reasoning included, when reported
+
+    friend bool operator==(const Choice&, const Choice&) = default;
+};
+
+struct ChatResponse {
+    // The answers, by index: one, or the request's n. A successful call has
+    // every one of them, each finished.
+    std::vector<Choice> choices{};
+    // The call's tokens. The prompt counts once: it was read once and copied
+    // to every choice. Completions are summed over the choices.
     Usage usage{};
     std::string model{};  // as the server names it
     // Measured by the client, from sending the request.
-    std::optional<std::chrono::milliseconds> first_token{};  // first content or reasoning
+    std::optional<std::chrono::milliseconds> first_token{};  // first content or reasoning, of any choice
     std::chrono::milliseconds duration{};
-    // Measured by the server, when it reports them (llama-server's "timings").
+    // Measured by the server, when it reports them (llama-server's "timings"):
+    // the prompt's reading speed, and generation summed over the choices,
+    // which are generated side by side.
     std::optional<double> prompt_tokens_per_second{};
     std::optional<double> generation_tokens_per_second{};
+
+    // The first answer: the only one, unless the request asked for n.
+    [[nodiscard]] const Choice& first() const;
+    [[nodiscard]] Choice& first();
+
+    // The least complete way a choice ended: `length` if any was cut short,
+    // then `content_filter`, then `other`; `stop` only if every choice
+    // stopped. What a single finish reason can say about the whole call.
+    [[nodiscard]] FinishReason least_complete_finish() const noexcept;
 };
 
 // Receives an answer while it is generated (progress, early parsing). Called
-// on the thread that called chat(). Every callback is optional.
+// on the thread that called chat(), with the index of the choice the text
+// belongs to (always 0 unless the request asked for n). Every callback is
+// optional.
 struct StreamSink {
-    std::function<void(std::string_view text)> on_content{};
-    std::function<void(std::string_view text)> on_reasoning{};
-    // What was received so far is void: the call is being tried again, and
-    // the answer will arrive again from its start.
+    std::function<void(std::size_t choice, std::string_view text)> on_content{};
+    std::function<void(std::size_t choice, std::string_view text)> on_reasoning{};
+    // What was received so far is void, for every choice: the call is being
+    // tried again, and the answers will arrive again from their start.
     std::function<void()> on_restart{};
 };
 

@@ -122,12 +122,12 @@ TEST(RuntimeClient, ChatsWithTheEnginesThroughTheRelay) {
     EXPECT_EQ(provider->name(), "runtime");
 
     std::string streamed;
-    const llm::ChatResponse answer =
-        unwrap(provider->chat({.model = "chat", .messages = {llm::Message::user("Say five tokens.")}},
-                              {.on_content = [&](std::string_view text) { streamed += text; }}, {}));
-    EXPECT_EQ(answer.content, "tok0tok1tok2tok3tok4");
-    EXPECT_EQ(streamed, answer.content);
-    EXPECT_EQ(answer.finish, llm::FinishReason::stop);
+    const llm::ChatResponse answer = unwrap(
+        provider->chat({.model = "chat", .messages = {llm::Message::user("Say five tokens.")}},
+                       {.on_content = [&](std::size_t, std::string_view text) { streamed += text; }}, {}));
+    EXPECT_EQ(answer.first().content, "tok0tok1tok2tok3tok4");
+    EXPECT_EQ(streamed, answer.first().content);
+    EXPECT_EQ(answer.first().finish, llm::FinishReason::stop);
     EXPECT_EQ(answer.model, "chat");
     EXPECT_EQ(answer.usage.prompt_tokens, 4) << "16 characters of prompt";
     EXPECT_EQ(answer.usage.completion_tokens, 5);
@@ -138,8 +138,36 @@ TEST(RuntimeClient, ChatsWithTheEnginesThroughTheRelay) {
                                .messages = {llm::Message::user("?")},
                                .extra = {{"reasoning", "Let me think."}, {"reply", "Done."}}},
                               {}, {}));
-    EXPECT_EQ(thought.reasoning, "Let me think.");
-    EXPECT_EQ(thought.content, "Done.");
+    EXPECT_EQ(thought.first().reasoning, "Let me think.");
+    EXPECT_EQ(thought.first().content, "Done.");
+}
+
+// n choices from one request: through the relay, each answer keeps its own
+// text, ending and tokens, and the prompt counts once.
+TEST(RuntimeClient, ManyChoicesComeThroughTheRelay) {
+    const Runtime runtime;
+    const net::HttpClient http;
+    ASSERT_OK(RuntimeClient(http, runtime.endpoint()).wait_until_ready(20s, {}, 50ms));
+    const auto provider = runtime_provider(http, runtime.endpoint());
+
+    std::vector<std::string> streamed(3);
+    const llm::ChatResponse drafts = unwrap(provider->chat(
+        {.model = "chat",
+         .messages = {llm::Message::user("Three drafts.")},
+         .max_tokens = 4,
+         .n = 3,
+         .extra = {{"replies", {"Plain.", "A longer second draft.", "Third"}}}},
+        {.on_content = [&](std::size_t choice, std::string_view text) { streamed.at(choice) += text; }}, {}));
+    ASSERT_EQ(drafts.choices.size(), 3U);
+    EXPECT_EQ(drafts.choices[0],
+              (llm::Choice{.content = "Plain.", .finish = llm::FinishReason::stop, .completion_tokens = 2}));
+    EXPECT_EQ(drafts.choices[1].finish, llm::FinishReason::length) << "cut at max_tokens: 4 pieces";
+    EXPECT_EQ(drafts.choices[1].completion_tokens, 4);
+    EXPECT_EQ(drafts.choices[2].content, "Third");
+    EXPECT_EQ(streamed, (std::vector<std::string>{"Plain.", drafts.choices[1].content, "Third"}));
+    EXPECT_EQ(drafts.usage.prompt_tokens, 3) << "13 characters of prompt, counted once";
+    EXPECT_EQ(drafts.usage.completion_tokens, 2 + 4 + 2);
+    EXPECT_EQ(drafts.least_complete_finish(), llm::FinishReason::length);
 }
 
 TEST(RuntimeClient, FailuresBehindTheRelayKeepTheirMeaning) {
