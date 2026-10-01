@@ -330,6 +330,8 @@ struct Army::Impl {
     }
 
     [[nodiscard]] Result<void> check(const Mission& mission) const;
+    // The rung a mission starts on, as ordered; none when no engine serves its role.
+    [[nodiscard]] std::optional<Rung> first_rung(const Mission& mission) const;
     [[nodiscard]] llm::ChatRequest request_for(const Mission& mission, const Rung& rung) const;
     [[nodiscard]] bool holds(const Mission& mission, const Rung& rung) const;
 
@@ -373,8 +375,8 @@ Result<void> Army::Impl::check(const Mission& mission) const {
     if (mission.kind.empty()) {
         return refuse("it needs a kind");
     }
-    const auto own = by_role.find(mission.role);
-    if (own == by_role.end()) {
+    const std::optional<Rung> first = first_rung(mission);
+    if (!first.has_value()) {
         return refuse(std::format("no engine serves the role '{}'", mission.role));
     }
     const llm::ChatRequest& request = mission.request;
@@ -400,10 +402,7 @@ Result<void> Army::Impl::check(const Mission& mission) const {
     if (request.thinking.value_or(false) && !caps.thinking) {
         return refuse(std::format("it asks to think, and '{}' cannot switch thinking", provider->name()));
     }
-    const Rung first{.step = Step::as_ordered,
-                     .engine = own->second,
-                     .thinking = request.thinking.value_or(false) && caps.thinking};
-    const llm::ChatRequest asked = request_for(mission, first);
+    const llm::ChatRequest asked = request_for(mission, *first);
     if (const auto problems = llm::sampling_problems(asked); !problems.empty()) {
         return refuse(join(problems, "; "));
     }
@@ -415,7 +414,7 @@ Result<void> Army::Impl::check(const Mission& mission) const {
         return std::unexpected(
             std::move(footprint).error().with_context(std::format("mission '{}'", mission.id)));
     }
-    const Engine& engine = options.engines[own->second];
+    const Engine& engine = options.engines[first->engine];
     if (choices_that_fit(engine, *footprint) < 1) {
         return refuse(
             std::format("it needs about {} tokens (a prompt of {}, an answer of up to {}), and '{}' holds "
@@ -424,6 +423,16 @@ Result<void> Army::Impl::check(const Mission& mission) const {
                         engine.model, engine.ctx_per_slot));
     }
     return ok();
+}
+
+std::optional<Rung> Army::Impl::first_rung(const Mission& mission) const {
+    const auto own = by_role.find(mission.role);
+    if (own == by_role.end()) {
+        return std::nullopt;
+    }
+    return Rung{.step = Step::as_ordered,
+                .engine = own->second,
+                .thinking = mission.request.thinking.value_or(false) && caps.thinking};
 }
 
 llm::ChatRequest Army::Impl::request_for(const Mission& mission, const Rung& rung) const {
@@ -824,6 +833,11 @@ std::size_t Army::waiting() const {
 
 std::span<const Engine> Army::engines() const noexcept {
     return impl_->options.engines;
+}
+
+bool Army::holds(const Mission& mission) const {
+    const std::optional<Rung> first = impl_->first_rung(mission);
+    return first.has_value() && impl_->holds(mission, *first);
 }
 
 }  // namespace rr::agents

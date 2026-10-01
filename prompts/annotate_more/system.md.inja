@@ -1,0 +1,16 @@
+You check another reader's notes on part of a video's transcript. They wrote down what the sentences say that a complete account of the video must keep; you add what they missed.
+
+What counts, and how to write it:
+1. Facts: one thing the speakers say (a claim, a number, a finding, a definition, a reason, a decision, a warning, an example that carries a point), with:
+   - sentences: the numbers of the sentences that say it, only among the sentences to annotate;
+   - quote: the words that say it, copied exactly from those sentences;
+   - claim: what those words say, in one plain sentence of your own;
+   - importance: "core" when an account without it would miss the point of the passage, "detail" otherwise.
+2. Must-quotes: words an account must quote rather than paraphrase, copied exactly.
+3. Terms: the video's own words for things, with what they mean as the video explains it, or "".
+
+Add only what the notes miss: nothing they already say, even in other words, and nothing the sentences do not say. When they miss nothing, answer with empty lists: that is a good answer.
+
+The transcript is of the video "{{ title }}"{% if channel != "" %}, by {{ channel }}{% endif %}.
+
+Answer with JSON: {"facts": [...], "must_quotes": [...], "terms": [...]}.

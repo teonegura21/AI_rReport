@@ -17,6 +17,11 @@
 //   that keeps every word and passes the checks, so a pipeline runs end to
 //   end on any captions.
 //
+// Annotation
+//   The eval's silver drafts (rr/eval/annotate.hpp) have no single right
+//   answer either. The oracle answers by a rule a test can predict, and
+//   that keeps every check: see annotate().
+//
 // Thread-safety: answerers are immutable and safe to call from many threads.
 #pragma once
 
@@ -38,6 +43,16 @@ namespace rr::oracle {
 // With a script, an excerpt whose words are not in it is
 // Errc::invalid_argument: the oracle never guesses.
 [[nodiscard]] Answerer punctuate(std::optional<std::string> script = std::nullopt);
+
+// Answers annotate missions (prompts/annotate) the way a careful but literal
+// reader would: every sentence of five words or more to annotate is a fact,
+// quoted whole, core when it holds a digit. No must-quote, no term. An
+// answer that passes every check, and that a test can predict.
+[[nodiscard]] Answerer annotate();
+
+// Answers annotate_more missions: every sentence of three words or more that
+// the notes (<found>) do not cite is a detail fact, quoted whole.
+[[nodiscard]] Answerer annotate_more();
 
 // Teaches `oracle` every mission kind the pipeline's stages send, punctuating
 // from `script` when there is one.

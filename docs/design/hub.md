@@ -23,7 +23,10 @@
 |---|---|---|
 | `ingest SOURCE [--tier] [--salt]` | A new job for a video's address or a caption file, through the stages so far ([pipeline.md](pipeline.md#the-commands)) | 0 the job is done; 1 it is not (failed, stopped, needing you) |
 | `resume JOB` | The job taken up again where it stopped | as `ingest` |
-| `jobs [--limit N]`, `jobs show JOB` | The library's jobs, newest first; one job's stages and findings | 0; 1 on failure |
+| `jobs [--limit N]`, `jobs show JOB` | The library's jobs, newest first, with their kind; one job's stages and findings | 0; 1 on failure |
+| `eval fetch [ID…] [--again]` | Each video of the eval set read once through the source stage and kept with the eval, pinned by hash ([eval.md](eval.md#the-commands)) | 0; 1 when a video could not be fetched |
+| `eval annotate [ID…] [--replace]` | Each video's gold annotation drafted by the pod's models, as silver, for a person to correct (runbook R2) | as `ingest`, per video |
+| `eval sheet ID [--out FILE]` | The sheet a person corrects a gold file with: each fact beside its moment, and what to correct | 0; 1 when the snapshot or gold file is missing or broken |
 | `doctor` | Checks the data directory, the library, the capture tools, RunPod and the runtime, says where model calls go (`models`), and what to do about each problem | 0 no failures (warnings allowed); 1 a failure |
 | `bench [options]` | Starts the pod if it is stopped, waits for its engines, and measures them (see below) | 0; 1 on failure |
 | `pod status` | The pod as RunPod reports it; then, from the runtime, its profile, its GPUs (VRAM total and used) and each engine's state | 0; 1 on failure |

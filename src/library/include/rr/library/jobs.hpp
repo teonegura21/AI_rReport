@@ -7,6 +7,11 @@
 //   (migrations/0004_pipeline.sql). Its stages' results are kept apart, as
 //   artifacts (rr/library/stage_store.hpp): a job holds where it stands.
 //
+//   A job makes an article (`rreport ingest`), or the eval's annotation of a
+//   video (`rreport eval annotate`, rr/eval/annotate.hpp): each takes its
+//   source through stages of its own, so a job is taken up again only by
+//   the command that runs its kind's stages (migrations/0005_job_kind.sql).
+//
 //   A job's status says what happens next:
 //     running      its stages are under way (or the hub died while they
 //                  were: `resume` continues it)
@@ -47,6 +52,15 @@ enum class JobStatus : std::uint8_t {
 // The inverse of to_string(); none for anything else.
 [[nodiscard]] std::optional<JobStatus> job_status_from_string(std::string_view name) noexcept;
 
+enum class JobKind : std::uint8_t {
+    article,     // a video, through the article's stages (rreport ingest)
+    annotation,  // an eval snapshot, through the annotation's (rreport eval annotate)
+};
+
+[[nodiscard]] std::string_view to_string(JobKind kind) noexcept;
+// The inverse of to_string(); none for anything else.
+[[nodiscard]] std::optional<JobKind> job_kind_from_string(std::string_view name) noexcept;
+
 struct Job {
     std::string id{};      // a ULID
     std::string source{};  // a web address, or a caption file's path
@@ -58,6 +72,7 @@ struct Job {
     std::chrono::milliseconds elapsed{};  // time spent running, across resumes
     std::chrono::system_clock::time_point created_at{};
     std::chrono::system_clock::time_point updated_at{};
+    JobKind kind = JobKind::article;
 
     friend bool operator==(const Job&, const Job&) = default;
 };
@@ -68,8 +83,10 @@ public:
     // `clock` must outlive this.
     Jobs(db::Database& database, const Clock& clock);
 
-    // A new job, running, with a new ID: later than every ID this Jobs gave.
-    [[nodiscard]] Result<Job> create(std::string source, std::string tier, std::int64_t salt);
+    // A new job of `kind`, running, with a new ID: later than every ID this
+    // Jobs gave.
+    [[nodiscard]] Result<Job> create(std::string source, std::string tier, std::int64_t salt,
+                                     JobKind kind = JobKind::article);
 
     // The job `id`; Errc::not_found when there is none.
     [[nodiscard]] Result<Job> find(std::string_view id) const;

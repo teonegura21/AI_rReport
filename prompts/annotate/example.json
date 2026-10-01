@@ -1,0 +1,7 @@
+{
+  "shared": {"title": "How bridges stand up", "channel": "Engineering Hour"},
+  "orders": [
+    {"before": "", "sentences": "S1 [0:00] Welcome back.\nS2 [0:03] Today we load a bridge until it breaks.", "after": "S3 [0:08] First, the tools."},
+    {"before": "S11 [1:40] Now the arch.", "sentences": "S12 [1:44] The Romans had no steel, so every bridge they built is an arch.\nS13 [1:51] An arch only ever pushes.", "after": ""}
+  ]
+}

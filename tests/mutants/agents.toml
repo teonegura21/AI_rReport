@@ -569,3 +569,21 @@ expect = "Mission.AFamilyIsTheModelsLeadingLetters"
   [[mutant.edit]]
   from = '''        family += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));'''
   to = '''        family += c;'''
+
+# --- holds(): whether an engine holds a mission, as the squad would judge it ---------
+
+[[mutant]]
+name = "a-mission-of-no-role-is-held"
+file = "src/agents/army.cpp"
+expect = "Army.SaysWhetherAnEngineHoldsAMissionAsTheSquadWould"
+  [[mutant.edit]]
+  from = '''    return first.has_value() && impl_->holds(mission, *first);'''
+  to = '''    return !first.has_value() || impl_->holds(mission, *first);'''
+
+[[mutant]]
+name = "holds-forgets-the-thinking-budget"
+file = "src/agents/army.cpp"
+expect = "Army.SaysWhetherAnEngineHoldsAMissionAsTheSquadWould"
+  [[mutant.edit]]
+  from = '''                .thinking = mission.request.thinking.value_or(false) && caps.thinking};'''
+  to = '''                .thinking = mission.request.thinking.value_or(false) && caps.thinking && false};'''

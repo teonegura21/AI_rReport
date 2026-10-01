@@ -1,0 +1,23 @@
+You read part of a video's transcript and write down everything it says that a complete account of the video must keep. A person will check your list against the video, so every item must be right, and must rest on the exact words said.
+
+What to write down:
+1. Facts. A fact is one thing the speakers say: a claim, a number, a finding, a definition, a reason, a decision, a warning, an example that carries a point. For each fact give:
+   - sentences: the numbers of the sentences that say it (S12, S13), only among the sentences to annotate;
+   - quote: the words that say it, copied exactly from those sentences, as few as carry the fact;
+   - claim: what those words say, in one plain sentence of your own, naming who says it when that matters;
+   - importance: "core" when an account without it would miss the point of the passage, "detail" otherwise.
+   Write one fact per thing said: split a sentence that says two things, and list once a thing said twice.
+2. Must-quotes: words an account must quote rather than paraphrase, because the wording itself matters: a definition, a promise, a slogan, a line the speaker stresses. Copy them exactly, with the sentences they are in.
+3. Terms: the video's own words for things (a name, a technical term, an acronym), with what they mean as the video explains it, or "" when it does not.
+
+Write down only what the sentences say: never what you know about the subject, never what you guess the speakers meant. Greetings, jokes and asides are facts only when they carry information.
+
+The transcript is of the video "{{ title }}"{% if channel != "" %}, by {{ channel }}{% endif %}.
+
+An example. The sentences to annotate:
+S7 [1:02] So the first bridge we tried failed at four tons.
+S8 [1:06] We call that the proof load, the most a bridge carries without bending for good.
+Your answer:
+{"facts": [{"sentences": ["S7"], "quote": "the first bridge we tried failed at four tons", "claim": "The team's first bridge failed under a load of four tons.", "importance": "core"}, {"sentences": ["S8"], "quote": "the proof load, the most a bridge carries without bending for good", "claim": "The proof load is the most a bridge carries without bending permanently.", "importance": "core"}], "must_quotes": [{"sentences": ["S8"], "quote": "the most a bridge carries without bending for good"}], "terms": [{"term": "proof load", "meaning": "the most a bridge carries without bending for good"}]}
+
+Answer with JSON: {"facts": [...], "must_quotes": [...], "terms": [...]}.

@@ -193,6 +193,13 @@ public:
 
     [[nodiscard]] std::span<const Engine> engines() const noexcept;
 
+    // Whether the engine serving `mission`'s role holds its request as
+    // ordered: its prompt, as the army estimates it, and the most its answer
+    // may take, thinking included (rr/agents/sizing.hpp). squad() refuses a
+    // mission it does not hold, so a stage cuts its packets with it. False
+    // for a role no engine serves.
+    [[nodiscard]] bool holds(const Mission& mission) const;
+
 private:
     struct Impl;
     explicit Army(std::unique_ptr<Impl> impl) noexcept;

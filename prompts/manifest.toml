@@ -15,7 +15,8 @@
 #     note = "first version"
 #
 # The prompts arrive with their stages: punctuate with the transcript (plan
-# P15); outline, atomize, plan and write with theirs (P17–P20).
+# P15); annotate and annotate_more with the eval's silver drafts (P16);
+# outline, atomize, plan and write with theirs (P17–P20).
 
 [[prompt]]
 name = "punctuate"
@@ -30,4 +31,34 @@ failure_modes = [
   [[prompt.version]]
   number = 1
   hash = "b0d3c51c1d85cc936efac563ac75104ea7f0ec4399cc139685c9a6bf4bd2ad91"
+  note = "first version"
+
+[[prompt]]
+name = "annotate"
+purpose = "Write down what a window of a transcript says that a complete account must keep (facts, must-quotes, terms), each resting on cited sentences and their exact words: the eval's silver draft (rr/eval/annotate.hpp)."
+schema = "schemas/missions/annotate.json"
+shared = ["title", "channel"]
+failure_modes = [
+  "quotes in its own words instead of the sentences': the check sends it back",
+  "cites a sentence of the context, outside the window",
+  "adds what it knows of the subject instead of what was said",
+  "one fact per sentence, where a sentence says two things",
+]
+  [[prompt.version]]
+  number = 1
+  hash = "86a1db526891aecb2ed05c3e69d0f3928968739e4a903a211c72e6b050705e8d"
+  note = "first version"
+
+[[prompt]]
+name = "annotate_more"
+purpose = "Add what another family's notes on a window missed: the second reader of the eval's silver draft (rr/eval/annotate.hpp)."
+schema = "schemas/missions/annotate.json"
+shared = ["title", "channel"]
+failure_modes = [
+  "repeats the notes in other words instead of adding",
+  "adds facts the sentences do not say, to have something to add",
+]
+  [[prompt.version]]
+  number = 1
+  hash = "d37b22e6e28cc5d84b918e0d7fe954eba807ad86faea8fed571080cbc048986f"
   note = "first version"

@@ -1,0 +1,33 @@
+# Mutants of rr_library's jobs: each removes one rule of keeping what a job
+# makes, and names the test that must fail without it. (The stage store's
+# rules are in pipeline.toml, whose tests commit through it.)
+# Run: scripts/mutate.py tests/mutants/library.toml
+# What they found is in docs/design/eval.md, "How the tests were validated".
+
+target = "rr_library_tests"
+binary = "build/dev/tests/unit/library/rr_library_tests"
+timeout = 60
+
+[[mutant]]
+name = "a-job-is-read-as-an-article"
+file = "src/library/jobs.cpp"
+expect = "JobsTest.AJobSaysWhatItMakes"
+  [[mutant.edit]]
+  from = '''               .kind = *made};'''
+  to = '''               .kind = made.has_value() ? JobKind::article : JobKind::annotation};'''
+
+[[mutant]]
+name = "a-job-is-written-as-an-article"
+file = "src/library/jobs.cpp"
+expect = "JobsTest.AJobSaysWhatItMakes"
+  [[mutant.edit]]
+  from = '''             to_string(job.kind)}));'''
+  to = '''             to_string(JobKind::article)}));'''
+
+[[mutant]]
+name = "a-kind-is-named-by-another"
+file = "src/library/jobs.cpp"
+expect = "JobKind.NamesItsKinds"
+  [[mutant.edit]]
+  from = '''    {JobKind::annotation, "annotation"},'''
+  to = '''    {JobKind::annotation, "article"},'''

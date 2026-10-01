@@ -27,6 +27,9 @@
 //     The rule every fault is tested against: it ends repaired, or published
 //     as a finding; never silently in the article.
 //
+//   * RequestLog, which keeps every request a provider is sent: what a test
+//     reads to check what a stage asked, and how.
+//
 // Thread-safety: chat() is safe from many threads. Teach the oracle before
 //   its first call.
 #pragma once
@@ -132,6 +135,27 @@ private:
     mutable std::mutex mutex_;                                         // guards the counts and the record
     mutable std::map<std::pair<std::size_t, std::string>, int> hits_;  // (fault, mission) → calls hit
     mutable std::vector<Injection> injected_;
+};
+
+// Passes every call on to `inner`, and keeps its request: what a test reads
+// to check what a stage asked.
+class RequestLog final : public llm::LlmProvider {
+public:
+    // `inner` must outlive the log.
+    explicit RequestLog(const llm::LlmProvider& inner) : inner_(&inner) {}
+
+    [[nodiscard]] std::string_view name() const noexcept override { return inner_->name(); }
+    [[nodiscard]] llm::ProviderCaps caps() const noexcept override { return inner_->caps(); }
+    [[nodiscard]] Result<llm::ChatResponse> chat(const llm::ChatRequest& request, const llm::StreamSink& sink,
+                                                 const std::stop_token& stop) const override;
+
+    // Every request so far, in the order they came.
+    [[nodiscard]] std::vector<llm::ChatRequest> requests() const;
+
+private:
+    const llm::LlmProvider* inner_;
+    mutable std::mutex mutex_;  // guards requests_
+    mutable std::vector<llm::ChatRequest> requests_;
 };
 
 }  // namespace rr::oracle

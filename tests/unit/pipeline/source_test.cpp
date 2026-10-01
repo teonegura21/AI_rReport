@@ -150,6 +150,18 @@ TEST_F(SourceTest, ACaptionFileIsKeyedByItsNameAndItsBytes) {
         << "nothing is known of who wrote them, nor in what language";
 }
 
+TEST_F(SourceTest, ASavedSourceIsKeptAsItIs) {
+    const FakeYtDlp fake{kInfo};
+    const json::Json fetched = unwrap(run(SourceStage{fake.ytdlp()}, std::string{kUrl})).artifact;
+    const std::filesystem::path saved = dir().write_file("on-radium.source.json", json::dump_pretty(fetched));
+    const json::Json read = unwrap(run(SourceStage{}, saved.string())).artifact;
+    EXPECT_EQ(read, fetched) << "the stages after it run as they would on the video";
+    EXPECT_EQ(json::content_hash(read), json::content_hash(fetched));
+
+    const std::filesystem::path broken = dir().write_file("broken.source.json", R"({"origin": "web"})");
+    EXPECT_ERRC(run(SourceStage{}, broken.string()), Errc::invalid_argument) << "a saved source must be one";
+}
+
 TEST_F(SourceTest, AFileMustSayItsFormatAndBeThere) {
     const SourceStage stage;
     const std::filesystem::path notes = dir().write_file("notes.md", "Radium glows.");

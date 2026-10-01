@@ -156,6 +156,8 @@ The rules, per engine:
 
 **Slots, then tokens, always in that order.** A request takes its slots, then its share of the pool, and holds both only while its call runs. Nobody holding tokens ever waits for anything, so the two waits cannot deadlock. Both waits are by priority, then first come, first served (`rr::Limiter`).
 
+**A stage asks whether a mission fits, rather than predicting it.** `Army::holds(mission)` applies the squad's own test to the mission as ordered: its engine's presets, its thinking budget and closing words when it thinks, the estimator. A squad refuses a mission that does not fit (`Errc::invalid_argument`, "split its packet") before any runs, so a stage that cuts its packets by an estimate of its own would fail every mission of the squad on the one it got wrong. The eval's `annotate` stage fills each window to a size, then gives up sentences until `holds()` says yes ([eval.md](eval.md#silver-drafted-by-models)). A test pins it at the exact token where a mission stops fitting, with and without thinking.
+
 Images are refused for now (`Errc::unsupported`): their tokens cannot be estimated from a request. The pipeline reads captions (plan M1); images come with the visual stages.
 
 ## Battalions: every engine busy, nobody waiting for anybody

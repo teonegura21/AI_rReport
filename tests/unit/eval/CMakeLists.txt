@@ -1,0 +1,14 @@
+rr_add_test_suite(eval
+    SOURCES
+        annotate_stage_test.cpp
+        annotate_test.cpp
+        gold_test.cpp
+        set_test.cpp
+        sheet_test.cpp
+        snapshot_test.cpp
+    DEPS
+        rr::eval
+        rr::library
+        rr::llm
+        rr::oracle
+        rr::prompt)

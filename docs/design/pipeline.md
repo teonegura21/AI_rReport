@@ -1,13 +1,13 @@
 # The pipeline: jobs, stages, and the stage cache
 
-A **job** takes one video through the **stages**: today `source` and `transcript`, then `outline`, `atomize`, `plan` and `write` as they land (P17–P20). Each stage turns the artifacts of the stages before it into one artifact of its own, an immutable JSON document that follows its schema (ADR-0004). This note is about what runs them, `rr_pipeline`, and the first two stages.
+A **job** takes one video through the **stages**: today `source` and `transcript`, then `outline`, `atomize`, `plan` and `write` as they land (P17–P20). The eval's annotation jobs run `source`, `transcript` and `annotate` ([eval.md](eval.md#silver-drafted-by-models)). Each stage turns the artifacts of the stages before it into one artifact of its own, an immutable JSON document that follows its schema (ADR-0004). This note is about what runs them, `rr_pipeline`, and the first two stages.
 
 | Piece | Where | What |
 |---|---|---|
 | `Stage` | `rr/pipeline/stage.hpp` | What a stage reads and makes, its version, its schema, its fingerprint; the cache key |
 | `Executor` | `rr/pipeline/executor.hpp` | Each stage of a job found done or run, checked, committed |
 | `run_job()` | `rr/pipeline/job_run.hpp` | A job taken through the executor and saved: running, done, stopped, needs_user, failed |
-| `Jobs`, `StageStore` | `rr/library/` | The jobs table; artifacts, the stage cache and each job's runs (`migrations/0004_pipeline.sql`) |
+| `Jobs`, `StageStore` | `rr/library/` | The jobs table, each job of a kind: an article, or the eval's annotation (`migrations/0005_job_kind.sql`); artifacts, the stage cache and each job's runs (`migrations/0004_pipeline.sql`) |
 | `JobArmy` | `rr/hub/job_army.hpp` | A job's army, raised the first time a stage needs a model |
 | `SourceStage` | `rr/pipeline/source.hpp` | A video (through yt-dlp) or a caption file, read once |
 | `TranscriptStage` | `rr/pipeline/transcript_stage.hpp` | Captions into numbered sentences; punctuated by the infantry when they are not |
@@ -83,6 +83,7 @@ The source stage reads what the user gave `rreport ingest`, once, into the `sour
 |---|---|---|
 | a web address (`http://`, `https://`) | yt-dlp: the description, then the captions in the language spoken ([transcript.md](transcript.md#which-captions)) | the address |
 | anything else: a caption file | its bytes; its name says the format (`.vtt`, `.srt`, `.json3`, `.txt`) and, without the extension, the title | its name and the BLAKE3 of its bytes |
+| a file named `*.source.json`: a source read earlier and saved whole, such as an eval snapshot ([eval.md](eval.md#snapshots)) | its bytes, checked against the source schema and kept as they are, so the stages after it run as they would on what it was read from | as any file |
 
 - **A video is read once per library.** A second job for the same address finds the first one's source. Two addresses of one video (`youtu.be`, `youtube.com`) are fetched once each, but their artifacts are equal: the artifact keeps the video's own address, not the one given. So the keys of every stage after them are equal too.
 - **A file is read by content.** An edited file is read again; a copy under the same name, anywhere, is not. The job keeps the file's absolute path, so it can be resumed from any directory.
@@ -134,8 +135,8 @@ The oracle answers `punctuate` missions from the script a synthetic video was re
 | Command | What |
 |---|---|
 | `rreport ingest SOURCE [--tier T] [--salt N]` | a new job for a web address or a caption file; `--tier` is checked before a job is made |
-| `rreport resume JOB` | the job taken up again where it stopped; a done job says so |
-| `rreport jobs [--limit N]` | the library's jobs, newest first |
+| `rreport resume JOB` | the job taken up again where it stopped; a done job says so. An eval annotation is refused: `rreport eval annotate` takes it up, with its own stages |
+| `rreport jobs [--limit N]` | the library's jobs, newest first, each with its kind: `article` or `annotation` |
 | `rreport jobs show JOB` | the job, and each stage: done, found done or failed, with its artifact or its error, and what it could not do |
 
 Each stage says how it is doing on stderr. At the end, the command says what the stages could not do, then where the job stands and what to do next. The exit code is 0 for a job done and 1 for one that is not; a job stopped by a signal exits 128 + its number.

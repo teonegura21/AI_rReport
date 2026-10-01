@@ -16,8 +16,6 @@ namespace rr::oracle {
 
 namespace {
 
-constexpr std::string_view kOpen = "<excerpt>\n";
-constexpr std::string_view kClose = "\n</excerpt>";
 constexpr std::size_t kWordsPerSentence = 12;
 
 std::vector<std::string> words_of(std::string_view text) {
@@ -90,20 +88,94 @@ std::string every_few(std::vector<std::string> words) {
     return answer(joined(words, 0, words.size()));
 }
 
+// What the last message holding "<tag>\n" … "\n</tag>" holds there.
+Result<std::string> block_in(const llm::ChatRequest& request, std::string_view tag) {
+    const std::string open = std::format("<{}>\n", tag);
+    const std::string close = std::format("\n</{}>", tag);
+    for (const llm::Message& message : std::views::reverse(request.messages)) {
+        const std::string text = message.text();
+        const std::size_t at = text.find(open);
+        const std::size_t end = at == std::string::npos ? at : text.find(close, at + open.size());
+        if (end != std::string::npos) {
+            return text.substr(at + open.size(), end - at - open.size());
+        }
+    }
+    return fail(Errc::invalid_argument, std::format("no message of the mission holds <{}>", tag));
+}
+
+// A sentence as the annotate prompts show it: "S12 [3:04] What was said."
+struct Said {
+    std::string id;
+    std::string text;
+};
+
+std::vector<Said> said_in(std::string_view lines) {
+    std::vector<Said> sentences;
+    std::size_t at = 0;
+    while (at < lines.size()) {
+        const std::size_t end = std::min(lines.find('\n', at), lines.size());
+        const std::string_view line = lines.substr(at, end - at);
+        const std::size_t space = line.find(' ');
+        const std::size_t text = line.find("] ");
+        if (space != std::string_view::npos && text != std::string_view::npos) {
+            sentences.push_back(
+                Said{.id = std::string{line.substr(0, space)}, .text = std::string{line.substr(text + 2)}});
+        }
+        at = end + 1;
+    }
+    return sentences;
+}
+
+json::Json fact(const Said& sentence, std::string_view importance) {
+    return json::Json{{"sentences", json::Json::array({sentence.id})},
+                      {"quote", sentence.text},
+                      {"claim", sentence.text},
+                      {"importance", std::string{importance}}};
+}
+
+std::string annotation(json::Json facts) {
+    return json::dump(json::Json{
+        {"facts", std::move(facts)}, {"must_quotes", json::Json::array()}, {"terms", json::Json::array()}});
+}
+
 }  // namespace
+
+Answerer annotate() {
+    return [](const llm::ChatRequest& request) -> Result<std::string> {
+        RR_TRY_ASSIGN(const std::string lines, block_in(request, "sentences"));
+        json::Json facts = json::Json::array();
+        for (const Said& sentence : said_in(lines)) {
+            if (words_of(sentence.text).size() >= 5) {
+                const bool number = sentence.text.find_first_of("0123456789") != std::string::npos;
+                facts.push_back(fact(sentence, number ? "core" : "detail"));
+            }
+        }
+        return annotation(std::move(facts));
+    };
+}
+
+Answerer annotate_more() {
+    return [](const llm::ChatRequest& request) -> Result<std::string> {
+        RR_TRY_ASSIGN(const std::string lines, block_in(request, "sentences"));
+        RR_TRY_ASSIGN(const std::string found, block_in(request, "found"));
+        json::Json facts = json::Json::array();
+        for (const Said& sentence : said_in(lines)) {
+            // The notes cite sentences as "[S12, S13]": a sentence is noted
+            // when its id is there, followed by "]" or ",".
+            const bool noted = found.find(sentence.id + "]") != std::string::npos ||
+                               found.find(sentence.id + ",") != std::string::npos;
+            if (!noted && words_of(sentence.text).size() >= 3) {
+                facts.push_back(fact(sentence, "detail"));
+            }
+        }
+        return annotation(std::move(facts));
+    };
+}
 
 Result<std::string> excerpt_in(const llm::ChatRequest& request) {
     // A repair's conversation ends with its instruction: the excerpt is in
     // the order's message, before it.
-    for (const llm::Message& message : std::views::reverse(request.messages)) {
-        const std::string text = message.text();
-        const std::size_t open = text.find(kOpen);
-        const std::size_t close = open == std::string::npos ? open : text.find(kClose, open + kOpen.size());
-        if (close != std::string::npos) {
-            return text.substr(open + kOpen.size(), close - open - kOpen.size());
-        }
-    }
-    return fail(Errc::invalid_argument, "no message of the punctuate mission holds an <excerpt>");
+    return block_in(request, "excerpt");
 }
 
 Answerer punctuate(std::optional<std::string> script) {
@@ -127,6 +199,8 @@ Answerer punctuate(std::optional<std::string> script) {
 
 void teach_stages(Oracle& oracle, std::optional<std::string> script) {
     oracle.teach("punctuate", punctuate(std::move(script)));
+    oracle.teach("annotate", annotate());
+    oracle.teach("annotate_more", annotate_more());
 }
 
 }  // namespace rr::oracle

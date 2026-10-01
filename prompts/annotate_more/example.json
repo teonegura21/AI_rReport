@@ -1,0 +1,7 @@
+{
+  "shared": {"title": "How bridges stand up", "channel": ""},
+  "orders": [
+    {"before": "", "sentences": "S12 [1:44] The Romans had no steel, so every bridge they built is an arch.\nS13 [1:51] An arch only ever pushes.", "after": "", "found": "- [S12] The Romans built every bridge as an arch, having no steel."},
+    {"before": "S1 [0:00] Welcome back.", "sentences": "S2 [0:03] Today we load a bridge until it breaks.", "after": "", "found": "(none)"}
+  ]
+}

@@ -33,6 +33,7 @@ if(RR_BUILD_HUB)
     add_subdirectory(reason)    # many answers, one decision: votes, waves, judgements; the tiers
     add_subdirectory(library)   # a library's database: schema and repositories
     add_subdirectory(pipeline)  # a job's stages, run or found done, and kept; source and transcript
+    add_subdirectory(eval)      # the eval's data: sets, snapshots, gold annotations, the review sheet
     add_subdirectory(runtime_client)  # the pod, seen from the hub
     add_subdirectory(hub)             # the hub's configuration, doctor and bench
 endif()

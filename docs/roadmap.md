@@ -31,8 +31,8 @@ The work is cut into thirty phases, each one commit that builds, passes CI and i
 | P12 | `rr_knowledge`: the knowledge model's types, artifact schemas, the `[A#]` marker parser, fuzzed ([knowledge.md](design/knowledge.md)) | done: `d32213c` |
 | P13 | `rr_fidelity`: the deterministic ledger checks, each with a repair message; the oracle's faults caught ([fidelity.md](design/fidelity.md)) | done: `3f78d77` |
 | P14 | `rr_media`, `rr_transcript`: captions → `S#` sentences with timings; auto captions re-punctuated by projection ([transcript.md](design/transcript.md)) | done: `3574dbf` |
-| P15 | `rr_pipeline`: stages, the executor, the stage cache; the stages `source` and `transcript`, with the first prompt, `punctuate`; `rreport ingest / resume / jobs` ([pipeline.md](design/pipeline.md)) | this commit |
-| P16 | Eval data: `eval fetch` (snapshots), `eval annotate` (silver) → **runbook R2** | |
+| P15 | `rr_pipeline`: stages, the executor, the stage cache; the stages `source` and `transcript`, with the first prompt, `punctuate`; `rreport ingest / resume / jobs` ([pipeline.md](design/pipeline.md)) | done: `9d1b971` |
+| P16 | `rr_eval`: the set, snapshots (`eval fetch`), gold anchored to the timeline, silver drafted by the `annotate` stage (`eval annotate`), the review sheet (`eval sheet`) ([eval.md](design/eval.md)) → **runbook R2** | this commit |
 | **4. The vertical slice** | | |
 | P17–P20 | The stages `outline`, `atomize`, `plan`, `write` (with seams): prompt, schema, stage, oracle support, fault tests | |
 | P21 | `rr_report`, `rreport report`: the HTML article | |

@@ -220,3 +220,45 @@ expect = "OracleAnswers.WithoutAScriptASentenceEndsEveryTwelveWords"
   [[mutant.edit]]
   from = '''        if ((index + 1) % kWordsPerSentence == 0 || index + 1 == words.size()) {'''
   to = '''        if ((index + 1) % kWordsPerSentence == 0) {'''
+
+# --- The annotation answers, and the request log -------------------------------------
+
+[[mutant]]
+name = "annotate-notes-short-sentences"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AnnotateNotesEachSentenceOfFiveWordsOrMore"
+  [[mutant.edit]]
+  from = '''            if (words_of(sentence.text).size() >= 5) {'''
+  to = '''            if (words_of(sentence.text).size() >= 3) {'''
+
+[[mutant]]
+name = "annotate-never-calls-a-fact-core"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AnnotateNotesEachSentenceOfFiveWordsOrMore"
+  [[mutant.edit]]
+  from = '''                const bool number = sentence.text.find_first_of("0123456789") != std::string::npos;'''
+  to = '''                const bool number = sentence.text.find_first_of("0123456789") == std::string::npos;'''
+
+[[mutant]]
+name = "a-note-ending-its-list-cites-nothing"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AnnotateMoreAddsTheSentencesTheNotesDoNotCite"
+  [[mutant.edit]]
+  from = '''            const bool noted = found.find(sentence.id + "]") != std::string::npos ||'''
+  to = '''            const bool noted = false ||'''
+
+[[mutant]]
+name = "a-note-leading-its-list-cites-nothing"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AnnotateMoreAddsTheSentencesTheNotesDoNotCite"
+  [[mutant.edit]]
+  from = '''                               found.find(sentence.id + ",") != std::string::npos;'''
+  to = '''                               false;'''
+
+[[mutant]]
+name = "the-request-log-keeps-nothing"
+file = "tests/oracle/oracle.cpp"
+expect = "RequestLog.KeepsEveryRequestItPassesOn"
+  [[mutant.edit]]
+  from = '''        requests_.push_back(request);'''
+  to = '''        (void)request;'''

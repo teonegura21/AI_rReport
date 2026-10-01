@@ -68,6 +68,23 @@ TEST_F(JobsTest, AJobNeverCreatedIsNotFound) {
     EXPECT_EQ(jobs().save(Job{.id = "nope"}).error().code(), Errc::not_found);
 }
 
+TEST_F(JobsTest, AJobSaysWhatItMakes) {
+    const Job article = unwrap(jobs().create("talk.vtt", "max", 0));
+    EXPECT_EQ(article.kind, JobKind::article) << "what ingest makes";
+    const Job annotation = unwrap(jobs().create("eval/data/x/x.source.json", "max", 0, JobKind::annotation));
+    EXPECT_EQ(unwrap(jobs().find(annotation.id)).kind, JobKind::annotation);
+    EXPECT_EQ(unwrap(jobs().recent(1)).front().kind, JobKind::annotation);
+    EXPECT_EQ(unwrap(jobs().find(article.id)).kind, JobKind::article);
+}
+
+TEST(JobKind, NamesItsKinds) {
+    for (const JobKind kind : {JobKind::article, JobKind::annotation}) {
+        EXPECT_EQ(job_kind_from_string(to_string(kind)), kind);
+    }
+    EXPECT_EQ(to_string(JobKind::annotation), "annotation");
+    EXPECT_EQ(job_kind_from_string("report"), std::nullopt);
+}
+
 TEST(JobStatus, NamesItsStatuses) {
     for (const JobStatus status : {JobStatus::running, JobStatus::done, JobStatus::failed,
                                    JobStatus::needs_user, JobStatus::stopped}) {

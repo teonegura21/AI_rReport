@@ -220,4 +220,18 @@ std::vector<Injection> FaultyProvider::injected() const {
     return injected_;
 }
 
+Result<llm::ChatResponse> RequestLog::chat(const llm::ChatRequest& request, const llm::StreamSink& sink,
+                                           const std::stop_token& stop) const {
+    {
+        const std::lock_guard lock(mutex_);
+        requests_.push_back(request);
+    }
+    return inner_->chat(request, sink, stop);
+}
+
+std::vector<llm::ChatRequest> RequestLog::requests() const {
+    const std::lock_guard lock(mutex_);
+    return requests_;
+}
+
 }  // namespace rr::oracle

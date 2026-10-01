@@ -112,14 +112,18 @@ Result<StageOutput> from_web(const media::YtDlp& ytdlp, const StageContext& cont
     return StageOutput{.artifact = to_json(source)};
 }
 
+// A source read earlier and saved whole: an eval's snapshot (rr/eval/snapshot.hpp).
+constexpr std::string_view kSavedSource = ".source.json";
+
 Result<StageOutput> from_file(const StageContext& context, const std::filesystem::path& path) {
-    const std::optional<transcript::CaptionFormat> format = transcript::format_of(path.filename().string());
-    if (!format.has_value()) {
-        return fail(
-            Errc::invalid_argument,
-            std::format("cannot tell the captions' format from the name '{}': name the file .vtt, .srt, "
-                        ".json3 or .txt",
-                        path.filename().string()));
+    const std::string name = path.filename().string();
+    const bool saved = name.ends_with(kSavedSource);
+    const std::optional<transcript::CaptionFormat> format = transcript::format_of(name);
+    if (!saved && !format.has_value()) {
+        return fail(Errc::invalid_argument,
+                    std::format("cannot tell the captions' format from the name '{}': name the file .vtt, .srt, "
+                                ".json3 or .txt, or *.source.json for a source saved earlier",
+                                name));
     }
     RR_TRY_ASSIGN(std::string content, read_file(path));
     if (blake3(content).hex() != context.fingerprint.at("content").get<std::string>()) {
@@ -127,6 +131,12 @@ Result<StageOutput> from_file(const StageContext& context, const std::filesystem
                     std::format("'{}' changed while it was being read: ingest it again once it is "
                                 "written",
                                 path.string()));
+    }
+    if (saved) {
+        // Kept as it is, once checked: its stages run as they would on what it was read from.
+        RR_TRY_ASSIGN(json::Json document, json::parse(content));
+        RR_TRY(source_from_json(document));
+        return StageOutput{.artifact = std::move(document)};
     }
     std::string title = path.stem().string();
     if (title.empty()) {

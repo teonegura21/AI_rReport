@@ -1,0 +1,19 @@
+{% if before != "" %}
+Before them, for context only (do not annotate these):
+{{ before }}
+
+{% endif %}
+The sentences to annotate:
+<sentences>
+{{ sentences }}
+</sentences>
+{% if after != "" %}
+
+After them, for context only (do not annotate these):
+{{ after }}
+{% endif %}
+
+The other reader's notes on them:
+<found>
+{{ found }}
+</found>

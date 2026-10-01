@@ -9,7 +9,8 @@ rr_add_embedded_library(library_migrations
         migrations/0001_accounting.sql
         migrations/0002_call_memo.sql
         migrations/0003_missions.sql
-        migrations/0004_pipeline.sql)
+        migrations/0004_pipeline.sql
+        migrations/0005_job_kind.sql)
 
 rr_add_module(library
     SOURCES

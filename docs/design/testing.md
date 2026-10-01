@@ -24,6 +24,7 @@ rReport's promise is an article that is faithful to the video: every sentence ac
 | `KeyedProvider` | A model that answers by what a request asks; it can hold a model's calls, to count how many run at once | `tests/unit/agents/` | the army: squads arrive in any order |
 | `Oracle` | A model that answers every mission right | `tests/oracle/` | L3 |
 | `FaultyProvider` | The mistakes models make, where a test says | `tests/oracle/` | L3 |
+| `RequestLog` | A provider that keeps every request it passes on, for a test to read what a stage asked | `tests/oracle/` | the stages' tests |
 | `FakeClock` | Time | `rr/core/clock.hpp` | timeouts, ceilings, durations, without sleeping |
 | `TempDir` | A private scratch directory | `tests/testkit/` | databases, blobs, model files |
 
@@ -33,7 +34,9 @@ rReport's promise is an article that is faithful to the video: every sentence ac
 
 **The rule every fault is tested against:** it ends repaired, or published as a finding; never silently in the article.
 
-- **`Oracle`** answers each mission kind with what a stage teaches it (`teach("atomize", …)`). It computes the right answer from the request alone: the sentences in the packet, the atoms, the plan. It is deterministic, so a pipeline run on it can be compared with goldens. A kind it was not taught is `Errc::unsupported`: it never guesses. Each stage teaches it as the stage lands (plan P17–P20).
+- **`Oracle`** answers each mission kind with what a stage teaches it (`teach("atomize", …)`). It computes the right answer from the request alone: the sentences in the packet, the atoms, the plan. It is deterministic, so a pipeline run on it can be compared with goldens. A kind it was not taught is `Errc::unsupported`: it never guesses. Each stage teaches it as the stage lands (plan P17–P20); `teach_stages()` teaches every kind so far (`rr/oracle/answers.hpp`):
+  - `punctuate`, from the script a synthetic video was read from ([pipeline.md](pipeline.md#the-prompt));
+  - `annotate` and `annotate_more`, the eval's silver drafts, which have no single right answer: the oracle answers by a rule a test can predict and that passes every check. Every sentence of five words or more is a fact, quoted whole, core when it holds a digit; the other family adds every sentence of three words or more that its notes do not cite ([eval.md](eval.md#decisions)).
 - **`FaultyProvider`** wraps any provider and makes the plan's faults on the calls a test picks:
 
   | Fault | What it does | What must follow |
@@ -76,7 +79,7 @@ An input that broke an invariant joins the corpus once fixed, as `regression-*.b
 
 **The specs follow the code.** `scripts/test_mutate.py` runs on every push, and checks that every spec still finds each edit's text exactly once. A refactor that moves a guarded line fails CI until its mutant is updated, so the record never silently drifts from the code it guards.
 
-**What has specs:** `text` (112 mutants), `agents` (64), `pipeline` (53, the stage store's commit too), `transcript` (53), `reason` (44), `knowledge` (43), `fidelity` (31), `prompt` (27), `media` (24), `oracle` (24), `hub` (10, the job army, the doctor's tools, the media settings), and a few each in `core`, `json` and `llm`, where later phases changed their code. The modules built before P7 were mutation-tested the same way. Their results are recorded in their design notes, and porting the rest of their specs into `tests/mutants/` is follow-up work.
+**What has specs:** `text` (112 mutants), `eval` (101), `agents` (66), `pipeline` (53, the stage store's commit too), `transcript` (53), `reason` (44), `knowledge` (43), `fidelity` (31), `oracle` (29), `prompt` (27), `media` (24), `hub` (10, the job army, the doctor's tools, the media settings), `library` (3, a job's kind), and a few each in `core`, `json` and `llm`, where later phases changed their code. The modules built before P7 were mutation-tested the same way. Their results are recorded in their design notes, and porting the rest of their specs into `tests/mutants/` is follow-up work.
 
 **When to run:** before committing a change to a module's rules, and before a milestone. Never with another build reading the same sources, such as clang-tidy or a sanitizer build: it would compile a mutant.
 

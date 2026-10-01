@@ -5,9 +5,9 @@ This directory is the data behind `rreport eval`. ADR-0019 says how it is measur
 | Path | What | Status |
 |---|---|---|
 | `sets/candidates.toml` | Proposed videos, four types: talk, conversation, tutorial, narrative | **Waiting for the owner's approval** |
-| `sets/<set>.toml` | Approved videos: licence and attribution, type, caption kind, split (`dev` or `test`) | After approval |
-| `data/<id>/` | Snapshots of each video's captions and metadata, pinned by hash, so a change on YouTube changes nothing here | `rreport eval fetch` (plan P16) |
-| `gold/<id>.toml` | Facts anchored to the timeline `(t0_ms, t1_ms, quote)`, must-quotes, terms. The commander drafts silver; a person corrects it into gold | Runbook R2 |
+| `sets/<set>.toml` | Approved videos: licence and attribution, type, caption kind, split (`dev` or `test`), the pinned snapshot | After approval |
+| `data/<id>/` | Each video's source (captions and description) as `rreport eval fetch` read it once, pinned by hash, so a change on YouTube changes nothing here | `rreport eval fetch`, after approval |
+| `gold/<id>.toml` | Facts anchored to the timeline (start, end, quote), must-quotes, terms. Models draft silver (`rreport eval annotate`); a person corrects it into gold with its review sheet (`rreport eval sheet`) | Runbook R2 |
 | `labels/` | 30–50 human verdicts and pairwise preferences that calibrate the judges | Runbook R5 |
 | `judges/` | The frozen judge panels (`eval-v1.toml`) | Runbook R5 |
 | `gates/` | Each gated metric and the regression it tolerates | Plan P25 |
@@ -26,4 +26,4 @@ This directory is the data behind `rreport eval`. ADR-0019 says how it is measur
    - a podcast or interview of about 90 minutes.
 
    The candidates marked `m1` are proposals. No good 20-minute talk was found yet.
-4. **Say which,** and they move to `sets/m2.toml` with a dev/test split.
+4. **Say which,** and they move to `sets/m2.toml` with a dev/test split. Runbook R2 ([docs/runbooks/m1-m2.md](../docs/runbooks/m1-m2.md#r2-the-evaluation-videos-and-their-gold-annotations)) takes it from there: snapshots, drafts, gold. [docs/design/eval.md](../docs/design/eval.md) says how each file is read and checked.

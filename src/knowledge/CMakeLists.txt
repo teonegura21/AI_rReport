@@ -9,6 +9,7 @@ rr_add_embedded_library(artifact_schemas
     FILES
         schemas/artifacts/article.json
         schemas/artifacts/atoms.json
+        schemas/artifacts/silver.json
         schemas/artifacts/source.json
         schemas/artifacts/transcript.json)
 

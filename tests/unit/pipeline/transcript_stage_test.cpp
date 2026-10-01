@@ -7,7 +7,6 @@
 #include <chrono>
 #include <cstddef>
 #include <format>
-#include <mutex>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -112,31 +111,6 @@ json::Json source_with(std::string captions,
                                                      .content = std::move(captions)}});
 }
 
-// Every request a provider is sent, kept.
-class Recorder final : public llm::LlmProvider {
-public:
-    explicit Recorder(const llm::LlmProvider& inner) : inner_(&inner) {}
-    [[nodiscard]] std::string_view name() const noexcept override { return inner_->name(); }
-    [[nodiscard]] llm::ProviderCaps caps() const noexcept override { return inner_->caps(); }
-    [[nodiscard]] Result<llm::ChatResponse> chat(const llm::ChatRequest& request, const llm::StreamSink& sink,
-                                                 const std::stop_token& stop) const override {
-        {
-            const std::scoped_lock lock{mutex_};
-            requests_.push_back(request);
-        }
-        return inner_->chat(request, sink, stop);
-    }
-    [[nodiscard]] std::vector<llm::ChatRequest> requests() const {
-        const std::scoped_lock lock{mutex_};
-        return requests_;
-    }
-
-private:
-    const llm::LlmProvider* inner_;
-    mutable std::mutex mutex_;
-    mutable std::vector<llm::ChatRequest> requests_;
-};
-
 std::vector<agents::Engine> engines() {
     const llm::SamplingPreset direct{.temperature = 1.0, .top_p = 0.95, .top_k = 64};
     const llm::SamplingPreset thinking{
@@ -186,7 +160,7 @@ struct Rig {
 
     oracle::Oracle oracle;
     oracle::FaultyProvider faulty;
-    Recorder recorder;
+    oracle::RequestLog recorder;
     FakeClock clock;
     std::optional<agents::Army> army;
     int raised = 0;

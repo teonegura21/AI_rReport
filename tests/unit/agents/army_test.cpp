@@ -1121,6 +1121,36 @@ TEST(Army, RefusesMissionsItCannotRun) {
     EXPECT_TRUE(unwrap(army.squad({})).empty());
 }
 
+TEST(Army, SaysWhetherAnEngineHoldsAMissionAsTheSquadWould) {
+    const FakeClock clock;
+    const KeyedProvider model{
+        [](const llm::ChatRequest& request) { return reply(request, std::string{kClaim}); }};
+    Army army = make_army(model, clock);
+
+    // The prompt: 35 and 27 characters at three a token, and 8 tokens of
+    // markers a message: 12 + 9 + 16 = 37. The infantry holds 8192.
+    Mission fits = mission("fits");
+    fits.answer_tokens = 8192 - 37;
+    Mission over = mission("over");
+    over.answer_tokens = fits.answer_tokens + 1;
+    EXPECT_TRUE(army.holds(fits));
+    EXPECT_FALSE(army.holds(over));
+    EXPECT_OK(army.execute(fits));
+    EXPECT_ERRC(army.execute(over), Errc::invalid_argument) << "what it does not hold, the squad refuses";
+
+    // Thinking takes its budget and its closing words ("Answer now.": 4) on top.
+    Mission thinks = mission("thinks", "commander");
+    thinks.request.thinking = true;
+    thinks.answer_tokens = 16384 - 37 - 1004;
+    EXPECT_TRUE(army.holds(thinks));
+    ++thinks.answer_tokens;
+    EXPECT_FALSE(army.holds(thinks));
+    thinks.request.thinking = false;
+    EXPECT_TRUE(army.holds(thinks)) << "without thinking, the budget is not needed";
+
+    EXPECT_FALSE(army.holds(mission("m1", "cavalry"))) << "no engine serves the role";
+}
+
 TEST(Army, RefusesEnginesItCannotUse) {
     FakeClock clock;
     const KeyedProvider model{

@@ -12,6 +12,11 @@
 #               tools) and scripts/ (their tests: a fake Hugging Face Hub, the
 #               tiny model's GGUF read back)
 # The runtime against a real llama-server runs nightly (nightly.yml).
+#
+# Every job has a time limit a few times its usual length, and installing the
+# dependencies one of its own: a stalled runner fails in minutes, instead of
+# holding the branch's run for GitHub's six hours (it once hung two hours in
+# apt, before building anything).
 name: ci
 
 on:
@@ -29,6 +34,7 @@ permissions:
 jobs:
   format:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Install clang-format 20
@@ -38,6 +44,7 @@ jobs:
 
   build-test:
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -45,6 +52,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
+        timeout-minutes: 20
         run: sudo scripts/install-deps-ubuntu.sh --with-clang
       - name: Cache fetched dependencies
         uses: actions/cache@v4
@@ -60,9 +68,11 @@ jobs:
 
   tidy:
     runs-on: ubuntu-24.04
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
+        timeout-minutes: 20
         run: sudo scripts/install-deps-ubuntu.sh --with-clang
       - name: Configure
         run: cmake --preset tidy
@@ -71,9 +81,11 @@ jobs:
 
   fetch:
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Install system-only dependencies
+        timeout-minutes: 20
         run: sudo scripts/install-deps-ubuntu.sh --minimal
       - name: Configure (ignore system packages)
         run: cmake --preset ci-fetch
@@ -84,9 +96,11 @@ jobs:
 
   fuzz:
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
+        timeout-minutes: 20
         run: sudo scripts/install-deps-ubuntu.sh --with-clang
       - name: Configure
         run: cmake --preset fuzz
@@ -108,6 +122,7 @@ jobs:
 
   scripts:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Lint the entry point

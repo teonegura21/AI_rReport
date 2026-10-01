@@ -8,6 +8,13 @@
 //   jobs              the library's jobs, newest first
 //   jobs show JOB     a job's stages: done, found done or failed, and what
 //                     they could not do
+//   eval fetch [ID…]  read each video of the eval set once, through the source
+//                     stage, and keep it with the eval: eval/data/<id>/ (P16)
+//   eval annotate [ID…]
+//                     draft each video's gold annotation with the pod's models,
+//                     as silver in eval/gold/<id>.toml, for a person to correct
+//                     (runbook R2)
+//   eval sheet ID     the sheet a person corrects a gold file with (Markdown)
 //   doctor            check the data directory, the library, the capture tools,
 //                     RunPod and the runtime, and say what to do about problems
 //   bench             measure the pod: its engines, the commander's and the
@@ -49,6 +56,11 @@
 #include <rr/core/strings.hpp>
 #include <rr/core/version.hpp>
 #include <rr/db/database.hpp>
+#include <rr/eval/annotate.hpp>
+#include <rr/eval/gold.hpp>
+#include <rr/eval/set.hpp>
+#include <rr/eval/sheet.hpp>
+#include <rr/eval/snapshot.hpp>
 #include <rr/hub/bench.hpp>
 #include <rr/hub/doctor.hpp>
 #include <rr/hub/hub_config.hpp>
@@ -441,8 +453,9 @@ Result<pipeline::Executor> job_stages(const HubSettings& settings) {
     return pipeline::Executor::create(std::move(stages), SystemClock::instance());
 }
 
-// What a run did, and what to do next; the exit code that says it.
-int report(const pipeline::JobRun& run, const proc::TerminationSignals& signals) {
+// What a run did, and what to do next; the exit code that says it. `again`
+// is the command that takes the job up again.
+int report(const pipeline::JobRun& run, std::string_view again, const proc::TerminationSignals& signals) {
     const library::Job& job = run.job;
     const std::string title = job.title.value_or(job.source);
     bool told = false;
@@ -460,12 +473,12 @@ int report(const pipeline::JobRun& run, const proc::TerminationSignals& signals)
                               took(job.elapsed).c_str());
             return kOk;
         case library::JobStatus::stopped:
-            (void)std::printf("job %s stopped: %s\n  take it up again with: rreport resume %s\n",
-                              job.id.c_str(), job.error.value_or("").c_str(), job.id.c_str());
+            (void)std::printf("job %s stopped: %s\n  take it up again with: %.*s\n", job.id.c_str(),
+                              job.error.value_or("").c_str(), static_cast<int>(again.size()), again.data());
             return signals.received() != 0 ? 128 + signals.received() : kFailure;
         case library::JobStatus::needs_user:
-            (void)std::printf("job %s needs you: %s\n  then: rreport resume %s\n", job.id.c_str(),
-                              job.error.value_or("").c_str(), job.id.c_str());
+            (void)std::printf("job %s needs you: %s\n  then: %.*s\n", job.id.c_str(),
+                              job.error.value_or("").c_str(), static_cast<int>(again.size()), again.data());
             return kFailure;
         case library::JobStatus::failed:
         case library::JobStatus::running:
@@ -507,12 +520,13 @@ int run_job(const Hub& hub, db::Database& database, library::Job job,
         context.army = [&forces] { return forces.raise(); };
     }
     (void)std::fprintf(stderr, "job %s: %s\n", job.id.c_str(), job.title.value_or(job.source).c_str());
+    const std::string again = std::format("rreport resume {}", job.id);
     auto run =
         pipeline::run_job(std::move(job), *stages, database, SystemClock::instance(), std::move(context));
     if (!run.has_value()) {
         return failed(kFailure, run.error());
     }
-    return report(*run, signals);
+    return report(*run, again, signals);
 }
 
 struct IngestFlags {
@@ -571,6 +585,14 @@ int resume(const Global& global, const std::string& id, const proc::TerminationS
                           job->title.value_or(job->source).c_str());
         return kOk;
     }
+    if (job->kind != library::JobKind::article) {
+        return failed(
+            kBadConfiguration,
+            Error{Errc::invalid_argument,
+                  std::format("job {} drafts an eval annotation: `rreport eval annotate` takes it up "
+                              "again, with the video's id",
+                              job->id)});
+    }
     return run_job(*hub, *database, *std::move(job), signals);
 }
 
@@ -592,9 +614,11 @@ int list_jobs(const Global& global, std::size_t limit) {
         (void)std::printf("no jobs yet: rreport ingest <address or caption file> starts one\n");
         return kOk;
     }
-    (void)std::printf("%-26s  %-10s  %-8s  %-20s  %s\n", "JOB", "STATUS", "TIER", "UPDATED", "TITLE");
+    (void)std::printf("%-26s  %-10s  %-10s  %-8s  %-20s  %s\n", "JOB", "KIND", "STATUS", "TIER", "UPDATED",
+                      "TITLE");
     for (const library::Job& job : *recent) {
-        (void)std::printf("%-26s  %-10s  %-8s  %-20s  %s\n", job.id.c_str(),
+        (void)std::printf("%-26s  %-10s  %-10s  %-8s  %-20s  %s\n", job.id.c_str(),
+                          std::string{library::to_string(job.kind)}.c_str(),
                           std::string{library::to_string(job.status)}.c_str(), job.tier.c_str(),
                           when(job.updated_at).c_str(), job.title.value_or(job.source).c_str());
     }
@@ -632,6 +656,7 @@ int show_job(const Global& global, const std::string& id) {
     if (job->title.has_value()) {
         (void)std::printf("  title:   %s\n", job->title->c_str());
     }
+    (void)std::printf("  makes:   %s\n", std::string{library::to_string(job->kind)}.c_str());
     (void)std::printf("  source:  %s\n", job->source.c_str());
     (void)std::printf("  tier:    %s, salt %lld\n", job->tier.c_str(), static_cast<long long>(job->salt));
     (void)std::printf("  spent:   %s\n", took(job->elapsed).c_str());
@@ -647,6 +672,242 @@ int show_job(const Global& global, const std::string& id) {
             (void)std::printf("    could not do: %s\n", finding.c_str());
         }
     }
+    return kOk;
+}
+
+// ---------------------------------------------------------------------------------------
+// eval fetch, annotate, sheet
+// ---------------------------------------------------------------------------------------
+struct EvalFlags {
+    std::filesystem::path root{"eval"};
+    std::string set{"m2"};
+    std::vector<std::string> videos;           // none: every video of the set
+    bool again = false;                        // fetch: read a video kept already once more
+    bool replace = false;                      // annotate: draft a silver gold file again
+    std::optional<std::filesystem::path> out;  // sheet: where to write it
+};
+
+// The command that does `verb` to `video`, with the flags that differ from
+// the defaults: what the user is told to run next.
+std::string eval_command(const EvalFlags& flags, std::string_view verb, std::string_view video) {
+    std::string command = std::format("rreport eval {}", verb);
+    if (flags.root != EvalFlags{}.root) {
+        command += std::format(" --eval-dir {}", flags.root.string());
+    }
+    if (flags.set != EvalFlags{}.set) {
+        command += std::format(" --eval-set {}", flags.set);
+    }
+    return std::format("{} {}", command, video);
+}
+
+// The set the flags name. One exists once its candidates are approved.
+Result<eval::EvalSet> eval_set(const EvalFlags& flags) {
+    auto set = eval::read_set(flags.root, flags.set);
+    if (!set.has_value() && set.error().code() == Errc::not_found) {
+        return fail(Errc::not_found,
+                    std::format("{} does not exist: a set is made from the approved candidates ({})",
+                                (flags.root / "sets" / std::format("{}.toml", flags.set)).string(),
+                                (flags.root / "README.md").string()));
+    }
+    return set;
+}
+
+// The videos of `set` the command names, or all of them.
+Result<std::vector<eval::EvalVideo>> chosen(const eval::EvalSet& set, const std::vector<std::string>& ids) {
+    if (ids.empty()) {
+        return set.videos;
+    }
+    std::vector<eval::EvalVideo> videos;
+    videos.reserve(ids.size());
+    for (const std::string& id : ids) {
+        const eval::EvalVideo* video = set.find(id);
+        if (video == nullptr) {
+            return fail(Errc::not_found, std::format("the set '{}' has no video '{}'", set.name, id));
+        }
+        videos.push_back(*video);
+    }
+    return videos;
+}
+
+// Says what went wrong with one video, and goes on with the next.
+int video_failed(const eval::EvalVideo& video, const Error& error) {
+    (void)std::fprintf(stderr, "rreport: %s: %s\n", video.id.c_str(), error.describe().c_str());
+    return kFailure;
+}
+
+int eval_fetch(const Global& global, const EvalFlags& flags, const proc::TerminationSignals& signals) {
+    auto hub = load(global);
+    if (!hub.has_value()) {
+        return failed(kBadConfiguration, hub.error());
+    }
+    auto set = eval_set(flags);
+    if (!set.has_value()) {
+        return failed(kBadConfiguration, set.error());
+    }
+    auto videos = chosen(*set, flags.videos);
+    if (!videos.has_value()) {
+        return failed(kBadConfiguration, videos.error());
+    }
+    const HubSettings& settings = hub->settings;
+    const pipeline::SourceStage stage{
+        media::YtDlp{media::YtDlpOptions{.executable = settings.ytdlp, .timeout = settings.ytdlp_timeout}}};
+    int code = kOk;
+    for (const eval::EvalVideo& video : *videos) {
+        if (!flags.again) {
+            // Read once: a snapshot kept is never read again unless asked.
+            auto kept = eval::read_snapshot(flags.root, video);
+            if (!kept.has_value()) {
+                code = video_failed(video, kept.error());
+                continue;
+            }
+            if (kept->has_value()) {
+                (void)std::printf("%s: kept already, snapshot %s\n", video.id.c_str(), (*kept)->hash.c_str());
+                continue;
+            }
+        }
+        const std::filesystem::path work =
+            settings.library_database().parent_path() / "eval-fetch" / video.id;
+        auto snapshot = eval::fetch_snapshot(flags.root, video, stage, work, signals.stop_token(),
+                                             std::chrono::system_clock::now());
+        std::error_code ignored;  // scratch: what is kept is in the eval's directory
+        std::filesystem::remove_all(work, ignored);
+        if (!snapshot.has_value()) {
+            if (snapshot.error().code() == Errc::cancelled) {
+                return interrupted_or(kFailure, snapshot.error(), signals);
+            }
+            code = video_failed(video, snapshot.error());
+            continue;
+        }
+        (void)std::printf("%s: kept %s, snapshot %s\n", video.id.c_str(),
+                          eval::snapshot_file(flags.root, video.id).string().c_str(), snapshot->hash.c_str());
+        if (!video.snapshot.has_value()) {
+            (void)std::printf("  pin it in the set, under the video: snapshot = \"%s\"\n",
+                              snapshot->hash.c_str());
+        }
+    }
+    return code;
+}
+
+int eval_annotate(const Global& global, const EvalFlags& flags, const proc::TerminationSignals& signals) {
+    auto hub = load(global);
+    if (!hub.has_value()) {
+        return failed(kBadConfiguration, hub.error());
+    }
+    auto set = eval_set(flags);
+    if (!set.has_value()) {
+        return failed(kBadConfiguration, set.error());
+    }
+    auto videos = chosen(*set, flags.videos);
+    if (!videos.has_value()) {
+        return failed(kBadConfiguration, videos.error());
+    }
+    const HubSettings& settings = hub->settings;
+    auto database = library::open_database(settings.library_database());
+    if (!database.has_value()) {
+        return failed(kFailure, database.error());
+    }
+    auto prompts = prompt::Library::embedded();
+    if (!prompts.has_value()) {
+        return failed(kFailure, prompts.error());
+    }
+    const net::HttpClient http = make_http();
+    int code = kOk;
+    for (const eval::EvalVideo& video : *videos) {
+        auto job =
+            eval::start_annotation(flags.root, video, *database, SystemClock::instance(), flags.replace);
+        if (!job.has_value()) {
+            code = video_failed(video, job.error());
+            continue;
+        }
+        (void)std::fprintf(stderr, "job %s: annotating %s, %s\n", job->id.c_str(), video.id.c_str(),
+                           video.title.c_str());
+        JobArmy forces{JobArmy::Inputs{.settings = &settings,
+                                       .http = &http,
+                                       .database = &*database,
+                                       .clock = &SystemClock::instance(),
+                                       .job_id = job->id,
+                                       .elapsed_before = job->elapsed,
+                                       .stop = signals.stop_token(),
+                                       .progress = say}};
+        pipeline::StageContext context{.prompts = &*prompts,
+                                       .work_directory = settings.library_database().parent_path() / "jobs",
+                                       .stop = signals.stop_token(),
+                                       .progress = say};
+        if (settings.llm_mode == LlmMode::replay || settings.runtime.has_value()) {
+            context.army = [&forces] { return forces.raise(); };
+        }
+        auto annotated = eval::run_annotation(flags.root, video, *std::move(job), *database,
+                                              SystemClock::instance(), std::move(context));
+        if (!annotated.has_value()) {
+            code = video_failed(video, annotated.error());
+            continue;
+        }
+        const int done = report(annotated->run, eval_command(flags, "annotate", video.id), signals);
+        if (annotated->gold.has_value()) {
+            const eval::Gold& gold = *annotated->gold;
+            const auto core = std::ranges::count(gold.facts, eval::Importance::core, &eval::Fact::importance);
+            (void)std::printf(
+                "  %zu facts (%lld core), %zu must-quotes and %zu terms, drafted into %s\n"
+                "  correct it with its sheet: %s\n",
+                gold.facts.size(), static_cast<long long>(core), gold.must_quotes.size(), gold.terms.size(),
+                eval::gold_file(flags.root, video.id).string().c_str(),
+                eval_command(flags, "sheet", video.id).c_str());
+        }
+        if (done != kOk) {
+            code = done;
+            if (signals.received() != 0) {
+                return done;  // interrupted: the next videos wait for the next run
+            }
+        }
+    }
+    return code;
+}
+
+int eval_sheet(const EvalFlags& flags) {
+    auto set = eval_set(flags);
+    if (!set.has_value()) {
+        return failed(kBadConfiguration, set.error());
+    }
+    auto videos = chosen(*set, flags.videos);
+    if (!videos.has_value()) {
+        return failed(kBadConfiguration, videos.error());
+    }
+    const eval::EvalVideo& video = videos->front();
+    auto snapshot = eval::read_snapshot(flags.root, video);
+    if (!snapshot.has_value()) {
+        return failed(kFailure, snapshot.error());
+    }
+    if (!snapshot->has_value()) {
+        return failed(kFailure,
+                      Error{Errc::not_found, std::format("{} has no snapshot yet: {} reads it", video.id,
+                                                         eval_command(flags, "fetch", video.id))});
+    }
+    const std::filesystem::path file = eval::gold_file(flags.root, video.id);
+    auto text = read_file(file);
+    if (!text.has_value()) {
+        return failed(kFailure, text.error().code() == Errc::not_found
+                                    ? Error{Errc::not_found,
+                                            std::format("{} does not exist yet: {} drafts it", file.string(),
+                                                        eval_command(flags, "annotate", video.id))}
+                                    : text.error());
+    }
+    auto gold = eval::parse_gold(*text, file.string());
+    if (!gold.has_value()) {
+        return failed(kFailure, gold.error());
+    }
+    auto transcript = eval::caption_transcript((*snapshot)->source);
+    if (!transcript.has_value()) {
+        return failed(kFailure, transcript.error());
+    }
+    const std::string sheet = eval::review_sheet(*gold, video, *transcript, (*snapshot)->hash);
+    if (!flags.out.has_value()) {
+        (void)std::fputs(sheet.c_str(), stdout);
+        return kOk;
+    }
+    if (auto written = write_file_atomically(*flags.out, sheet); !written.has_value()) {
+        return failed(kFailure, written.error());
+    }
+    (void)std::printf("wrote %s\n", flags.out->string().c_str());
     return kOk;
 }
 
@@ -709,6 +970,29 @@ int run(int argc, char** argv) {
     jobs_command->add_option("--limit", limit, "How many")->check(CLI::Range(1, 10'000));
     auto* job_show = jobs_command->add_subcommand("show", "A job's stages, and what they could not do");
     job_show->add_option("job", job_id, "The job")->required();
+
+    EvalFlags eval_flags;
+    auto* eval_group = app.add_subcommand("eval", "The evaluation's data: snapshots and gold annotations")
+                           ->require_subcommand(1);
+    eval_group->add_option("--eval-dir", eval_flags.root, "The eval's directory (default: eval)");
+    eval_group->add_option("--eval-set", eval_flags.set,
+                           "The set of videos: <eval-dir>/sets/<set>.toml (default: m2)");
+    auto* eval_fetch_command =
+        eval_group->add_subcommand("fetch", "Read each video once through the source stage, and keep it");
+    eval_fetch_command->add_option("videos", eval_flags.videos,
+                                   "The videos (default: every video of the set)");
+    eval_fetch_command->add_flag("--again", eval_flags.again, "Read a video kept already once more");
+    auto* eval_annotate_command =
+        eval_group->add_subcommand("annotate", "Draft each video's gold annotation with the pod's models");
+    eval_annotate_command->add_option("videos", eval_flags.videos,
+                                      "The videos (default: every video of the set)");
+    eval_annotate_command->add_flag("--replace", eval_flags.replace,
+                                    "Draft a silver gold file again, losing what was corrected in it");
+    std::string sheet_video;
+    auto* eval_sheet_command =
+        eval_group->add_subcommand("sheet", "The sheet a person corrects a gold file with");
+    eval_sheet_command->add_option("video", sheet_video, "The video")->required();
+    eval_sheet_command->add_option("--out", eval_flags.out, "Write it to this file (default: print it)");
 
     auto* doctor_command = app.add_subcommand("doctor", "Check what the hub needs, and say what to do");
 
@@ -779,6 +1063,16 @@ int run(int argc, char** argv) {
     }
     if (*jobs_command) {
         return list_jobs(global, limit);
+    }
+    if (*eval_fetch_command) {
+        return eval_fetch(global, eval_flags, signals);
+    }
+    if (*eval_annotate_command) {
+        return eval_annotate(global, eval_flags, signals);
+    }
+    if (*eval_sheet_command) {
+        eval_flags.videos = {sheet_video};
+        return eval_sheet(eval_flags);
     }
     if (*doctor_command) {
         return doctor(global, signals);

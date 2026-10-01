@@ -60,7 +60,7 @@ A sentence that holds no atom gets a filler label from the closed list: disfluen
 
 ### What waits for its stage
 
-The outline (sections and the video brief) arrives with the outline stage (P17). On-screen items (`V#`) arrive with frames (M4). Duplicates declared in Ledger B arrive with the plan (P19). Each schema is defined when the stage that writes it is, so no shape is guessed early. A schema's text enters the stage cache key ([pipeline.md](pipeline.md#the-cache-key)), so changing one invalidates exactly the artifacts written under it. The pipeline's first artifact, the `source` (`schemas/artifacts/source.json`), is registered here with the others.
+The outline (sections and the video brief) arrives with the outline stage (P17). On-screen items (`V#`) arrive with frames (M4). Duplicates declared in Ledger B arrive with the plan (P19). Each schema is defined when the stage that writes it is, so no shape is guessed early. A schema's text enters the stage cache key ([pipeline.md](pipeline.md#the-cache-key)), so changing one invalidates exactly the artifacts written under it. The pipeline's first artifact, the `source` (`schemas/artifacts/source.json`), is registered here with the others, and so is the eval's `silver` (`schemas/artifacts/silver.json`: a video's annotation drafted by models, [eval.md](eval.md#silver-drafted-by-models)).
 
 ## The article's markers
 

@@ -91,6 +91,81 @@ TEST(OracleAnswers, WithoutAScriptASentenceEndsEveryTwelveWords) {
     EXPECT_ERRC(oracle.chat(asked("punctuate"), {}, {}), Errc::invalid_argument) << "no excerpt to punctuate";
 }
 
+// An annotate mission's request for `sentences`, as its prompt renders them,
+// with the other reader's notes when there are some.
+llm::ChatRequest annotating(std::string kind, std::string_view sentences, std::string_view found = "") {
+    llm::ChatRequest request = asked(std::move(kind));
+    std::string task = std::format("The sentences to annotate:\n<sentences>\n{}\n</sentences>\n", sentences);
+    if (!found.empty()) {
+        task += std::format("\nThe other reader's notes on them:\n<found>\n{}\n</found>\n", found);
+    }
+    request.messages = {llm::Message::system("You read part of a video's transcript."),
+                        llm::Message::user(task)};
+    return request;
+}
+
+TEST(OracleAnswers, AnnotateNotesEachSentenceOfFiveWordsOrMore) {
+    Oracle oracle;
+    teach_stages(oracle);
+    const std::string_view sentences =
+        "S1 [0:00] Welcome back.\nS2 [0:02] Marie Curie measured 7 samples in 1902.\nS3 [0:06] The samples "
+        "glowed in the dark.\nS4 [0:09] That took months.";
+    const json::Json expected = unwrap(json::parse(R"({"facts": [
+        {"sentences": ["S2"], "quote": "Marie Curie measured 7 samples in 1902.",
+         "claim": "Marie Curie measured 7 samples in 1902.", "importance": "core"},
+        {"sentences": ["S3"], "quote": "The samples glowed in the dark.",
+         "claim": "The samples glowed in the dark.", "importance": "detail"}],
+        "must_quotes": [], "terms": []})"));
+    EXPECT_EQ(
+        unwrap(json::parse(unwrap(oracle.chat(annotating("annotate", sentences), {}, {})).first().content)),
+        expected)
+        << "each sentence of five words or more, whole, core when it holds a number";
+
+    llm::ChatRequest repair = annotating("annotate", sentences);
+    repair.messages.push_back(llm::Message::assistant(R"({"facts": []})"));
+    repair.messages.push_back(llm::Message::user("Your answer cannot be used."));
+    EXPECT_EQ(unwrap(json::parse(unwrap(oracle.chat(repair, {}, {})).first().content)), expected)
+        << "a repair is answered from the order's sentences";
+    EXPECT_ERRC(oracle.chat(asked("annotate"), {}, {}), Errc::invalid_argument) << "no sentences to annotate";
+}
+
+TEST(OracleAnswers, AnnotateMoreAddsTheSentencesTheNotesDoNotCite) {
+    Oracle oracle;
+    teach_stages(oracle);
+    const llm::ChatRequest request = annotating("annotate_more",
+                                                "S2 [0:02] Marie Curie measured 7 samples in 1902.\n"
+                                                "S3 [0:06] The samples glowed in the dark.\n"
+                                                "S4 [0:09] That took months.\nS5 [0:11] Thank you.\n"
+                                                "S12 [0:30] It glowed for years.",
+                                                "- [S1, S2] Marie Curie measured seven samples.\n"
+                                                "- [S3, S7] They glowed.\n- [S120] Something later.");
+    EXPECT_EQ(unwrap(json::parse(unwrap(oracle.chat(request, {}, {})).first().content)),
+              unwrap(json::parse(R"({"facts": [
+        {"sentences": ["S4"], "quote": "That took months.", "claim": "That took months.", "importance": "detail"},
+        {"sentences": ["S12"], "quote": "It glowed for years.", "claim": "It glowed for years.",
+         "importance": "detail"}],
+        "must_quotes": [], "terms": []})")))
+        << "three words or more, cited by no note, last or not in its list: S12 is not S120";
+    EXPECT_ERRC(oracle.chat(annotating("annotate_more", "S3 [0:06] That took months."), {}, {}),
+                Errc::invalid_argument)
+        << "no notes to add to";
+}
+
+TEST(RequestLog, KeepsEveryRequestItPassesOn) {
+    Oracle oracle;
+    oracle.teach("label",
+                 [](const llm::ChatRequest&) -> Result<std::string> { return R"({"label": "claim"})"; });
+    const RequestLog log{oracle};
+    EXPECT_EQ(log.name(), "oracle");
+    EXPECT_TRUE(log.caps().thinking);
+    EXPECT_EQ(unwrap(log.chat(asked("label", "m1"), {}, {})).first().content, R"({"label": "claim"})");
+    EXPECT_ERRC(log.chat(asked("outline", "m2"), {}, {}), Errc::unsupported);
+    const std::vector<llm::ChatRequest> requests = log.requests();
+    ASSERT_EQ(requests.size(), 2U) << "answered or not";
+    EXPECT_EQ(requests[0].tag.mission_id, "m1");
+    EXPECT_EQ(requests[1].tag.mission_id, "m2");
+}
+
 TEST(Faults, EachMakesItsMistake) {
     const auto made = [](const Fault& fault, std::string content) {
         llm::Choice choice = answer(std::move(content));

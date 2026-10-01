@@ -14,6 +14,10 @@
 //     (rr/media/ytdlp.hpp): the video's description, then the captions
 //     chosen in the language spoken (rr/media/video.hpp). A live or upcoming
 //     video has no captions yet: the job stops, to be resumed once it ends.
+//   * A file named *.source.json is a source read earlier and saved whole:
+//     an eval's snapshot of a video (rr/eval/snapshot.hpp). It is checked
+//     against the source schema and kept as it is, so the stages after it
+//     run as they would on the video it was read from.
 //   * Anything else is a caption file. Its name says its format (".vtt",
 //     ".srt", ".json3", ".txt": rr/transcript/captions.hpp), and its name
 //     without the extension is the title. Nothing else is known about it:
@@ -106,7 +110,8 @@ public:
     // for a video without captions in the language spoken, Errc::unavailable
     // for a live or upcoming one; Errc::not_found for a file that is not
     // there; Errc::invalid_argument for a file whose name gives no caption
-    // format; Errc::conflict for a file that changed after its key was made.
+    // format, or a saved source that is not one; Errc::conflict for a file
+    // that changed after its key was made.
     [[nodiscard]] Result<StageOutput> run(const StageContext& context) const override;
 
 private:

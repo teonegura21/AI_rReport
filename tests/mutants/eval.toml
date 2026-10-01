@@ -1,0 +1,853 @@
+# Mutants of rr_eval: each removes one rule of reading the eval's files,
+# keeping a snapshot, anchoring gold to the timeline, drafting silver, or
+# making the review sheet, and names the test that must fail without it.
+# Run: scripts/mutate.py tests/mutants/eval.toml
+# What they found is in docs/design/eval.md, "How the tests were validated".
+
+target = "rr_eval_tests"
+binary = "build/dev/tests/unit/eval/rr_eval_tests"
+timeout = 120
+
+# --- Files read strictly (toml_io.hpp, set.cpp) -----------------------------------
+
+[[mutant]]
+name = "an-unknown-key-is-ignored"
+file = "src/eval/toml_io.hpp"
+expect = "EvalSet.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''            if (!read_.contains(key.str())) {'''
+  to = '''            if (false) {'''
+
+[[mutant]]
+name = "a-table-in-an-array-is-not-checked-for-unknown-keys"
+file = "src/eval/toml_io.hpp"
+expect = "EvalSet.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''        RR_TRY(visit(table));
+        RR_TRY(table.nothing_else());'''
+  to = '''        RR_TRY(visit(table));'''
+
+[[mutant]]
+name = "a-value-out-of-its-choices-is-taken"
+file = "src/eval/toml_io.hpp"
+expect = "EvalSet.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''        if (std::ranges::find(allowed, std::string_view{value}) == allowed.end()) {'''
+  to = '''        if (value.empty()) {'''
+
+[[mutant]]
+name = "a-number-above-its-range-is-taken"
+file = "src/eval/toml_io.hpp"
+expect = "Gold.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''        if (number == nullptr || number->get() < least || number->get() > most) {'''
+  to = '''        if (number == nullptr || number->get() < least) {'''
+
+[[mutant]]
+name = "a-list-of-values-is-taken-for-tables"
+file = "src/eval/toml_io.hpp"
+expect = "EvalSet.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (array == nullptr || !array->is_array_of_tables()) {'''
+  to = '''    if (array == nullptr) {'''
+
+[[mutant]]
+name = "a-table-is-not-named-by-its-number"
+file = "src/eval/toml_io.hpp"
+expect = "EvalSet.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''        Table table{*entry.as_table(), std::format("{}, {} {}", file, key, number)};'''
+  to = '''        Table table{*entry.as_table(), std::format("{}, {} {}", file, key, number - number + 1)};'''
+
+[[mutant]]
+name = "a-quote-in-a-text-is-written-bare"
+file = "src/eval/toml_io.hpp"
+expect = "Gold.IsWrittenForPeopleAndReadBackAsItWas"
+  [[mutant.edit]]
+  from = '''                written += "\\\"";'''
+  to = '''                written += "\"";'''
+
+[[mutant]]
+name = "a-new-line-in-a-text-is-written-bare"
+file = "src/eval/toml_io.hpp"
+expect = "Gold.IsWrittenForPeopleAndReadBackAsItWas"
+  [[mutant.edit]]
+  from = '''                written += "\\n";'''
+  to = '''                written += "\n";'''
+
+[[mutant]]
+name = "a-control-character-is-written-bare"
+file = "src/eval/toml_io.hpp"
+expect = "Gold.IsWrittenForPeopleAndReadBackAsItWas"
+  [[mutant.edit]]
+  from = '''byte < 0x20U || byte == 0x7FU) {'''
+  to = '''byte == 0xFFU) {'''
+
+[[mutant]]
+name = "a-broken-file-does-not-say-its-line"
+file = "src/eval/toml_io.hpp"
+expect = "EvalSet.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''std::format("{}, line {}: {}", file, error.source().begin.line,'''
+  to = '''std::format("{}: {}{}", file, "",'''
+
+[[mutant]]
+name = "a-video-id-is-not-checked"
+file = "src/eval/set.cpp"
+expect = "EvalSet.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    RR_TRY_ASSIGN(video.id, table.text("id"));
+    if (!valid_video_id(video.id)) {'''
+  to = '''    RR_TRY_ASSIGN(video.id, table.text("id"));
+    if (false) {'''
+
+[[mutant]]
+name = "a-key-beside-the-videos-is-ignored"
+file = "src/eval/set.cpp"
+expect = "EvalSet.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''        if (key.str() != "video") {'''
+  to = '''        if (false) {'''
+
+[[mutant]]
+name = "two-videos-may-share-an-id"
+file = "src/eval/set.cpp"
+expect = "EvalSet.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''        if (!ids.insert(video.id).second) {'''
+  to = '''        if (!ids.insert(video.id).second && false) {'''
+
+[[mutant]]
+name = "captions-are-always-manual"
+file = "src/eval/set.cpp"
+expect = "EvalSet.IsReadVideoByVideoInItsFilesOrder"
+  [[mutant.edit]]
+  from = '''    video.captions = captions == "manual" ? media::CaptionKind::manual : media::CaptionKind::automatic;'''
+  to = '''    video.captions = media::CaptionKind::manual;'''
+
+[[mutant]]
+name = "the-pinned-snapshot-is-not-read"
+file = "src/eval/set.cpp"
+expect = "EvalSet.IsReadVideoByVideoInItsFilesOrder"
+  [[mutant.edit]]
+  from = '''    RR_TRY_ASSIGN(video.snapshot, table.optional_text("snapshot"));'''
+  to = '''    table.allow("snapshot");'''
+
+[[mutant]]
+name = "an-id-may-be-longer-than-64"
+file = "src/eval/set.cpp"
+expect = "EvalSet.AVideoIdCanNameADirectoryAndNothingElse"
+  [[mutant.edit]]
+  from = '''id.size() <= 64 &&'''
+  to = '''id.size() <= 65 &&'''
+
+[[mutant]]
+name = "an-id-may-start-with-a-dash"
+file = "src/eval/set.cpp"
+expect = "EvalSet.AVideoIdCanNameADirectoryAndNothingElse"
+  [[mutant.edit]]
+  from = '''id.front() != '-' &&'''
+  to = ''''''
+
+[[mutant]]
+name = "a-video-is-never-found"
+file = "src/eval/set.cpp"
+expect = "EvalSet.FindsAVideoByItsId"
+  [[mutant.edit]]
+  from = '''    return found == videos.end() ? nullptr : &*found;'''
+  to = '''    return found == videos.end() || true ? nullptr : &*found;'''
+
+# --- Snapshots (snapshot.cpp) ---------------------------------------------------------
+
+[[mutant]]
+name = "a-snapshot-changed-since-it-was-kept-is-read"
+file = "src/eval/snapshot.cpp"
+expect = "SnapshotTest.ASnapshotChangedSinceItWasKeptIsRefused"
+  [[mutant.edit]]
+  from = '''    if (record.hash != hash) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-record-may-hold-any-key"
+file = "src/eval/snapshot.cpp"
+expect = "SnapshotTest.ASnapshotChangedSinceItWasKeptIsRefused"
+  [[mutant.edit]]
+  from = '''    RR_TRY_ASSIGN(record.url, table.text("url"));
+    RR_TRY(table.nothing_else());'''
+  to = '''    RR_TRY_ASSIGN(record.url, table.text("url"));'''
+
+[[mutant]]
+name = "a-snapshot-read-is-not-held-to-its-pin"
+file = "src/eval/snapshot.cpp"
+expect = "SnapshotTest.TheSetMayPinASnapshot"
+  [[mutant.edit]]
+  from = '''    RR_TRY(check_pin(video, hash));
+    return std::optional<Snapshot>{'''
+  to = '''    return std::optional<Snapshot>{'''
+
+[[mutant]]
+name = "a-snapshot-kept-is-not-held-to-its-pin"
+file = "src/eval/snapshot.cpp"
+expect = "SnapshotTest.TheSetMayPinASnapshot"
+  [[mutant.edit]]
+  from = '''    RR_TRY(check_pin(video, hash));
+    const std::filesystem::path directory'''
+  to = '''    const std::filesystem::path directory'''
+
+[[mutant]]
+name = "captions-of-another-kind-are-kept"
+file = "src/eval/snapshot.cpp"
+expect = "SnapshotTest.CaptionsOfAnotherKindThanTheSetSaysAreNotKept"
+  [[mutant.edit]]
+  from = '''    if (source.captions.kind != video.captions) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "cc-by-needs-no-licence-line"
+file = "src/eval/snapshot.cpp"
+expect = "SnapshotTest.ACcByVideoMustShowItsLicence"
+  [[mutant.edit]]
+  from = '''    if (video.licence == Licence::cc_by && !creative_commons) {'''
+  to = '''    if (video.licence == Licence::cc_by && !creative_commons && !source.video.license.has_value()) {'''
+
+[[mutant]]
+name = "the-fetch-time-keeps-its-milliseconds"
+file = "src/eval/snapshot.cpp"
+expect = "SnapshotTest.AFetchKeepsWhatTheSourceStageReadReadablyAndPinnedByItsHash"
+  [[mutant.edit]]
+  from = '''std::chrono::floor<std::chrono::seconds>(fetched));'''
+  to = '''std::chrono::floor<std::chrono::milliseconds>(fetched));'''
+
+[[mutant]]
+name = "a-snapshot-is-written-on-one-line"
+file = "src/eval/snapshot.cpp"
+expect = "SnapshotTest.AFetchKeepsWhatTheSourceStageReadReadablyAndPinnedByItsHash"
+  [[mutant.edit]]
+  from = '''json::dump_pretty(artifact) + "\n"'''
+  to = '''json::dump(artifact) + "\n"'''
+
+# --- Gold (gold.cpp) ------------------------------------------------------------------
+
+[[mutant]]
+name = "a-fact-id-may-have-a-leading-zero"
+file = "src/eval/gold.cpp"
+expect = "Gold.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''id[0] == 'F' && id[1] != '0' &&'''
+  to = '''id[0] == 'F' &&'''
+
+[[mutant]]
+name = "a-fact-id-may-hold-letters"
+file = "src/eval/gold.cpp"
+expect = "Gold.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''           id.substr(1).find_first_not_of("0123456789") == std::string_view::npos;'''
+  to = '''           true;'''
+
+[[mutant]]
+name = "a-fact-id-may-be-long"
+file = "src/eval/gold.cpp"
+expect = "Gold.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''id.size() <= 10 &&'''
+  to = ''''''
+
+[[mutant]]
+name = "a-gold-file-of-no-video"
+file = "src/eval/gold.cpp"
+expect = "Gold.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (!valid_video_id(gold.video)) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "two-facts-may-share-an-id"
+file = "src/eval/gold.cpp"
+expect = "Gold.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''        if (!ids.insert(fact.id).second) {'''
+  to = '''        if (!ids.insert(fact.id).second && false) {'''
+
+[[mutant]]
+name = "a-key-at-the-top-is-not-checked"
+file = "src/eval/gold.cpp"
+expect = "Gold.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    return top.nothing_else();'''
+  to = '''    return ok();'''
+
+[[mutant]]
+name = "every-fact-is-core"
+file = "src/eval/gold.cpp"
+expect = "Gold.IsWrittenForPeopleAndReadBackAsItWas"
+  [[mutant.edit]]
+  from = '''    fact.importance = importance == "core" ? Importance::core : Importance::detail;'''
+  to = '''    fact.importance = Importance::core;'''
+
+[[mutant]]
+name = "every-gold-file-is-silver"
+file = "src/eval/gold.cpp"
+expect = "Gold.IsWrittenForPeopleAndReadBackAsItWas"
+  [[mutant.edit]]
+  from = '''    gold.status = status == "gold" ? GoldStatus::gold : GoldStatus::silver;'''
+  to = '''    gold.status = GoldStatus::silver;'''
+
+[[mutant]]
+name = "found-is-not-written"
+file = "src/eval/gold.cpp"
+expect = "Gold.IsWrittenForPeopleAndReadBackAsItWas"
+  [[mutant.edit]]
+  from = '''nimportance = {}\nfound = {}\nquote = {}\nclaim = "'''
+  to = '''nimportance = {}\n{}quote = {}\nclaim = "'''
+  [[mutant.edit]]
+  from = '''            fact.found, detail::toml_string(fact.quote),'''
+  to = '''            "", detail::toml_string(fact.quote),'''
+
+[[mutant]]
+name = "a-long-quote-is-shown-whole"
+file = "src/eval/gold.cpp"
+expect = "Gold.ProblemsSayWhatToCorrect"
+  [[mutant.edit]]
+  from = '''    if (quote.size() <= kQuoted) {'''
+  to = '''    if (true) {'''
+
+[[mutant]]
+name = "a-quote-is-cut-inside-a-character"
+file = "src/eval/gold.cpp"
+expect = "Gold.ProblemsSayWhatToCorrect"
+  [[mutant.edit]]
+  from = '''    while (cut > 0 && (static_cast<unsigned char>(quote[cut]) & 0xC0U) == 0x80U) {'''
+  to = '''    while (false) {'''
+
+[[mutant]]
+name = "a-fact-may-end-before-it-starts"
+file = "src/eval/gold.cpp"
+expect = "Gold.ProblemsSayWhatToCorrect"
+  [[mutant.edit]]
+  from = '''    if (end < start) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-quote-is-never-looked-for"
+file = "src/eval/gold.cpp"
+expect = "Gold.ProblemsSayWhatToCorrect"
+  [[mutant.edit]]
+  from = '''    if (!said_there(quote, start, end, transcript)) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "no-slack-before-a-stretch"
+file = "src/eval/gold.cpp"
+expect = "Gold.AQuoteIsSaidThereWhenItsWordsAreSaidNearItsStretch"
+  [[mutant.edit]]
+  from = '''    const Millis from = start - kAnchorSlack;'''
+  to = '''    const Millis from = start;'''
+
+[[mutant]]
+name = "no-slack-after-a-stretch"
+file = "src/eval/gold.cpp"
+expect = "Gold.AQuoteIsSaidThereWhenItsWordsAreSaidNearItsStretch"
+  [[mutant.edit]]
+  from = '''    const Millis to = end + kAnchorSlack;'''
+  to = '''    const Millis to = end;'''
+
+[[mutant]]
+name = "only-sentences-wholly-within-are-read"
+file = "src/eval/gold.cpp"
+expect = "Gold.AQuoteIsSaidThereWhenItsWordsAreSaidNearItsStretch"
+  [[mutant.edit]]
+  from = '''        if (sentence.span.start() <= to && sentence.span.end() >= from) {'''
+  to = '''        if (sentence.span.start() >= from && sentence.span.end() <= to) {'''
+
+[[mutant]]
+name = "silver-needs-a-reviewer-too"
+file = "src/eval/gold.cpp"
+expect = "Gold.ProblemsSayWhatToCorrect"
+  [[mutant.edit]]
+  from = '''    if (gold.status == GoldStatus::gold && gold.reviewer.empty()) {'''
+  to = '''    if (gold.reviewer.empty()) {'''
+
+[[mutant]]
+name = "a-time-keeps-trailing-zeros"
+file = "src/eval/gold.cpp"
+expect = "Gold.ATimeIsWrittenAsPlayersShowIt"
+  [[mutant.edit]]
+  from = '''        while (fraction.back() == '0') {'''
+  to = '''        while (false) {'''
+
+[[mutant]]
+name = "the-first-hour-is-written-in-minutes"
+file = "src/eval/gold.cpp"
+expect = "Gold.ATimeIsWrittenAsPlayersShowIt"
+  [[mutant.edit]]
+  from = '''        seconds >= 3600 ?'''
+  to = '''        seconds > 3600 ?'''
+
+[[mutant]]
+name = "a-time-before-the-video-is-written"
+file = "src/eval/gold.cpp"
+expect = "Gold.ATimeIsWrittenAsPlayersShowIt"
+  [[mutant.edit]]
+  from = '''    const std::int64_t total = std::max<std::int64_t>(at.count(), 0);'''
+  to = '''    const std::int64_t total = at.count() < 0 ? -at.count() : at.count();'''
+
+# --- Windows and drafts (annotate.cpp) ------------------------------------------------
+
+[[mutant]]
+name = "a-line-is-counted-without-its-newline"
+file = "src/eval/annotate.cpp"
+expect = "Windows.HoldAsManyWholeSentencesAsTheirLinesFitOneAtLeast"
+  [[mutant.edit]]
+  from = '''    return sentence_lines(transcript, index, index + 1).size() + 1;'''
+  to = '''    return sentence_lines(transcript, index, index + 1).size();'''
+
+[[mutant]]
+name = "a-window-stops-short-of-its-bytes"
+file = "src/eval/annotate.cpp"
+expect = "Windows.HoldAsManyWholeSentencesAsTheirLinesFitOneAtLeast"
+  [[mutant.edit]]
+  from = '''used + line_bytes(transcript, end) <= bytes) {'''
+  to = '''used + line_bytes(transcript, end) < bytes) {'''
+
+[[mutant]]
+name = "context-before-is-not-bounded-by-bytes"
+file = "src/eval/annotate.cpp"
+expect = "Windows.TheirContextIsAFewSentencesOnEitherSideWithinItsBytes"
+  [[mutant.edit]]
+  from = '''           used + line_bytes(transcript, window.context_begin - 1) <= kContextBytes) {'''
+  to = '''           true) {'''
+
+[[mutant]]
+name = "context-before-is-not-bounded-by-count"
+file = "src/eval/annotate.cpp"
+expect = "Windows.TheirContextIsAFewSentencesOnEitherSideWithinItsBytes"
+  [[mutant.edit]]
+  from = '''    while (window.context_begin > 0 && begin - window.context_begin < context &&'''
+  to = '''    while (window.context_begin > 0 &&'''
+
+[[mutant]]
+name = "context-after-is-not-bounded-by-count"
+file = "src/eval/annotate.cpp"
+expect = "Windows.TheirContextIsAFewSentencesOnEitherSideWithinItsBytes"
+  [[mutant.edit]]
+  from = '''window.context_end - end < context &&'''
+  to = ''''''
+
+[[mutant]]
+name = "the-commanders-thinking-is-not-sized"
+file = "src/eval/annotate.cpp"
+expect = "Windows.AreSizedToTheirEngines"
+  [[mutant.edit]]
+  from = '''            sizes.annotate = bytes((room - thinking) / 3, sizes.annotate);'''
+  to = '''            sizes.annotate = bytes((room - thinking * 0) / 3, sizes.annotate);'''
+
+[[mutant]]
+name = "the-other-familys-answer-is-not-sized"
+file = "src/eval/annotate.cpp"
+expect = "Windows.AreSizedToTheirEngines"
+  [[mutant.edit]]
+  from = '''            sizes.more = bytes((room - kMoreAnswerTokens) / 2, sizes.more);'''
+  to = '''            sizes.more = bytes(room / 2, sizes.more);'''
+
+[[mutant]]
+name = "a-negative-room-wraps-around"
+file = "src/eval/annotate.cpp"
+expect = "Windows.AreSizedToTheirEngines"
+  [[mutant.edit]]
+  from = '''static_cast<std::size_t>(std::max<std::int64_t>(tokens, 0) * kBytesPerToken)'''
+  to = '''static_cast<std::size_t>(tokens * kBytesPerToken)'''
+
+[[mutant]]
+name = "the-commander-answers-half-again-what-it-reads"
+file = "src/eval/annotate.cpp"
+expect = "AnnotateStageTest.AWindowGivesUpSentencesUntilItsEngineHoldsIt"
+  [[mutant.edit]]
+  from = '''std::clamp<std::int64_t>(read * 2, 1'024, 8'192)'''
+  to = '''std::clamp<std::int64_t>(read * 3 / 2, 1'024, 8'192)'''
+
+[[mutant]]
+name = "a-window-never-gives-up-a-sentence"
+file = "src/eval/annotate.cpp"
+expect = "AnnotateStageTest.AWindowGivesUpSentencesUntilItsEngineHoldsIt"
+  [[mutant.edit]]
+  from = '''        while (!held && window.end - window.begin > 1) {'''
+  to = '''        while (false) {'''
+
+[[mutant]]
+name = "a-sentence-too-long-is-sent-anyway"
+file = "src/eval/annotate.cpp"
+expect = "AnnotateStageTest.ASentenceTooLongForItsEngineEvenAloneIsAFinding"
+  [[mutant.edit]]
+  from = '''        if (held) {
+            plan.windows.push_back(window);'''
+  to = '''        if (true) {
+            plan.windows.push_back(window);'''
+
+[[mutant]]
+name = "a-citation-after-the-window-is-taken"
+file = "src/eval/annotate.cpp"
+expect = "Drafts.ThatDoNotAreSentBackWithWhatToDoInstead"
+  [[mutant.edit]]
+  from = '''        return index_of(id) < window.begin || index_of(id) >= window.end;'''
+  to = '''        return index_of(id) < window.begin;'''
+
+[[mutant]]
+name = "a-quote-is-not-checked"
+file = "src/eval/annotate.cpp"
+expect = "Drafts.ThatDoNotAreSentBackWithWhatToDoInstead"
+  [[mutant.edit]]
+  from = '''        } else if (!verbatim_in(quote, said_by(ids, transcript))) {'''
+  to = '''        } else if (false) {'''
+
+[[mutant]]
+name = "a-term-is-not-checked"
+file = "src/eval/annotate.cpp"
+expect = "Drafts.ThatDoNotAreSentBackWithWhatToDoInstead"
+  [[mutant.edit]]
+  from = '''            !verbatim_in(written, window_text)) {'''
+  to = '''            false) {'''
+
+[[mutant]]
+name = "a-term-may-come-from-the-context"
+file = "src/eval/annotate.cpp"
+expect = "Drafts.ThatDoNotAreSentBackWithWhatToDoInstead"
+  [[mutant.edit]]
+  from = '''    for (std::size_t index = window.begin; index < window.end; ++index) {
+        window_text += " " + transcript.sentences[index].text;'''
+  to = '''    for (std::size_t index = window.context_begin; index < window.context_end; ++index) {
+        window_text += " " + transcript.sentences[index].text;'''
+
+[[mutant]]
+name = "every-problem-is-sent-back"
+file = "src/eval/annotate.cpp"
+expect = "Drafts.AreSentBackAFewProblemsAtATime"
+  [[mutant.edit]]
+  from = '''        if (problems.size() < kMostProblems) {'''
+  to = '''        if (true) {'''
+
+[[mutant]]
+name = "the-problems-left-out-are-not-counted"
+file = "src/eval/annotate.cpp"
+expect = "Drafts.AreSentBackAFewProblemsAtATime"
+  [[mutant.edit]]
+  from = '''    if (more > 0) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-fact-said-twice-is-one-fact"
+file = "src/eval/annotate.cpp"
+expect = "Joining.KeepsTwoThingsOneSentenceSaysAndAPhraseSaidTwice"
+  [[mutant.edit]]
+  from = '''    if (common.empty()) {
+        return false;
+    }'''
+  to = ''''''
+
+[[mutant]]
+name = "the-kept-quote-must-be-the-shorter"
+file = "src/eval/annotate.cpp"
+expect = "Joining.AddsWhatTheOtherFamilyFoundThatTheDraftsMissed"
+  [[mutant.edit]]
+  from = '''    const bool left_shorter = left_quote.size() <= right_quote.size();'''
+  to = '''    const bool left_shorter = true;'''
+
+[[mutant]]
+name = "a-joined-fact-keeps-its-first-sentences"
+file = "src/eval/annotate.cpp"
+expect = "Joining.TakesOneQuoteHoldingAnotherInASentenceInCommonForOneFact"
+  [[mutant.edit]]
+  from = '''            same->fact.sentences = merged(same->fact.sentences, fact.sentences);'''
+  to = '''            same->fact.sentences = merged(same->fact.sentences, {});'''
+
+[[mutant]]
+name = "a-joined-fact-keeps-its-first-stretch"
+file = "src/eval/annotate.cpp"
+expect = "Joining.TakesOneQuoteHoldingAnotherInASentenceInCommonForOneFact"
+  [[mutant.edit]]
+  from = '''            std::tie(same->fact.start, same->fact.end) = span_of(same->fact.sentences, transcript);'''
+  to = ''''''
+
+[[mutant]]
+name = "a-draft-votes-core-each-time-it-lists-a-fact"
+file = "src/eval/annotate.cpp"
+expect = "Joining.CallsAFactCoreUnlessMostDraftsCallItDetail"
+  [[mutant.edit]]
+  from = '''            if (same->drafts.insert(index).second && fact.importance == Importance::core) {'''
+  to = '''            same->drafts.insert(index);
+            if (fact.importance == Importance::core) {'''
+
+[[mutant]]
+name = "found-is-always-one"
+file = "src/eval/annotate.cpp"
+expect = "Joining.KeepsAFactEveryDraftFoundOnceAndCountsThem"
+  [[mutant.edit]]
+  from = '''        kept.fact.found = static_cast<int>(kept.drafts.size());'''
+  to = '''        kept.fact.found = 1;'''
+
+[[mutant]]
+name = "a-tie-is-detail"
+file = "src/eval/annotate.cpp"
+expect = "Joining.CallsAFactCoreUnlessMostDraftsCallItDetail"
+  [[mutant.edit]]
+  from = '''        kept.fact.importance = 2 * kept.core >= kept.fact.found ? Importance::core : Importance::detail;'''
+  to = '''        kept.fact.importance = 2 * kept.core > kept.fact.found ? Importance::core : Importance::detail;'''
+
+[[mutant]]
+name = "joined-facts-keep-the-drafts-order"
+file = "src/eval/annotate.cpp"
+expect = "Joining.PutsFactsInTheOrderSaid"
+  [[mutant.edit]]
+  from = '''        silver.facts.push_back(std::move(kept.fact));
+    }
+    in_order_said(silver.facts);'''
+  to = '''        silver.facts.push_back(std::move(kept.fact));
+    }'''
+
+[[mutant]]
+name = "a-fact-the-drafts-found-is-added-again"
+file = "src/eval/annotate.cpp"
+expect = "Joining.AddsWhatTheOtherFamilyFoundThatTheDraftsMissed"
+  [[mutant.edit]]
+  from = '''        if (!known) {'''
+  to = '''        if (!known || true) {'''
+
+[[mutant]]
+name = "an-added-fact-goes-last"
+file = "src/eval/annotate.cpp"
+expect = "Joining.AddsWhatTheOtherFamilyFoundThatTheDraftsMissed"
+  [[mutant.edit]]
+  from = '''    add_terms(silver.terms, more.terms);
+    in_order_said(silver.facts);'''
+  to = '''    add_terms(silver.terms, more.terms);'''
+
+[[mutant]]
+name = "a-meaning-replaces-one-already-there"
+file = "src/eval/annotate.cpp"
+expect = "Joining.JoinsMustQuotesAndTermsToo"
+  [[mutant.edit]]
+  from = '''        } else if (found->meaning.empty()) {'''
+  to = '''        } else {'''
+
+[[mutant]]
+name = "terms-are-compared-as-written"
+file = "src/eval/annotate.cpp"
+expect = "Joining.JoinsMustQuotesAndTermsToo"
+  [[mutant.edit]]
+  from = '''std::ranges::find(terms, folded(term.term), [](const Term& kept) { return folded(kept.term); });'''
+  to = '''std::ranges::find(terms, term.term, [](const Term& kept) { return folded(kept.term); });'''
+
+[[mutant]]
+name = "a-must-quote-is-kept-twice"
+file = "src/eval/annotate.cpp"
+expect = "Joining.JoinsMustQuotesAndTermsToo"
+  [[mutant.edit]]
+  from = '''        if (same == quotes.end()) {'''
+  to = '''        if (same == quotes.end() || true) {'''
+
+[[mutant]]
+name = "silver-is-read-unchecked"
+file = "src/eval/annotate.cpp"
+expect = "Silver.IsKeptAsItsArtifactAndReadBack"
+  [[mutant.edit]]
+  from = '''    if (Result<void> valid = knowledge::artifact_schemas().validate("artifacts/silver", document);
+        !valid.has_value()) {'''
+  to = '''    if (Result<void> valid = knowledge::artifact_schemas().validate("artifacts/silver", document);
+        false) {'''
+
+[[mutant]]
+name = "found-is-not-read-back"
+file = "src/eval/annotate.cpp"
+expect = "Silver.IsKeptAsItsArtifactAndReadBack"
+  [[mutant.edit]]
+  from = '''                                          .found = fact.at("found").get<int>()});'''
+  to = '''                                          .found = 0});'''
+
+[[mutant]]
+name = "facts-are-numbered-from-zero"
+file = "src/eval/annotate.cpp"
+expect = "Silver.BecomesTheFirstGoldFileUnreviewed"
+  [[mutant.edit]]
+  from = '''std::format("F{}", index + 1)'''
+  to = '''std::format("F{}", index)'''
+
+# --- The stage (annotate.cpp) ---------------------------------------------------------
+
+[[mutant]]
+name = "the-other-family-sees-every-fact"
+file = "src/eval/annotate.cpp"
+expect = "AnnotateStageTest.AWindowGivesUpSentencesUntilItsEngineHoldsIt"
+  [[mutant.edit]]
+  from = '''        if (here) {'''
+  to = '''        if (here || true) {'''
+
+[[mutant]]
+name = "no-facts-found-is-said-as-nothing"
+file = "src/eval/annotate.cpp"
+expect = "AnnotateStageTest.AWindowTheModelsDeclineIsAFindingAndTheOtherFamilyStillReadsIt"
+  [[mutant.edit]]
+  from = '''    return lines.empty() ? std::string{"(none)"} : lines;'''
+  to = '''    return lines;'''
+
+[[mutant]]
+name = "the-salt-draws-no-new-samples"
+file = "src/eval/annotate.cpp"
+expect = "AnnotateStageTest.TheJobsSaltDrawsItsSamples"
+  [[mutant.edit]]
+  from = '''llm::derived_seed(context.job->salt, AnnotateStage::kName, id, 0)'''
+  to = '''llm::derived_seed(0, AnnotateStage::kName, id, 0)'''
+
+[[mutant]]
+name = "the-commander-drafts-once"
+file = "src/eval/annotate.cpp"
+expect = "AnnotateStageTest.TheCommanderDraftsThreeTimesAndTheOtherFamilyAddsWhatTheyMissed"
+  [[mutant.edit]]
+  from = '''                                              .samples = kSamples,'''
+  to = '''                                              .samples = 1,'''
+
+[[mutant]]
+name = "the-commander-drafts-without-thinking"
+file = "src/eval/annotate.cpp"
+expect = "AnnotateStageTest.TheCommanderDraftsThreeTimesAndTheOtherFamilyAddsWhatTheyMissed"
+  [[mutant.edit]]
+  from = '''                                              .thinking = true,'''
+  to = '''                                              .thinking = false,'''
+
+[[mutant]]
+name = "the-commander-reads-again"
+file = "src/eval/annotate.cpp"
+expect = "AnnotateStageTest.TheCommanderDraftsThreeTimesAndTheOtherFamilyAddsWhatTheyMissed"
+  [[mutant.edit]]
+  from = '''                                       Reader{.role = "infantry",'''
+  to = '''                                       Reader{.role = "commander",'''
+
+[[mutant]]
+name = "a-window-without-a-draft-says-nothing"
+file = "src/eval/annotate.cpp"
+expect = "AnnotateStageTest.AWindowTheModelsDeclineIsAFindingAndTheOtherFamilyStillReadsIt"
+  [[mutant.edit]]
+  from = '''        if (outcome.verdict == agents::Verdict::accepted) {'''
+  to = '''        if (true) {'''
+
+[[mutant]]
+name = "a-ceiling-leaves-the-result-reusable"
+file = "src/eval/annotate.cpp"
+expect = "AnnotateStageTest.ACeilingStopsTheDraftsAndMakesTheResultThisJobsAlone"
+  [[mutant.edit]]
+  from = '''        if (ceiling_) {
+            output.reusable = false;
+        }'''
+  to = ''''''
+
+[[mutant]]
+name = "the-key-forgets-what-the-engines-hold"
+file = "src/eval/annotate.cpp"
+expect = "AnnotateStageTest.ItsKeyNamesThePromptsTheModelsAndWhatTheyHold"
+  [[mutant.edit]]
+  from = '''{"holds", engine == nullptr ? 0 : engine->ctx_per_slot}'''
+  to = '''{"holds", engine == nullptr ? 0 : engine->ctx_per_slot * 0}'''
+
+[[mutant]]
+name = "a-reviewed-gold-file-is-replaced"
+file = "src/eval/annotate.cpp"
+expect = "AnnotationJobTest.ADraftReplacesSilverOnlyWhenAskedAndNeverGold"
+  [[mutant.edit]]
+  from = '''        if (existing.status == GoldStatus::gold) {'''
+  to = '''        if (false) {'''
+
+[[mutant]]
+name = "a-silver-gold-file-is-replaced-unasked"
+file = "src/eval/annotate.cpp"
+expect = "AnnotationJobTest.ADraftReplacesSilverOnlyWhenAskedAndNeverGold"
+  [[mutant.edit]]
+  from = '''        if (!replace) {'''
+  to = '''        if (!replace && false) {'''
+
+[[mutant]]
+name = "an-article-of-the-snapshot-is-taken-up"
+file = "src/eval/annotate.cpp"
+expect = "AnnotationJobTest.AnArticleOfTheSnapshotIsNotTakenUp"
+  [[mutant.edit]]
+  from = '''        if (job.kind == library::JobKind::annotation && job.source == source && unfinished) {'''
+  to = '''        if (job.source == source && unfinished) {'''
+
+[[mutant]]
+name = "a-failed-job-is-taken-up"
+file = "src/eval/annotate.cpp"
+expect = "AnnotationJobTest.AFailedJobIsNotTakenUpAgain"
+  [[mutant.edit]]
+  from = '''job.status != library::JobStatus::done && job.status != library::JobStatus::failed;'''
+  to = '''job.status != library::JobStatus::done;'''
+
+[[mutant]]
+name = "an-unfinished-job-is-never-taken-up"
+file = "src/eval/annotate.cpp"
+expect = "AnnotationJobTest.ARerunTakesUpAnUnfinishedJob"
+  [[mutant.edit]]
+  from = '''            return job;  // taken up again: its memo answers every call it made'''
+  to = '''            break;'''
+
+[[mutant]]
+name = "an-annotation-is-made-as-an-article"
+file = "src/eval/annotate.cpp"
+expect = "AnnotationJobTest.ADraftIsWrittenToTheGoldFileForAPersonToCorrect"
+  [[mutant.edit]]
+  from = '''    return jobs.create(source, "max", 0, library::JobKind::annotation);'''
+  to = '''    return jobs.create(source, "max", 0);'''
+
+[[mutant]]
+name = "an-unfinished-job-writes-its-gold"
+file = "src/eval/annotate.cpp"
+expect = "AnnotationJobTest.ARerunTakesUpAnUnfinishedJob"
+  [[mutant.edit]]
+  from = '''    if (annotated.run.job.status != library::JobStatus::done) {'''
+  to = '''    if (false) {'''
+
+# --- The sheet (sheet.cpp) ------------------------------------------------------------
+
+[[mutant]]
+name = "a-bar-breaks-its-cell"
+file = "src/eval/sheet.cpp"
+expect = "Sheet.PutsEachFactBesideItsMomentAndSaysWhatToCorrect"
+  [[mutant.edit]]
+  from = '''"\n", " "), "|", "\\|");'''
+  to = '''"\n", " "), "|", "|");'''
+
+[[mutant]]
+name = "a-new-line-breaks-its-row"
+file = "src/eval/sheet.cpp"
+expect = "Sheet.PutsEachFactBesideItsMomentAndSaysWhatToCorrect"
+  [[mutant.edit]]
+  from = '''"\r", " "), "\n", " "), "|"'''
+  to = '''"\r", " "), "\n", "\n"), "|"'''
+
+[[mutant]]
+name = "a-fact-one-draft-found-is-not-marked"
+file = "src/eval/sheet.cpp"
+expect = "Sheet.PutsEachFactBesideItsMomentAndSaysWhatToCorrect"
+  [[mutant.edit]]
+  from = '''fact.found == 1 ? " ?" : ""'''
+  to = '''""'''
+
+[[mutant]]
+name = "a-second-parameter-starts-with-a-question-mark"
+file = "src/eval/sheet.cpp"
+expect = "Sheet.LinksEachMomentOfTheVideo"
+  [[mutant.edit]]
+  from = '''url.contains('?') ? '&' : '?','''
+  to = ''''?','''
+
+[[mutant]]
+name = "another-snapshot-goes-unremarked"
+file = "src/eval/sheet.cpp"
+expect = "Sheet.PutsEachFactBesideItsMomentAndSaysWhatToCorrect"
+  [[mutant.edit]]
+  from = '''    if (gold.snapshot != snapshot) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "the-sheet-always-finds-nothing-to-correct"
+file = "src/eval/sheet.cpp"
+expect = "Sheet.PutsEachFactBesideItsMomentAndSaysWhatToCorrect"
+  [[mutant.edit]]
+  from = '''    if (problems.empty()) {'''
+  to = '''    if (true) {'''

@@ -179,7 +179,7 @@ TEST_F(Hub, DoctorChecksEverythingAndSaysSo) {
     EXPECT_EQ(result.status.code, 0) << result.stdout_text << result.stderr_text;
     // ok, or a warning on a disk with little room (CI runners): either way, found and writable.
     EXPECT_THAT(result.stdout_text, HasSubstr(std::format("] data directory: '{}'", data_dir().string())));
-    EXPECT_THAT(result.stdout_text, HasSubstr("[ok  ] library: 'default' (schema version 4)"));
+    EXPECT_THAT(result.stdout_text, HasSubstr("[ok  ] library: 'default' (schema version 5)"));
     EXPECT_THAT(result.stdout_text, HasSubstr("[ok  ] RunPod: pod pod123 is RUNNING"));
     EXPECT_THAT(result.stdout_text, HasSubstr("[ok  ] runtime:"));
     EXPECT_THAT(result.stdout_text, HasSubstr("chat (commander) ready, squad (infantry) ready"));
@@ -329,7 +329,7 @@ TEST_F(Hub, BenchKeepsALevelTheEngineCannotServeAsAResult) {
     ASSERT_EQ(result.status.code, 0) << "a limit found is a result, not a failure of the bench\n"
                                      << result.stdout_text << result.stderr_text;
     EXPECT_THAT(result.stdout_text, HasSubstr("## Commander `chat`"));
-    EXPECT_THAT(result.stdout_text, HasSubstr("| 2 | 4 | – | – | – | 2 | – |"));
+    EXPECT_THAT(result.stdout_text, HasSubstr("| 2 | 4 | \u2013 | \u2013 | \u2013 | 2 | \u2013 |"));
     EXPECT_THAT(
         result.stdout_text,
         HasSubstr("- 2 at once: 2 of 2 failed: HTTP 400: the request exceeds the available context size"));
@@ -419,6 +419,120 @@ TEST_F(Hub, AJobThatCannotBeDoneSaysWhy) {
     const proc::RunResult unknown = rreport({"resume", "01J00000000000000000000000"});
     EXPECT_EQ(unknown.status.code, 1);
     EXPECT_THAT(unknown.stderr_text, HasSubstr("rreport jobs"));
+}
+
+// --- The eval -----------------------------------------------------------------------------
+
+constexpr std::string_view kSet = R"toml(
+[[video]]
+id = "radium-talk"
+title = "On radium"
+url = "https://www.youtube.com/watch?v=abc123XYZ_0"
+type = "talk"
+captions = "manual"
+split = "dev"
+licence = "us-public-domain"
+attribution = "Science Hour"
+)toml";
+
+// yt-dlp, played by a script in `home`: it describes the video of kSet, and
+// downloads kCaptions as its English captions. The settings that use it.
+std::vector<std::string> fake_ytdlp(const testkit::TempDir& home) {
+    (void)home.write_file("ytdlp/info.json", R"json({"id": "abc123XYZ_0", "title": "On radium",
+        "channel": "Science Hour", "language": "en", "subtitles": {"en": [{"ext": "vtt"}]},
+        "webpage_url": "https://www.youtube.com/watch?v=abc123XYZ_0"})json");
+    (void)home.write_file("ytdlp/captions.vtt", kCaptions);
+    const std::filesystem::path script =
+        home.write_file("ytdlp/yt-dlp", std::format(R"(#!/bin/sh
+mode=captions
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dump-single-json) mode=describe ;;
+    --paths) directory="$2" ;;
+  esac
+  shift
+done
+if [ "$mode" = describe ]; then cat '{0}/info.json'; else cp '{0}/captions.vtt' "$directory/captions.en.vtt"; fi
+)",
+                                                    (home / "ytdlp").string()));
+    std::filesystem::permissions(script, std::filesystem::perms::owner_all);
+    return {std::format("media.ytdlp={}", script.string())};
+}
+
+TEST_F(Hub, TheEvalKeepsItsVideosAndDraftsTheirGold) {
+    const std::filesystem::path eval = home() / "eval";
+    (void)home().write_file("eval/sets/m2.toml", kSet);
+    const std::vector<std::string> ytdlp = fake_ytdlp(home());
+
+    const proc::RunResult fetched = rreport({"eval", "--eval-dir", eval.string(), "fetch"}, ytdlp);
+    ASSERT_EQ(fetched.status.code, 0) << fetched.stdout_text << fetched.stderr_text;
+    EXPECT_THAT(fetched.stdout_text, HasSubstr("radium-talk: kept "));
+    EXPECT_THAT(fetched.stdout_text, HasSubstr("pin it in the set, under the video: snapshot = \""));
+    EXPECT_TRUE(std::filesystem::exists(eval / "data" / "radium-talk" / "radium-talk.source.json"));
+    const proc::RunResult kept =
+        rreport({"eval", "--eval-dir", eval.string(), "fetch", "radium-talk"}, ytdlp);
+    ASSERT_EQ(kept.status.code, 0);
+    EXPECT_THAT(kept.stdout_text, HasSubstr("radium-talk: kept already, snapshot ")) << "read once";
+
+    const proc::RunResult waiting =
+        rreport({"eval", "--eval-dir", eval.string(), "annotate"}, {"runtime.url=", "runpod.pod_id="});
+    EXPECT_EQ(waiting.status.code, 1);
+    EXPECT_THAT(waiting.stdout_text,
+                HasSubstr("needs you: drafting an annotation needs models, and no pod is "
+                          "configured"));
+    EXPECT_THAT(
+        waiting.stdout_text,
+        HasSubstr(std::format("then: rreport eval annotate --eval-dir {} radium-talk", eval.string())));
+    const proc::RunResult listed = rreport({"jobs"});
+    EXPECT_THAT(listed.stdout_text, HasSubstr("annotation  needs_user"));
+    const proc::RunResult resumed = rreport({"resume", job_in(waiting.stdout_text)});
+    EXPECT_EQ(resumed.status.code, 2) << "an annotation runs other stages than an article";
+    EXPECT_THAT(resumed.stderr_text, HasSubstr("`rreport eval annotate` takes it up again"));
+
+    // The gold file a person corrected.
+    const std::string snapshot =
+        fetched.stdout_text.substr(fetched.stdout_text.find("snapshot = \"") + 12, 64);
+    (void)home().write_file("eval/gold/radium-talk.toml",
+                            std::format("video = \"radium-talk\"\nsnapshot = \"{}\"\nstatus = \"gold\"\n"
+                                        "reviewer = \"Ada\"\n\n[[fact]]\nid = \"F1\"\nstart = \"0:03\"\n"
+                                        "end = \"0:06\"\nimportance = \"core\"\nquote = \"heated it until it "
+                                        "glowed\"\nclaim = \"Pierre Curie heated radium until it glowed.\"\n",
+                                        snapshot));
+    const proc::RunResult sheet = rreport({"eval", "--eval-dir", eval.string(), "sheet", "radium-talk"});
+    ASSERT_EQ(sheet.status.code, 0) << sheet.stderr_text;
+    EXPECT_THAT(sheet.stdout_text, HasSubstr("# Review: On radium"));
+    EXPECT_THAT(sheet.stdout_text,
+                HasSubstr("| F1 | [0:03\u20130:06](https://www.youtube.com/watch?v=abc123XYZ_0&t=3s) "
+                          "| 0 | core | Pierre Curie heated radium until it glowed. | "
+                          "\"heated it until it glowed\" | \u2713 |"));
+    EXPECT_THAT(sheet.stdout_text, HasSubstr("Nothing the sheet can check."));
+    const std::filesystem::path out = home() / "sheet.md";
+    const proc::RunResult saved =
+        rreport({"eval", "--eval-dir", eval.string(), "sheet", "radium-talk", "--out", out.string()});
+    ASSERT_EQ(saved.status.code, 0);
+    EXPECT_EQ(unwrap(read_file(out)), sheet.stdout_text);
+}
+
+TEST_F(Hub, TheEvalSaysWhatIsMissing) {
+    const std::filesystem::path eval = home() / "eval";
+    const proc::RunResult no_set = rreport({"eval", "--eval-dir", eval.string(), "fetch"});
+    EXPECT_EQ(no_set.status.code, 2);
+    EXPECT_THAT(no_set.stderr_text, HasSubstr("a set is made from the approved candidates"));
+
+    (void)home().write_file("eval/sets/m2.toml", kSet);
+    const proc::RunResult unknown = rreport({"eval", "--eval-dir", eval.string(), "annotate", "polonium"});
+    EXPECT_EQ(unknown.status.code, 2);
+    EXPECT_THAT(unknown.stderr_text, HasSubstr("the set 'm2' has no video 'polonium'"));
+
+    const proc::RunResult unfetched = rreport({"eval", "--eval-dir", eval.string(), "annotate"});
+    EXPECT_EQ(unfetched.status.code, 1);
+    EXPECT_THAT(unfetched.stderr_text, HasSubstr("`rreport eval fetch radium-talk` reads it first"));
+    const proc::RunResult unsheeted = rreport({"eval", "--eval-dir", eval.string(), "sheet", "radium-talk"});
+    EXPECT_EQ(unsheeted.status.code, 1);
+    EXPECT_THAT(unsheeted.stderr_text,
+                HasSubstr(std::format("has no snapshot yet: rreport eval fetch --eval-dir {} "
+                                      "radium-talk reads it",
+                                      eval.string())));
 }
 
 TEST_F(Hub, ConfigurationMistakesAndSecrets) {
