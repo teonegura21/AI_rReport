@@ -42,7 +42,8 @@ struct StreamPlan {
     std::vector<ChoicePlan> choices{ChoicePlan{}};  // by index
     bool include_usage = false;
     std::int64_t prompt_tokens = 1;
-    int token_ms = 20;  // the engine's pace, reported in "timings"
+    std::int64_t cached_tokens = 0;  // of the prompt's, served from a cache, not read
+    int token_ms = 20;               // the engine's pace, reported in "timings"
 };
 
 // Five tokens, tok0 … tok4: the fake's answer when a request asks for nothing else.
@@ -91,9 +92,10 @@ inline std::int64_t completion_tokens(const ChoicePlan& choice) {
 inline json::Json timings(const StreamPlan& plan, std::size_t choice) {
     const std::int64_t predicted = completion_tokens(plan.choices.at(choice));
     const double pace = plan.token_ms > 0 ? 1000.0 / plan.token_ms : 1'000'000.0;
-    return {{"cache_n", 0},
-            {"prompt_n", plan.prompt_tokens},
-            {"prompt_ms", static_cast<double>(plan.prompt_tokens)},
+    const std::int64_t read = plan.prompt_tokens - plan.cached_tokens;
+    return {{"cache_n", plan.cached_tokens},
+            {"prompt_n", read},
+            {"prompt_ms", static_cast<double>(read)},
             {"prompt_per_second", 1000.0},
             {"predicted_n", predicted},
             {"predicted_ms", static_cast<double>(predicted * plan.token_ms)},
@@ -106,14 +108,15 @@ inline std::string finish_event(const StreamPlan& plan, std::size_t choice = 0) 
 }
 
 // The choice's usage. Every choice reports the whole prompt: llama-server
-// copies the prompt, read once, to each choice's slot.
+// copies the prompt, read once, to each choice's slot. Its cached part was
+// not read (llama-server's usage counts it in prompt_tokens all the same).
 inline std::string usage_event(const StreamPlan& plan, std::size_t choice = 0) {
     const std::int64_t completion = completion_tokens(plan.choices.at(choice));
     return chunk(plan, json::Json::array(),
                  {{"usage",
                    {{"completion_tokens", completion},
                     {"prompt_tokens", plan.prompt_tokens},
-                    {"prompt_tokens_details", {{"cached_tokens", 0}}},
+                    {"prompt_tokens_details", {{"cached_tokens", plan.cached_tokens}}},
                     {"total_tokens", plan.prompt_tokens + completion}}},
                   {"timings", timings(plan, choice)}});
 }

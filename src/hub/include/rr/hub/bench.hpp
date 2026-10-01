@@ -5,23 +5,38 @@
 //   The GPU is the product's main running cost, and which one to rent is
 //   decided by measurement (plan §4.5, the M0 capacity benchmark). bench
 //   measures the pod as it is configured:
-//     * the commander, one request at a time (its passes are sequential):
-//       time to the first token, prompt tokens per second, generated tokens
-//       per second. With `choices` above 1, each request asks for that many
-//       answers at once (n), as the pipeline asks for k drafts: the prompt is
-//       read once, and the generated speed is the answers' together;
+//     * the engines as the runtime reports them: slots, context, the most
+//       one sequence may hold, and whether the slots share one pool;
+//     * the commander, one request at a time: time to the first token,
+//       prompt tokens per second, generated tokens per second. With
+//       `choices` above 1, each request asks for that many answers at once
+//       (n), as the pipeline asks for k drafts: the prompt is read once, and
+//       the generated speed is the answers' together;
+//     * with `commander_parallel` (e.g. 1, 2, 4), the commander at that many
+//       requests at once: what its parallel slots are worth against one;
 //     * the infantry, at 1, 4, 8, 16 and 32 requests at once: the total
 //       tokens per second of the squad. Parallel slots are what makes it
 //       fast; above the engine's slots requests wait for a slot, and the
 //       table says so;
+//     * with `cache_check`, whether each engine's prompt cache serves a
+//       shared prefix: after one request has read a system message, others
+//       with the same system message and their own question follow, alone
+//       and then several at once. The pipeline's prompts put everything
+//       shared in the system message on the strength of this; a model whose
+//       cache cannot reuse it (some hybrid architectures keep only
+//       checkpoints) shows it here;
 //     * the peak VRAM in use, sampled from the runtime's health report while
 //       the load runs;
 //     * dollars per million generated tokens, at the pod's price.
-//   Every request asks for exactly `output_tokens` tokens (llama-server's
-//   ignore_eos), at temperature 0 with a fixed seed and thinking off, and the
-//   commander's prompt is not served from the cache, so runs are comparable.
-//   (Several answers need sampling: those requests use temperature 1, which
-//   changes the tokens but not their number.)
+//   A level of requests at once that fails is a result, kept with its reason:
+//   a prompt beyond the engine's context per slot, or requests that together
+//   overflow a shared pool, are limits worth seeing. Only the commander's
+//   first measurement, the cache check and an interruption end the run.
+//   Every speed request asks for exactly `output_tokens` tokens
+//   (llama-server's ignore_eos), at temperature 0 with a fixed seed and
+//   thinking off, with its prompt read in full (not from the cache), so runs
+//   are comparable. (Several answers need sampling: those requests use
+//   temperature 1, which changes the tokens but not their number.)
 //   Speeds are the engine's own ("timings") where it reports them.
 //
 // Thread-safety: run_bench() is reentrant.
@@ -47,8 +62,10 @@ namespace rr::hub {
 struct BenchOptions {
     std::string commander{};  // model ids; empty: the runtime's commander (infantry) engine
     std::string infantry{};
-    std::vector<int> parallel{1, 4, 8, 16, 32};
-    int prompt_tokens = 2000;  // about; the prompt is built to roughly this size
+    std::vector<int> parallel{1, 4, 8, 16, 32};  // infantry requests at once
+    std::vector<int> commander_parallel{};       // commander requests at once; empty: none
+    bool cache_check = false;                    // check each engine's prompt cache
+    int prompt_tokens = 2000;                    // about; the prompt is built to roughly this size
     int output_tokens = 256;
     int rounds = 3;                          // commander requests, one after another
     int choices = 1;                         // answers per commander request (n), at most its slots
@@ -56,16 +73,8 @@ struct BenchOptions {
     std::chrono::milliseconds vram_poll{std::chrono::seconds{1}};
 };
 
-struct CommanderResult {
-    std::string model{};
-    int rounds = 0;
-    int choices = 1;  // answers per request
-    std::chrono::milliseconds first_token_p50{};
-    double prompt_tokens_per_second = 0;
-    double generation_tokens_per_second = 0;
-};
-
-struct InfantryRow {
+// Requests sent to one engine at once.
+struct ParallelRow {
     int parallel = 0;
     int slots = 0;  // the engine's; requests above them wait
     int failed = 0;
@@ -75,6 +84,37 @@ struct InfantryRow {
     double per_request_tokens_per_second = 0;  // median
     std::chrono::milliseconds first_token_p50{};
     std::chrono::milliseconds first_token_p95{};
+    std::string first_error{};  // why the first failed request failed; empty when none did
+};
+
+struct CommanderResult {
+    std::string model{};
+    int rounds = 0;
+    int choices = 1;  // answers per request
+    std::chrono::milliseconds first_token_p50{};
+    double prompt_tokens_per_second = 0;
+    double generation_tokens_per_second = 0;
+    std::vector<ParallelRow> parallel{};  // with commander_parallel
+};
+
+// Requests that share a system message, and how much of their prompt the
+// engine served from its cache.
+struct CacheRow {
+    int at_once = 1;                 // requests sent together
+    std::int64_t prompt_tokens = 0;  // of one request (the largest)
+    std::int64_t cached_tokens = 0;  // of those, served from the cache (the least any request had)
+    std::chrono::milliseconds first_token_p50{};
+};
+
+struct CacheCheck {
+    std::string model{};
+    CacheRow first{};                    // reads the system message: nothing to reuse yet
+    CacheRow next{};                     // the same system message, another question
+    std::optional<CacheRow> together{};  // that again, several at once (engines with 2+ slots)
+
+    // The next requests reused at least half their prompt: the shared
+    // prefix was served from the cache.
+    [[nodiscard]] bool reused() const noexcept;
 };
 
 struct BenchResult {
@@ -82,12 +122,14 @@ struct BenchResult {
     std::string runtime_version{};
     std::string profile{};
     std::vector<runtime_api::GpuInfo> gpus{};
-    std::int64_t peak_vram_used_mib = 0;  // all GPUs together
+    std::vector<runtime_api::EngineInfo> engines{};  // as the runtime reported them
+    std::int64_t peak_vram_used_mib = 0;             // all GPUs together
     std::optional<std::chrono::milliseconds> cold_start{};
     std::optional<double> price_per_hour{};
     std::optional<CommanderResult> commander{};
     std::string infantry_model{};
-    std::vector<InfantryRow> infantry{};
+    std::vector<ParallelRow> infantry{};
+    std::vector<CacheCheck> cache{};  // with cache_check: the commander's, then the infantry's
 };
 
 using BenchProgress = std::function<void(std::string_view line)>;
@@ -101,6 +143,16 @@ using BenchProgress = std::function<void(std::string_view line)>;
 // A prompt of about `tokens` tokens (about four characters each), the same
 // text every time.
 [[nodiscard]] std::string bench_prompt(int tokens);
+
+// A round of cache-check requests sent together, summed up: the largest
+// prompt, the least of it any request had from the cache (one that read the
+// prefix again is the news), and the median time to the first token.
+// `answers` is not empty.
+[[nodiscard]] CacheRow cache_row(const std::vector<llm::ChatResponse>& answers);
+
+// One line: whether `check`'s engine reused the shared system message, and
+// where the reuse stopped.
+[[nodiscard]] std::string describe(const CacheCheck& check);
 
 // The results as a Markdown report, and as JSON (kept under <data_dir>/bench/).
 [[nodiscard]] std::string to_markdown(const BenchResult& result);

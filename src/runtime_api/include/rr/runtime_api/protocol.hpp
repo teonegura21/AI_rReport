@@ -1,4 +1,4 @@
-// rr/runtime_api/protocol.hpp — the hub ↔ runtime wire protocol, version 1.
+// rr/runtime_api/protocol.hpp — the hub ↔ runtime wire protocol, version 2.
 //
 // Why this exists
 //   The hub (on the laptop) and the runtime (on the GPU pod) are separate
@@ -10,6 +10,13 @@
 //     * validation of path parameters that become filesystem paths: a
 //       library name must never be able to escape the blob root.
 //   Errors travel as rr::net structured error bodies (rr/net/http.hpp).
+//
+//   The version changes whenever either side could misread the other; the
+//   hub refuses a runtime of another version, and says to update both.
+//     v1  M0.
+//     v2  Each engine reports its context: the pool, the most one sequence
+//         may hold, whether its slots share the pool, and the checksum of
+//         the model file it serves (what a job's memo is keyed by).
 //
 //   Endpoints (all but /ping require "Authorization: Bearer <token>"):
 //     GET  /ping                              liveness, no details, no auth
@@ -43,7 +50,7 @@
 
 namespace rr::runtime_api {
 
-inline constexpr std::string_view kProtocolVersion = "1";
+inline constexpr std::string_view kProtocolVersion = "2";
 
 inline constexpr std::string_view kPathPing = "/ping";
 inline constexpr std::string_view kPathHealth = "/v1/health";
@@ -88,6 +95,24 @@ struct EngineInfo {
     std::string role{};   // commander, infantry, embedder, reranker
     EngineState state = EngineState::stopped;
     int slots = 0;  // parallel sequences (llama-server -np)
+
+    // Tokens of attention cache, all slots together (llama-server --ctx-size).
+    int context = 0;
+    // The most tokens one sequence (a prompt and its answer) may hold: the
+    // catalog's arithmetic until the engine is first ready, then the engine's
+    // own figure (llama-server's /props, after its caps), read again at each
+    // restart.
+    int ctx_per_slot = 0;
+    // Whether the slots share one pool of `context` tokens. Then one sequence
+    // may grow to all of it, a request's n choices keep its prompt once, and
+    // the sequences at work together must fit the pool: llama-server fails
+    // every one of them when they do not. Otherwise each slot has its own
+    // share, and only a sequence that outgrows it fails.
+    bool kv_unified = false;
+    // SHA-256 of the model file served, as verified before it was loaded:
+    // what a request's model id means, now.
+    std::string model_sha256{};
+
     int restarts = 0;
     std::optional<std::string> last_error{};
 

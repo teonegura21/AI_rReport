@@ -1,5 +1,6 @@
 rr_add_test_suite(hub
     SOURCES
+        bench_test.cpp
         doctor_test.cpp
         hub_config_test.cpp
         model_stack_test.cpp

@@ -3,8 +3,10 @@
 // Commands
 //   doctor            check the data directory, the library, the capture tools,
 //                     RunPod and the runtime, and say what to do about problems
-//   bench             measure the pod: the commander's and the infantry's speed,
-//                     peak VRAM, the cold start, dollars per million tokens
+//   bench             measure the pod: its engines, the commander's and the
+//                     infantry's speed (alone and several requests at once), the
+//                     prompt cache, peak VRAM, the cold start, dollars per million
+//                     tokens
 //   pod status        the pod as RunPod sees it, and its runtime
 //   pod start         start the pod and wait until every engine is ready
 //   pod stop          stop the pod (its /workspace volume is kept)
@@ -341,8 +343,10 @@ int pod_command(const Global& global, std::string_view action, bool wait,
                 (void)std::printf("  profile %s, %s\n", health->profile.c_str(),
                                   describe_gpus(health->gpus).c_str());
                 for (const runtime_api::EngineInfo& engine : health->engines) {
-                    (void)std::printf("  %s (%s): %s\n", engine.model.c_str(), engine.role.c_str(),
-                                      std::string{to_string(engine.state)}.c_str());
+                    (void)std::printf("  %s (%s): %s, %d slot(s), up to %d tokens each%s\n",
+                                      engine.model.c_str(), engine.role.c_str(),
+                                      std::string{to_string(engine.state)}.c_str(), engine.slots,
+                                      engine.ctx_per_slot, engine.kv_unified ? " from a shared pool" : "");
                 }
             } else {
                 (void)std::printf("  runtime: %s\n", health.error().message().c_str());
@@ -432,6 +436,13 @@ int run(int argc, char** argv) {
         ->add_option("--parallel", bench_flags.options.parallel, "Infantry requests at once, e.g. 1,4,8")
         ->delimiter(',')
         ->check(CLI::PositiveNumber);
+    bench_command
+        ->add_option("--commander-parallel", bench_flags.options.commander_parallel,
+                     "Commander requests at once, e.g. 1,2,4: what its parallel slots are worth")
+        ->delimiter(',')
+        ->check(CLI::PositiveNumber);
+    bench_command->add_flag("--cache-check", bench_flags.options.cache_check,
+                            "Check that each engine's prompt cache serves a shared system message");
     bench_command->add_option("--prompt-tokens", bench_flags.options.prompt_tokens, "Prompt size, about")
         ->check(CLI::Range(32, 200'000));
     bench_command->add_option("--output-tokens", bench_flags.options.output_tokens, "Tokens per answer")

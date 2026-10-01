@@ -6,8 +6,8 @@
 
 | Where | What it is |
 |---|---|
-| `src/runtime_api/` (`rr_runtime_api`) | The hub ↔ runtime protocol v1: endpoint paths, the health report and its strict JSON form, and library-name validation. Linked by both sides |
-| `src/supervisor/catalog.*` | The model catalog (TOML): models with file, sha256 and URL, and GPU profiles that say which engines run with which slots and context |
+| `src/runtime_api/` (`rr_runtime_api`) | The hub ↔ runtime protocol v2: endpoint paths, the health report and its strict JSON form, and library-name validation. Linked by both sides |
+| `src/supervisor/catalog.*` | The model catalog (TOML): models with file, sha256 and URL, and GPU profiles that say which engines run with which slots and context, and whether the slots share one pool |
 | `src/supervisor/gpu.*` | `nvidia-smi` CSV parsing: name, memory, utilization, driver |
 | `src/supervisor/engine.*` | One engine = one `llama-server` child process, kept alive (lifecycle below) |
 | `src/supervisor/models.*` | Model files: verified against the catalog's sha256 (with a safe cache), downloaded and resumed when missing |
@@ -44,6 +44,30 @@ starting ──(GET /health answers 200)──▶ ready
 - **The failure count resets once the engine is ready.** A model that works but crashes once a day is not given up on.
 - **Every wait is interruptible.** Stopping sends SIGTERM to the engine's process group, then SIGKILL after the grace period (ADR-0013).
 - **Model calls need a ready engine.** A call for a model whose engine is not ready gets `503 unavailable`. While the engine is still starting, the answer also carries `Retry-After: 10`.
+- **Each engine reports its context, as the engine itself has it.** The hub sizes its work by these figures (see the next section), so they are never guessed:
+  - `context`: tokens of attention cache, all slots together (`--ctx-size`);
+  - `ctx_per_slot`: the most one sequence (a prompt and its answer) may hold;
+  - `kv_unified`: whether the slots share one pool;
+  - `model_sha256`: the checksum of the file served, as verified before loading. It is what a model id means right now, and a job's memo is keyed by it (ADR-0020).
+
+  `ctx_per_slot` starts as the catalog's arithmetic. Once `/health` answers 200, and **before** the engine is declared ready, the supervisor reads llama-server's own figure from `/props` (`default_generation_settings.n_ctx`). That figure wins, because llama-server caps the arithmetic, for one at the model's training context. When the engine cannot say (no `/props`, or a figure of 0 or less), the catalog's figure stands, and the discrepancy or the failure is logged.
+
+## Context per slot, and the shared pool
+
+llama-server divides an engine's `--ctx-size` evenly between its `--parallel` slots, unless the slots share one pool (`--kv-unified`). Then one sequence may grow to the whole pool. The catalog says which, per engine (`kv_unified = true`), and the supervisor states it on the command line either way (`--kv-unified` or `--no-kv-unified`), so a `LLAMA_ARG_KV_UNIFIED` in the pod's environment cannot change what the catalog says.
+
+**Why the commander's slots share a pool** (the 48 and 80 GB profiles):
+- **A request for n answers keeps its prompt once.** Its choices share the prompt's cache cells. With an even split, each choice's slot holds its own copy, and the prompt must fit one share.
+- **A long prompt may use the room that idle slots leave.** The commander reads whole transcripts to outline them. With four slots and an even split of 32,768 tokens, nothing over 8,192 would fit.
+- **It costs no attention-cache memory.** The pool keeps the size the one slot had.
+
+**Its price: requests at once must fit the pool together.** When they do not, llama-server fails **every** request in flight with "Context size has been exceeded", and keeps running. It does not restart: the error is caught inside its loop (`update_slots`, llama.cpp 7fe450e). With an even split, nothing one request does touches another: a prompt larger than its share is refused before it starts (`400 exceed_context_size_error`), and an answer that would outgrow the share stops there (`finish_reason: length`, since context shift is off). So whoever sends requests to a shared pool must budget them in tokens, not only in slots. The pipeline's army will (P8).
+
+**What the catalog refuses**, so that mistakes surface when it loads, not when an engine fails to start or quietly runs with less:
+- unknown keys at any level (a misspelt `kv_unified` would otherwise leave each slot a quarter of the context);
+- values of the wrong type (a quoted `slots = "4"` would otherwise become the default, 1);
+- in `extra_args`, the flags the supervisor sets from the catalog's own fields (`--model`, `--alias`, `--host`, `--port`, `--parallel`, `--ctx-size`, `--kv-unified` and its kin, `--mmproj`, `--embedding`, `--rerank`, in their short forms too). llama-server keeps the last of two values, so a second `--parallel` would silently overrule `slots`, and the health report would be wrong;
+- in `extra_args`, flags that make the engine load or fetch a file the catalog has not verified (`-hf`, `--hf-file`, `--model-url`, `--docker-repo`, `--mmproj-url`, `--lora`, a draft model), and `--api-key`, which would make the engine refuse the supervisor's relay. llama.cpp reads `_` and `-` alike in a long flag (`--ctx_size`), and so does the check.
 
 ## The relay (ADR-0014)
 
@@ -212,14 +236,14 @@ Any failure stops the pod through RunPod's API instead of exiting, because RunPo
 | `24gb` | RTX 4090, 3090, A5000 | Qwen3.8-27B Q4 alone: commander and infantry phases alternate at this size |
 | `24gb-infantry` | the same, chosen by name | Gemma 4 26B-A4B (8 slots) |
 | `32gb` | RTX 5090 | Qwen3.8-27B Q4 and Gemma 4 12B (6 slots), tight |
-| `48gb` | L40S, A40, A6000 | Qwen3.8-27B Q4, Gemma 4 26B-A4B (16 slots), the embedder |
-| `80gb` | A100, H100 | Qwen3.8-27B Q8, Gemma 4 26B-A4B (32 slots), the embedder |
+| `48gb` | L40S, A40, A6000 | Qwen3.8-27B Q4 (4 slots, one shared pool), Gemma 4 26B-A4B (16 slots), the embedder |
+| `80gb` | A100, H100 | Qwen3.8-27B Q8 (4 slots, one shared pool), Gemma 4 26B-A4B (32 slots), the embedder |
 
 - **Every engine runs with the same flags:**
   - every layer on the GPU (`--n-gpu-layers 999`), so a model that does not fit fails loudly instead of running partly on the CPU;
   - an 8-bit attention cache (`--cache-type-k/v q8_0`, which needs `--flash-attn on`);
   - the model's own chat template (`--jinja`).
-- **Contexts and slot counts are estimates** until `rreport bench` measures them.
+- **Contexts and slot counts are estimates** until `rreport bench` measures them: [runbook R1](../runbooks/m1-m2.md#r1-the-commanders-slots-and-the-prompt-cache) settles the commander's.
 - **Two differences from the plan's layout** (§13, M0 step 4):
   - Its `models.toml` and `profiles/*.toml` are one file, `catalog.toml`, because the catalog is validated as a whole: a profile naming an unknown model fails when it is loaded, not when an engine starts.
   - whisper.cpp is not in the image yet. Transcription arrives in M1 (plan §4.4: upstream `whisper-cli`), and joins the image then.
@@ -229,13 +253,17 @@ Any failure stops the pod through RunPod's API instead of exiting, because RunPo
 
 `rr_fake_engine` speaks the part of llama-server's interface the supervisor and the hub use:
 - `/health` answers 503 while "loading", then 200;
-- chat completions, JSON or SSE;
+- `/props` reports the context per slot as llama-server computes it from `--parallel`, `--ctx-size` and `--kv-unified`;
+- chat completions, JSON or SSE. A prompt of a slot's context or more is refused with `400 exceed_context_size_error`, before any token, as llama-server refuses it;
 - embeddings;
 - `/stats` counts the streams and requests its clients abandoned.
 
 **Its streams are shaped as llama-server's** (checked against llama.cpp `db00347`, 2026-09-30): a role chunk whose content is null, `reasoning_content` then `content` deltas, a finish chunk with `"delta": {}`, the usage chunk (`"choices": []`) when `stream_options.include_usage` asks for it, `timings` on the last JSON chunk, and `[DONE]`. `tests/fake_engine/include/rr/fake_engine/stream.hpp` builds them; the fake and the tests that check what arrives share it, so they cannot drift apart.
 
-**Process flags** script its life: `--fake-load-ms`, `--fake-never-ready`, `--fake-exit-after-ms`, `--fake-token-ms`.
+**Process flags** script its life: `--fake-load-ms`, `--fake-never-ready`, `--fake-exit-after-ms`, `--fake-token-ms`. And its context:
+- `--fake-slot-context N` makes `/props` report N, whatever the arithmetic, as when llama.cpp caps a slot at the model's training context;
+- `--fake-no-props` removes `/props`, and `--fake-props-ms N` delays its answer;
+- `--fake-prompt-cache` reuses prompt prefixes, as llama-server does by default. A prompt's longest common prefix with the last 16 it read counts as cached (`usage.prompt_tokens_details.cached_tokens`, `timings.cache_n`), but at least its last token is read again; `"cache_prompt": false` opts a request out. It is off unless asked for, so other tests see no cache.
 
 **Knobs in a request's JSON body** script one call:
 
@@ -306,6 +334,22 @@ Each mechanism was removed on purpose, and the named end-to-end test was confirm
 | The operator's key wins over the pod's own | `AKeyOrACommandOfOnesOwnWins` |
 | Without a key, idleness is only logged | `AKeyOrACommandOfOnesOwnWins` |
 | `"0s"` turns a timer off | `ZeroTurnsIdleStopAndKeepAlivesOff` |
+| The catalog refuses the supervisor's own flags in `extra_args` | `RefusesInvalidDefinitions` |
+| …and reads `--ctx_size` as `--ctx-size`, as llama.cpp does | `RefusesInvalidDefinitions` |
+| The catalog refuses unknown keys | `RefusesInvalidDefinitions` |
+| …and wrong types, rather than using the default (integers, booleans, strings) | `RefusesInvalidDefinitions` |
+| …and arrays that are not of tables | `RefusesInvalidDefinitions` (by a crash, without the check) |
+| …and a context that does not fit, a negative `min_vram_mib`, a projector that is not a table | `RefusesInvalidDefinitions` |
+| `kv_unified` is read | `ParsesModelsAndProfiles`, and five other tests |
+| A shared pool gives one sequence the whole context | `ContextPerSlotIsAShareOrTheWholePool` |
+| The pool is stated on the command line, either way | `ListensOnLocalhostAndCarriesTheProfile` |
+| The engine's own figure for a slot's context wins | `EnginesReportTheContextTheirSlotsReallyHave` |
+| …it is read before the engine is declared ready (its `/props` answers slowly in the test) | `EnginesReportTheContextTheirSlotsReallyHave` |
+| …a figure of 0 or less is refused | `EnginesReportTheContextTheirSlotsReallyHave` |
+| …a discrepancy, and a `/props` that fails, are logged plainly | `EnginesReportTheContextTheirSlotsReallyHave` |
+| Each engine reports its context, its pool and its model file's checksum | `EnginesReportTheContextTheirSlotsReallyHave` |
+| The health report writes, reads and strictly types the new fields | `RoundTripsThroughJson`, `ParsingIsStrictAndNamesThePath` |
+| The protocol is version 2 | `RefusesAnotherProtocolVersion` |
 
 The mutation runs found four things, all corrected before they counted:
 - **`in-flight-ignored` removed one of two copies of the rule.** Removing only `stops_in()`'s in-flight check would have "survived" because `idle_for()` also reports zero while a request runs.
@@ -317,3 +361,8 @@ The mutation runs found four things, all corrected before they counted:
 - **`CatchesMisspeltSettings` passed without `fallthrough`, for the wrong reason.**
   - Without it, the argument parser refuses the `--set` after `serve`. Its error echoes the command line, which also holds `server.port=0`, so looking for "server.port" matched anyway.
   - The test now requires the configuration loader's own words: the key it did not know, and its suggestion.
+
+For engines' context (P5), writing the mutants showed two gaps, and running them a third:
+- **Reading the figure after the engine was declared ready would have passed** (seen while writing). The fake answered `/props` at once, so no client could catch the engine ready with the catalog's figure. The test's engine now answers slowly (`--fake-props-ms`).
+- **A figure of 0 had no test** (seen while writing). The `odd` profile's engine now reports one.
+- **Ignoring `/props`' status survived the run.** A 404 fails anyway, since its body is not `/props`' answer, so the check's only effect is the warning's wording: "/props answered 404" rather than a parse error. That wording is what an operator reads, so the test now captures the warnings and requires each one.

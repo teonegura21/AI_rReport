@@ -2,12 +2,16 @@
 
 #include <algorithm>
 #include <condition_variable>
+#include <cstdint>
 #include <format>
 #include <mutex>
 #include <optional>
 #include <stop_token>
 #include <thread>
+#include <utility>
 
+#include <rr/json/json.hpp>
+#include <rr/log/log.hpp>
 #include <rr/net/http_client.hpp>
 #include <rr/proc/process.hpp>
 
@@ -24,6 +28,7 @@ constexpr std::chrono::milliseconds kHealthTimeout{2000};
 
 struct Engine::State {
     Settings settings;
+    int planned_ctx_per_slot = 0;  // the catalog's arithmetic
     net::HttpClient health_client{net::HttpClient::Options{.connect_timeout = kHealthTimeout}};
 
     mutable std::mutex mutex;
@@ -53,6 +58,45 @@ struct Engine::State {
         const auto response = health_client.send(net::HttpClient::Request{
             .url = std::format("http://127.0.0.1:{}/health", settings.port), .timeout = kHealthTimeout});
         return response.has_value() && response->status == 200;
+    }
+
+    // The context each slot really has, as llama-server reports it in /props
+    // (default_generation_settings.n_ctx): the catalog's arithmetic after the
+    // engine's own caps.
+    [[nodiscard]] Result<int> slot_context() const {
+        RR_TRY_ASSIGN(
+            const net::HttpClient::Response response,
+            health_client.send(net::HttpClient::Request{
+                .url = std::format("http://127.0.0.1:{}/props", settings.port), .timeout = kHealthTimeout}));
+        if (response.status != 200) {
+            return fail(Errc::unavailable, std::format("/props answered {}", response.status));
+        }
+        RR_TRY_ASSIGN(const json::Json props, json::parse(response.body));
+        RR_TRY_ASSIGN(const std::int64_t context, json::get_int(props, "default_generation_settings.n_ctx"));
+        if (context <= 0 || !std::in_range<int>(context)) {
+            return fail(Errc::invalid_argument, std::format("/props reports a slot context of {}", context));
+        }
+        return static_cast<int>(context);
+    }
+
+    // Records how much context each slot has, before the engine is declared
+    // ready: the hub sizes its windows by it. The engine's own figure wins;
+    // the catalog's stands when the engine cannot say.
+    void record_slot_context() {
+        const Result<int> measured = slot_context();
+        if (!measured.has_value()) {
+            log::warn(
+                "engine '{}': its slots' context could not be read ({}); reporting the catalog's {} "
+                "tokens",
+                info.model, measured.error().describe(), planned_ctx_per_slot);
+        } else if (*measured != planned_ctx_per_slot) {
+            log::warn(
+                "engine '{}': llama-server gives each slot {} tokens of context where the catalog "
+                "plans {} (the model's training context caps it?); reporting the engine's figure",
+                info.model, *measured, planned_ctx_per_slot);
+        }
+        const std::lock_guard lock(mutex);
+        info.ctx_per_slot = measured.value_or(planned_ctx_per_slot);
     }
 
     // One life of the process: start it, wait for it to become ready, serve
@@ -90,6 +134,7 @@ struct Engine::State {
             (void)pause(settings.poll_interval, stop);
         }
         if (ready) {
+            record_slot_context();
             set_state(EngineState::ready);
             // Ready: serve until the process ends or we are told to stop.
             while (!stop.stop_requested() && child->running()) {
@@ -136,12 +181,18 @@ struct Engine::State {
     }
 };
 
-Engine::Engine(std::string model, std::string role, int slots, Settings settings)
+Engine::Engine(const Model& model, const EngineSpec& spec, Settings settings)
     : state_(std::make_unique<State>()) {
     state_->settings = std::move(settings);
-    state_->info.model = std::move(model);
-    state_->info.role = std::move(role);
-    state_->info.slots = slots;
+    state_->planned_ctx_per_slot = planned_context_per_slot(spec);
+    runtime_api::EngineInfo& info = state_->info;
+    info.model = model.id;
+    info.role = model.role;
+    info.slots = spec.slots;
+    info.context = spec.context;
+    info.ctx_per_slot = state_->planned_ctx_per_slot;
+    info.kv_unified = spec.kv_unified;
+    info.model_sha256 = model.weights.sha256;
 }
 
 Engine::~Engine() {

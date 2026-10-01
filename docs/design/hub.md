@@ -98,19 +98,28 @@ Once RunPod reports RUNNING, `RuntimeClient::wait_until_ready()` polls the healt
 The GPU is the product's main running cost. Which one to rent is decided by measurement (plan §4.5): run `rreport bench` on a pod of each candidate type, and compare the tables.
 
 **Method.**
-- **The commander** is measured one request at a time, `--rounds` times (its passes are sequential): time to the first token, then the prompt and generation speeds that the engine itself reports in `timings`.
+- **The engines** are listed as the runtime reports them: slots, context, the most one sequence may hold (`per slot`), and whether the slots share one pool. The pipeline sizes its work by these figures ([runtime.md](runtime.md#context-per-slot-and-the-shared-pool)).
+- **The commander** is measured one request at a time, `--rounds` times: time to the first token, then the prompt and generation speeds that the engine itself reports in `timings`.
 - **Several answers at once (`--n K`).** Each commander request asks for K answers, as the pipeline asks for k drafts (ADR-0018). The prompt is read once and copied to K slots, and the generated speed is the answers' together.
   - K may not exceed the commander's slots, and the bench refuses it before any call: llama-server starts such a request only when K slots are free at once, so with fewer slots in all it would hold the request forever.
   - K answers need sampling (at temperature 0 they would all be the same answer, and such a request is refused), so these requests use temperature 1. Every answer still runs to exactly `--output-tokens` tokens.
+- **The commander at several requests at once (`--commander-parallel 1,2,4`).** The pipeline sends the commander missions in parallel. Decoding is limited by memory bandwidth, so four streams should give about three times the tokens per second of one, and this table says how much they really give. The levels are marked "queued" above the engine's slots, as for the infantry.
 - **The infantry** is measured at 1, 4, 8, 16 and 32 requests at once (`--parallel`). The squad's worth is its **total** tokens per second. Levels above the engine's `slots` are marked "queued", because llama-server makes extra requests wait for a slot.
+- **The prompt cache (`--cache-check`).** The pipeline's prompts put everything shared (role, rules, the video's brief) in the system message and vary only the last user message, so that the engine can serve the shared part from its cache. This check tests that it does, for the commander and the infantry:
+  1. one request reads a system message of about `--prompt-tokens` tokens, which nothing has sent before (it carries the run's random id);
+  2. the next request sends the same system message with another question;
+  3. on an engine with two slots or more, up to four requests do that at once.
+
+  Each row reports the prompt's tokens and how many the engine served from its cache (`usage.prompt_tokens_details.cached_tokens`). A round of requests at once reports the least any of them had, since one that read the prefix again is the news. A row counts as **reused** when at least half its prompt came from the cache: the shared prefix is nearly the whole prompt, while a few tokens in common (the chat template's start) are not the prefix. A one-line verdict per engine says where reuse stopped: not at all, only one request at a time, or not even by requests at once. Hybrid models, Qwen3.8 among them, can reuse a prefix only from checkpoints, so this is a real question, answered on the pod.
 - **Peak VRAM** is sampled from the runtime's health report every second while the load runs.
 - **Cold start (`--cold-start`).** The pod is stopped first, and timed from the start until every engine is ready. It includes the image start and model loading from the network volume.
 - **Cost** is dollars per million generated tokens: `price per hour / (tokens per second × 3600) × 10⁶`, at RunPod's price for the pod, or `--price-per-hour`.
 
 **Fair comparisons.**
-- Every request asks for exactly `--output-tokens` tokens (`ignore_eos`), at temperature 0 with a fixed seed, with thinking off.
-- Prompts are read in full (`cache_prompt: false`), and each parallel request starts differently, so no two share a cached prefix.
-- A failed request counts in the table's `failed` column. A level where every request failed ends the run with the error.
+- Every speed request asks for exactly `--output-tokens` tokens (`ignore_eos`), at temperature 0 with a fixed seed, with thinking off.
+- Speed prompts are read in full (`cache_prompt: false`), and each parallel request starts differently, so no two share a cached prefix. Only the cache check uses the cache.
+
+**A limit found is a result.** A failed request counts in the table's `failed` column, and a note under the table gives the first failure's reason. A level where every request failed is kept too, with dashes for its speeds: a prompt beyond the engine's context per slot, or requests that together overflow a shared pool, are limits worth seeing (an overflow of a shared pool fails every request in flight, and llama-server carries on). Only an interruption, a failure of the commander's first measurement, or a failure of the cache check ends the run.
 
 **Results** go to stdout as Markdown, and to `<data_dir>/bench/<time>.json` (or `--out`). Every call is recorded in the library's `llm_calls` with the purpose `bench`.
 
@@ -120,7 +129,8 @@ The GPU is the product's main running cost. Which one to rent is decided by meas
 |---|---|
 | Unit | `hub_config_test.cpp`: XDG rules, file locations, the runtime's address, mode and limit checks, sampling presets. `doctor_test.cpp`: each finding, against a hand-written runtime and the fake RunPod API |
 | Unit, RunPod and the pod | `runpod_test.cpp`: the API against `tests/fakes/fake_runpod.hpp`, a fake RunPod that refuses what RunPod refuses (409, 400 for a full machine, 429, 403 for a pod's own key on REST) and whose reads can lag its writes. `pod_manager_test.cpp`: that fake plus a real runtime with fake engines. `runtime_client_test.cpp`: the proxy's 404 and 502 while a pod boots, served by hand |
-| Component | `tests/component/hub_cli_test.cpp` runs the real `rreport` against a real `rreport-runtime` (fake engines: a commander, and infantry with 4 slots) and the fake RunPod API. It covers `doctor`'s verdicts and advice; `pod start`, `status` and `stop`; a full `bench`, with the queued level marked, RunPod's price, the JSON saved and 11 calls accounted for; a timed cold start; and configuration mistakes, with secrets never printed |
+| Unit, the bench | `bench_test.cpp`: how a round of cache-check requests is summed up (the least reuse wins), each verdict and the threshold at exactly half, and how a level that failed is reported, in Markdown and JSON |
+| Component | `tests/component/hub_cli_test.cpp` runs the real `rreport` against a real `rreport-runtime` (fake engines: a commander with 2 slots sharing a pool of 4,096 tokens and a prompt cache, and infantry with 4 slots of 2,048 tokens each and none) and the fake RunPod API. It covers `doctor`'s verdicts and advice; `pod start`, `status` (with each engine's context) and `stop`; a full `bench`, with the queued level marked, RunPod's price, the JSON saved and 11 calls accounted for; the engines' table, the commander at 1, 2 and 3 requests at once, and the prompt cache reused by one engine and not by the other (18 calls); a level beyond the infantry's context per slot, kept as a result with its reason; a timed cold start; and configuration mistakes, with secrets never printed |
 
 ### How the tests were validated
 
@@ -167,6 +177,17 @@ Each rule was removed on purpose, and the named test was confirmed to fail.
 | RunPod's price is used | `BenchMeasuresThePodAndKeepsTheResults` |
 | `--cold-start` stops the pod first | `BenchTimesAColdStart` |
 | The cold start is timed | `BenchTimesAColdStart` |
+| The engines are listed, with their context | `BenchWeighsTheCommandersSlotsAndThePromptCache` |
+| `--commander-parallel` runs the commander at each level | `BenchWeighsTheCommandersSlotsAndThePromptCache` |
+| `--cache-check` checks each engine | `BenchWeighsTheCommandersSlotsAndThePromptCache` |
+| …with requests at once on engines with two slots or more | `BenchWeighsTheCommandersSlotsAndThePromptCache` |
+| A round of requests at once reports the least reuse, and the largest prompt | `ARoundIsAsGoodAsItsLeastReusedRequest` |
+| Reuse means at least half the prompt | `TheVerdictSaysWhereReuseStops` |
+| Requests at once must reuse too | `TheVerdictSaysWhereReuseStops` |
+| The verdict says where reuse stopped | `TheVerdictSaysWhereReuseStops` |
+| A level that failed shows dashes and its reason, in Markdown and JSON | `ALevelThatFailedSaysWhy` |
+| A level that failed is kept, and the run goes on | `BenchKeepsALevelTheEngineCannotServeAsAResult` |
+| …with its reason | `BenchKeepsALevelTheEngineCannotServeAsAResult` |
 
 **What the runs found, all fixed before they counted:**
 - **The fakes were too kind in three places:**
@@ -175,3 +196,4 @@ Each rule was removed on purpose, and the named test was confirmed to fail.
   - The fake RunPod's reads never lagged a start, so the grace period never ran. `set_start_lag()` and `serve_stale()` now make reads trail writes, as RunPod's may.
 - **Two paths had no test at all:** the proxy's 404 while a pod boots, and a start refused because another hub had just started the pod. Each has one now.
 - **A named config file could be silently optional.** The test checked the path the flag gave, but not that the file had to exist.
+- **Taking the most reuse in a round, not the least, could not be told apart end to end** (seen while writing the mutants). The fake engine's requests at once were all served alike. How a round is summed up, and the verdict's wording, became plain functions (`cache_row()`, `describe()`), tested in `bench_test.cpp` with rounds that differ.

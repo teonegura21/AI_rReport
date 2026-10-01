@@ -380,7 +380,7 @@ Result<std::unique_ptr<Supervisor>> Supervisor::create(SupervisorSettings settin
             }
         };
         auto engine = std::make_unique<Engine>(
-            model.id, model.role, spec.slots,
+            model, spec,
             Engine::Settings{.command = llama_server_command(impl->settings.llama_server,
                                                              impl->settings.models_dir, model, spec, port),
                              .port = port,

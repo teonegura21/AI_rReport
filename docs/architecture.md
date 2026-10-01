@@ -57,7 +57,7 @@ Modules marked *(M0)* exist now; the rest arrive in the milestone shown.
 | `rr_blob` *(M0)* | Content-addressed, crash-safe blob store (BLAKE3 names, atomic publish) | core |
 | `rr_proc` *(M0)* | Subprocesses: run-to-completion and supervised children, each in its own process group (ADR-0013); termination signals as a stop request | core (posix_spawn) |
 | `rr_net` *(M0)* | HTTP client (libcurl), SSE parser, retry policy, HTTP server (cpp-httplib) ([design](design/networking.md)) | core, json, libcurl, cpp-httplib |
-| `rr_runtime_api` *(M0)* | Hub↔runtime protocol v1: paths, the health report, the streamed-call contract | core, json |
+| `rr_runtime_api` *(M0)* | Hub↔runtime protocol v2: paths, the health report (each engine's context and model checksum), the streamed-call contract | core, json |
 | `rr_runpod` *(M0)* | RunPod's pod API (REST v2): read, start and stop a pod; a pod stopping itself (ADR-0015) | core, net, json |
 | `rr_supervisor` *(M0)* | Runtime: auth, health, engines, the streaming relay (ADR-0014), model files (verified, resumable downloads), blobs, idle/dead-man stop through RunPod's API (ADR-0015), the runtime's configuration ([design](design/runtime.md)) | runtime_api, net, proc, blob, config, runpod, json, log, toml++ |
 | `rr_llm` *(M0)* | Calling models: one chat vocabulary (n choices, sampling presets), the OpenAI-compatible streaming provider, retries, accounting, record/replay, schema-validated answers with ordered fields ([design](design/llm.md)) | core, json, net, log |

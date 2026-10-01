@@ -1,8 +1,11 @@
 #include <rr/supervisor/catalog.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
+#include <format>
 #include <string>
+#include <string_view>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -56,6 +59,7 @@ min_vram_mib = 44000
   model = "commander"
   slots = 4
   context = 32768
+  kv_unified = true
   extra_args = ["--flash-attn", "on"]
   [[profile.engine]]
   model = "infantry"
@@ -83,6 +87,18 @@ TEST(Catalog, ParsesModelsAndProfiles) {
     EXPECT_EQ(big->engines[0].extra_args, (std::vector<std::string>{"--flash-attn", "on"}));
     EXPECT_EQ(big->engines[2].slots, 1) << "defaults apply";
     EXPECT_EQ(big->engines[2].context, 8192);
+    EXPECT_TRUE(big->engines[0].kv_unified);
+    EXPECT_FALSE(big->engines[1].kv_unified) << "an equal share per slot unless the catalog says otherwise";
+}
+
+TEST(Catalog, ContextPerSlotIsAShareOrTheWholePool) {
+    const Catalog catalog = unwrap(parse_catalog(catalog_text()));
+    const Profile& big = *catalog.find_profile("48gb");
+    EXPECT_EQ(planned_context_per_slot(big.engines[0]), 32768) << "4 slots sharing one pool of 32768";
+    EXPECT_EQ(planned_context_per_slot(big.engines[1]), 4096) << "16 slots, 65536 split evenly";
+    EXPECT_EQ(planned_context_per_slot(big.engines[2]), 8192) << "one slot has it all";
+    EXPECT_EQ(planned_context_per_slot(EngineSpec{.slots = 3, .context = 1000}), 333)
+        << "llama-server's integer division";
 }
 
 TEST(Catalog, ChoosesTheMostDemandingProfileThatFits) {
@@ -126,6 +142,76 @@ TEST(Catalog, RefusesInvalidDefinitions) {
     fails_with(model + profile_head + engine("m", "  slots = 64\n  context = 1024\n"),
                "under 256 tokens per slot");
     fails_with(model + profile + profile, "profile name 'p' appears twice");
+
+    // Unknown keys and wrong types are refused, never ignored for a default.
+    fails_with(model + profile_head + engine("m", "  kv_unifed = true\n"),
+               "unknown key 'kv_unifed' (known: model, slots, context, kv_unified, extra_args)");
+    fails_with(model + "quant = \"q4\"\n" + profile, "model #1: unknown key 'quant'");
+    fails_with(model + profile_head + "vram = 1\n" + engine("m"), "profile #1: unknown key 'vram'");
+    fails_with("[[models]]\nid = \"m\"\n" + profile, "test.toml: unknown key 'models'");
+    fails_with("[model]\nid = \"m\"\n" + profile, "'model' must be [[model]] tables");
+    fails_with("model = [1, 2]\n" + profile, "'model' must be [[model]] tables");
+    fails_with(model + profile_head + engine("m", "  slots = \"4\"\n"), "'slots' must be an integer");
+    fails_with(model + profile_head + engine("m", "  context = 8192.0\n"), "'context' must be an integer");
+    fails_with(model + profile_head + engine("m", "  kv_unified = \"yes\"\n"),
+               "'kv_unified' must be true or false");
+    fails_with(model + "[[profile]]\nname = \"p\"\nmin_vram_mib = \"44000\"\n" + engine("m"),
+               "'min_vram_mib' must be an integer");
+    fails_with(model + "[[profile]]\nname = \"p\"\nmin_vram_mib = -1\n" + engine("m"),
+               "min_vram_mib must not be negative");
+    fails_with(model + "url = 3\n" + profile, "'url' must be a string");
+    fails_with(model + "projector = \"mmproj.gguf\"\n" + profile, "projector: must be a table");
+    fails_with(model + std::format(R"(projector = {{ file = "p.gguf", sha256 = "{}", size = 1 }})", kSha) +
+                   "\n" + profile,
+               "projector: unknown key 'size'");
+    fails_with(model + profile_head + engine("m", "  extra_args = \"--jinja\"\n"),
+               "extra_args must be an array of strings");
+    fails_with(model + profile_head + engine("m", "  context = 4294967296\n"),
+               "context 4294967296 is too large");
+
+    // extra_args may not overrule the catalog, nor load what it has not verified.
+    for (const std::string_view flag : {"--parallel",
+                                        "-np",
+                                        "--ctx-size",
+                                        "--ctx_size",
+                                        "-c",
+                                        "--kv-unified",
+                                        "--no-kv-unified",
+                                        "--kv-unified-per-slot",
+                                        "--model",
+                                        "--alias",
+                                        "--port",
+                                        "--host",
+                                        "--mmproj",
+                                        "--embedding",
+                                        "-hf",
+                                        "--hf-repo",
+                                        "--model-url",
+                                        "--lora",
+                                        "--model-draft",
+                                        "--api-key"}) {
+        fails_with(model + profile_head + engine("m", std::format("  extra_args = [\"{}\", \"8\"]\n", flag)),
+                   std::format("extra_args may not set '{}'", flag));
+    }
+}
+
+TEST(Catalog, ExtraArgsMayTuneTheEngine) {
+    const std::string text = std::format(R"toml(
+[[model]]
+id = "m"
+role = "infantry"
+file = "m.gguf"
+sha256 = "{}"
+[[profile]]
+name = "p"
+  [[profile.engine]]
+  model = "m"
+  extra_args = ["--n-gpu-layers", "999", "--flash-attn", "on", "--cache-type-k", "q8_0", "--jinja",
+                "--ctx-checkpoints", "8", "--cache-ram", "8192", "-np-not-a-flag"]
+)toml",
+                                         kSha);
+    EXPECT_EQ(unwrap(parse_catalog(text)).profiles[0].engines[0].extra_args.size(), 12U)
+        << "only the reserved flags are refused";
 }
 
 TEST(Catalog, LoadsFromAFile) {
@@ -158,6 +244,20 @@ TEST(Catalog, TheImagesCatalogChoosesAsDocumented) {
             EXPECT_TRUE(file->url->starts_with("https://huggingface.co/")) << *file->url;
         }
     }
+
+    // Where the pipeline runs (everything resident), the commander takes
+    // several requests at once and its slots share one pool: k drafts read
+    // their prompt once, and each may use the whole context.
+    for (const std::string_view name : {"48gb", "80gb"}) {
+        const Profile& profile = *catalog.find_profile(name);
+        const auto commander = std::ranges::find_if(profile.engines, [&catalog](const EngineSpec& engine) {
+            return catalog.find_model(engine.model)->role == "commander";
+        });
+        ASSERT_NE(commander, profile.engines.end()) << name;
+        EXPECT_EQ(commander->slots, 4) << name;
+        EXPECT_TRUE(commander->kv_unified) << name;
+        EXPECT_EQ(planned_context_per_slot(*commander), commander->context) << name;
+    }
 }
 
 TEST(LlamaServerCommand, ListensOnLocalhostAndCarriesTheProfile) {
@@ -168,10 +268,12 @@ TEST(LlamaServerCommand, ListensOnLocalhostAndCarriesTheProfile) {
     EXPECT_THAT(commander,
                 ElementsAre("llama-server", "--model", "/workspace/models/qwen/Qwen3.8-27B-Q4_K_M.gguf",
                             "--alias", "commander", "--host", "127.0.0.1", "--port", "18080", "--parallel",
-                            "4", "--ctx-size", "32768", "--flash-attn", "on"));
+                            "4", "--ctx-size", "32768", "--kv-unified", "--flash-attn", "on"));
 
     const auto infantry =
         llama_server_command("llama-server", "/m", *catalog.find_model("infantry"), big.engines[1], 1);
+    EXPECT_THAT(infantry, ::testing::Contains("--no-kv-unified"))
+        << "stated, so LLAMA_ARG_KV_UNIFIED in the environment cannot turn it on";
     EXPECT_THAT(infantry, ::testing::Contains("--mmproj"));
     EXPECT_THAT(infantry, ::testing::Contains("/m/gemma/mmproj.gguf"));
     const auto embedder =

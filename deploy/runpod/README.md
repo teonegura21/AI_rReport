@@ -155,6 +155,8 @@ On a 24 GB card the commander and the infantry do not fit together. Measure the 
 
 Choose the cheapest GPU whose infantry throughput and commander speed meet the job: the plan's estimate is 15–30 minutes of pod per video-hour. Record the choice, with the tables, in the M0 notes.
 
+On 48 and 80 GB pods, the commander runs four slots sharing one pool. [Runbook R1](../../docs/runbooks/m1-m2.md#r1-the-commanders-slots-and-the-prompt-cache) measures what they are worth, and whether the prompt cache serves a shared system message (`--commander-parallel`, `--cache-check`).
+
 ## 8. When something goes wrong
 
 | Symptom | Where to look | Likely cause |

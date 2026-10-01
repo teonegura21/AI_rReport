@@ -9,6 +9,7 @@
 #include <format>
 #include <functional>
 #include <latch>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <stop_token>
@@ -22,6 +23,7 @@
 #include <rr/core/hash.hpp>
 #include <rr/fake_engine/stream.hpp>
 #include <rr/json/json.hpp>
+#include <rr/log/log.hpp>
 #include <rr/net/http_client.hpp>
 #include <rr/net/sse.hpp>
 #include <rr/testkit/ports.hpp>
@@ -34,6 +36,7 @@ namespace {
 using namespace std::chrono_literals;
 using runtime_api::EngineState;
 using ::testing::HasSubstr;
+using ::testing::Not;
 using testkit::unwrap;
 using Clock = std::chrono::steady_clock;
 
@@ -66,17 +69,28 @@ id = "crashy"
 role = "infantry"
 file = "crashy.gguf"
 sha256 = "{0}"
+[[model]]
+id = "odd"
+role = "infantry"
+file = "odd.gguf"
+sha256 = "{0}"
 
 [[profile]]
 name = "test"
   [[profile.engine]]
   model = "chat"
+  slots = 2
+  context = 4096
+  kv_unified = true
   extra_args = ["--fake-load-ms", "150"]
   [[profile.engine]]
   model = "embed"
+  slots = 4
+  context = 2048
+  extra_args = ["--fake-no-props"]
   [[profile.engine]]
   model = "slow"
-  extra_args = ["--fake-token-ms", "150"]
+  extra_args = ["--fake-token-ms", "150", "--fake-slot-context", "300", "--fake-props-ms", "300"]
   [[profile.engine]]
   model = "stuck"
   extra_args = ["--fake-never-ready"]
@@ -86,6 +100,14 @@ name = "crash"
   [[profile.engine]]
   model = "crashy"
   extra_args = ["--fake-exit-after-ms", "400"]
+
+[[profile]]
+name = "odd"
+  [[profile.engine]]
+  model = "odd"
+  slots = 2
+  context = 1024
+  extra_args = ["--fake-slot-context", "0"]
 )toml",
                        std::string(64, 'a'));
 }
@@ -307,6 +329,83 @@ TEST(Supervisor, HealthReportsGpusAndEnginesAsTheyLoad) {
     ASSERT_EQ(models["data"].size(), 4U);
     EXPECT_EQ(models["data"][0]["id"], "chat");
     EXPECT_EQ(models["data"][0]["state"], "ready");
+}
+
+// Keeps the warnings logged while it lives; read them only once every thread
+// that could log has stopped.
+class CapturedWarnings {
+public:
+    CapturedWarnings() {
+        auto sink = std::make_unique<log::MemorySink>();
+        memory_ = sink.get();
+        std::vector<std::unique_ptr<log::Sink>> sinks;
+        sinks.push_back(std::move(sink));
+        log::set_sinks(std::move(sinks));
+        log::set_level(log::Level::warn);
+    }
+    CapturedWarnings(const CapturedWarnings&) = delete;
+    CapturedWarnings& operator=(const CapturedWarnings&) = delete;
+    CapturedWarnings(CapturedWarnings&&) = delete;
+    CapturedWarnings& operator=(CapturedWarnings&&) = delete;
+    ~CapturedWarnings() {
+        log::set_sinks({});
+        log::set_level(log::Level::info);
+    }
+
+    // Every message, one per line.
+    [[nodiscard]] std::string text() const {
+        std::string all;
+        for (const log::MemorySink::Entry& entry : memory_->entries()) {
+            all += entry.message + "\n";
+        }
+        return all;
+    }
+
+private:
+    log::MemorySink* memory_ = nullptr;
+};
+
+// The hub sizes its windows by what each engine reports: the engine's own
+// figure once it is ready, the catalog's arithmetic until then, or when the
+// engine cannot say. Each discrepancy and failure is logged for the operator.
+TEST(Supervisor, EnginesReportTheContextTheirSlotsReallyHave) {
+    const CapturedWarnings warnings;
+    {
+        const Pod pod;
+        ASSERT_TRUE(pod.wait_for("chat", EngineState::ready));
+        const runtime_api::EngineInfo chat = pod.engine("chat");
+        EXPECT_EQ(chat.slots, 2);
+        EXPECT_EQ(chat.context, 4096);
+        EXPECT_TRUE(chat.kv_unified);
+        EXPECT_EQ(chat.ctx_per_slot, 4096) << "a shared pool: one sequence may use all of it";
+        EXPECT_EQ(chat.model_sha256, std::string(64, 'a')) << "the verified file behind the id";
+
+        // Its /props answers slowly: the figure is read before the engine is
+        // declared ready, so no client sees a ready engine with the catalog's.
+        ASSERT_TRUE(pod.wait_for("slow", EngineState::ready));
+        EXPECT_EQ(pod.engine("slow").ctx_per_slot, 300)
+            << "the engine's figure (capped, say, at the model's training context) over the catalog's 8192";
+
+        ASSERT_TRUE(pod.wait_for("embed", EngineState::ready));
+        const runtime_api::EngineInfo embed = pod.engine("embed");
+        EXPECT_FALSE(embed.kv_unified);
+        EXPECT_EQ(embed.ctx_per_slot, 512) << "no /props: the catalog's 2048 split four ways";
+
+        EXPECT_EQ(pod.engine("stuck").ctx_per_slot, 8192) << "not ready: the catalog's arithmetic";
+
+        const Pod odd{"odd"};
+        ASSERT_TRUE(odd.wait_for("odd", EngineState::ready));
+        EXPECT_EQ(odd.engine("odd").ctx_per_slot, 512) << "a figure that cannot be right (0): the catalog's";
+    }  // every engine has stopped: the warnings are all in
+    const std::string logged = warnings.text();
+    EXPECT_THAT(logged,
+                HasSubstr("engine 'slow': llama-server gives each slot 300 tokens of context where the "
+                          "catalog plans 8192"));
+    EXPECT_THAT(logged, HasSubstr("engine 'embed': its slots' context could not be read"));
+    EXPECT_THAT(logged, HasSubstr("/props answered 404")) << "the reason, plainly";
+    EXPECT_THAT(logged, HasSubstr("/props reports a slot context of 0"));
+    EXPECT_THAT(logged, Not(HasSubstr("engine 'chat'")))
+        << "an engine that agrees with the catalog is not news";
 }
 
 TEST(Supervisor, ProxiesCallsToTheEngineServingTheModel) {

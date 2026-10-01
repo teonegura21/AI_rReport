@@ -89,6 +89,8 @@ The GPU pod runs `rreport-runtime` from a CUDA image (`docker/runtime/`, built b
 4. run the M0 checks that only a real pod can settle;
 5. run the benchmark that chooses the default GPU.
 
+Then **[docs/runbooks/m1-m2.md](docs/runbooks/m1-m2.md)** lists what only the pod can measure for the intelligence core, step by step as the phases land: R1, the commander's parallel slots and the prompt cache, is ready now.
+
 ## Repository map
 
 ```

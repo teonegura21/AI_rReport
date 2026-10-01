@@ -113,7 +113,7 @@ struct CallTag {
 // from a preset (rr/llm/sampling.hpp). Ranges are checked before a call is
 // sent (sampling_problems()).
 struct ChatRequest {
-    std::string model{};  // the provider's name for the model ("commander" on the runtime)
+    std::string model{};  // the provider's name for the model (on the runtime, a catalog id)
     std::vector<Message> messages{};
     std::optional<int> max_tokens{};
     std::optional<double> temperature{};

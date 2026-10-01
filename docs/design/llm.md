@@ -205,7 +205,7 @@ A job makes thousands of calls over an hour or more, and a pod stop, a crash or 
 
 | Rule | Why |
 |---|---|
-| The key is the request's key **and the served model's checksum** (`memo_key()`) | A request names a role ("commander"), and the role's model can change between a crash and a resume |
+| The key is the request's key **and the served model's checksum** (`memo_key()`) | A request names a model id, and the file behind it can change between a crash and a resume: a catalog re-pinned to a re-uploaded file keeps its id. The runtime reports each engine's checksum in its health report (`model_sha256`, protocol v2) |
 | A request that may sample needs a seed: temperature unset (servers then sample) or above 0, without one, is refused | Otherwise three samples of a window are three identical requests, and all three get the first one's answer |
 | Seeds are derived: `base + sample`, with `base = BLAKE3(salt, stage, mission) mod 2³¹` (`derived_seed()`) | Deterministic, so a resume asks the same questions. Consecutive, so a request for n choices (llama-server: choice i gets seed + i) draws the same seeds as n single requests. Below 2³² − 1, which llama-server reads as "pick one at random" |
 | Only successes are kept, the first under a key stays | A failure is retried, never replayed |

@@ -9,7 +9,8 @@ rr_add_test_suite(supervisor
     DEPS
         rr::supervisor
         rr::fake_engine_stream
-        rr::fakes)
+        rr::fakes
+        rr::log)
 
 # The end-to-end tests run real engine processes: rr_fake_engine stands in for
 # llama-server. Build it first, and tell the tests where it is.

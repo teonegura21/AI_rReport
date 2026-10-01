@@ -1,9 +1,16 @@
 // rr_fake_engine — a stand-in for llama-server in the supervisor's tests.
 //
 // It understands the part of llama-server's interface the supervisor uses:
-//   --port P --alias ID          (other llama-server flags are ignored)
+//   --port P --alias ID          (other llama-server flags are ignored, but
+//   --parallel N --ctx-size C     these shape /props, as they shape a real
+//   --kv-unified                  engine's slots)
 //   GET  /health                 503 "Loading model" until loaded, then 200
-//   POST /v1/chat/completions    JSON, or SSE tokens ending in [DONE] with "stream": true
+//   GET  /props                  {"default_generation_settings": {"n_ctx": per slot},
+//                                 "total_slots": N, …}: C / N, or C with --kv-unified
+//   POST /v1/chat/completions    JSON, or SSE tokens ending in [DONE] with "stream": true;
+//                                a prompt of a slot's context or more (about four
+//                                characters a token) is refused with 400, as llama-server
+//                                refuses it ("exceed_context_size_error")
 //   POST /v1/embeddings          a fixed vector
 //   GET  /stats                  {"completions": N, "abandoned_streams": M,
 //                                 "abandoned_requests": K}
@@ -14,6 +21,18 @@
 //   --fake-never-ready      never finish loading
 //   --fake-exit-after-ms N  exit with code 3 after N ms (a crash)
 //   --fake-token-ms N       pause between streamed tokens (default 20)
+//   --fake-slot-context N   /props reports N tokens per slot, whatever the
+//                           arithmetic (llama.cpp capping it at the model's
+//                           training context)
+//   --fake-no-props         no /props (404), as from a server that cannot say
+//   --fake-props-ms N       answer /props after N ms
+//   --fake-prompt-cache     reuse prompt prefixes, as llama-server does by
+//                           default: a prompt's longest common prefix with
+//                           the last 16 read is "cached" (usage
+//                           prompt_tokens_details.cached_tokens, timings
+//                           cache_n), at least its last token read again;
+//                           "cache_prompt": false in a request opts out.
+//                           Off by default, so other tests see no cache
 //
 // A streamed answer is shaped as llama-server shapes it (rr/fake_engine/stream.hpp):
 // a role chunk, reasoning then content pieces, a finish chunk, the usage when
@@ -57,9 +76,12 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <deque>
 #include <format>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -86,10 +108,17 @@ using Clock = std::chrono::steady_clock;
 struct Options {
     int port = 0;
     std::string alias = "fake";
+    int parallel = 1;
+    int context = 4096;
+    bool kv_unified = false;
     int load_ms = 100;
     bool never_ready = false;
     int exit_after_ms = -1;
     int token_ms = 20;
+    int slot_context = -1;  // -1: by the arithmetic
+    bool no_props = false;
+    int props_ms = 0;
+    bool prompt_cache = false;
 };
 
 Options parse(const std::vector<std::string_view>& args) {
@@ -101,6 +130,12 @@ Options parse(const std::vector<std::string_view>& args) {
             options.port = std::stoi(std::string{next()});
         } else if (arg == "--alias") {
             options.alias = std::string{next()};
+        } else if (arg == "--parallel") {
+            options.parallel = std::max(1, std::stoi(std::string{next()}));
+        } else if (arg == "--ctx-size") {
+            options.context = std::stoi(std::string{next()});
+        } else if (arg == "--kv-unified" || arg == "--no-kv-unified") {
+            options.kv_unified = arg == "--kv-unified";
         } else if (arg == "--fake-load-ms") {
             options.load_ms = std::stoi(std::string{next()});
         } else if (arg == "--fake-never-ready") {
@@ -109,10 +144,60 @@ Options parse(const std::vector<std::string_view>& args) {
             options.exit_after_ms = std::stoi(std::string{next()});
         } else if (arg == "--fake-token-ms") {
             options.token_ms = std::stoi(std::string{next()});
+        } else if (arg == "--fake-slot-context") {
+            options.slot_context = std::stoi(std::string{next()});
+        } else if (arg == "--fake-no-props") {
+            options.no_props = true;
+        } else if (arg == "--fake-props-ms") {
+            options.props_ms = std::stoi(std::string{next()});
+        } else if (arg == "--fake-prompt-cache") {
+            options.prompt_cache = true;
         }
     }
     return options;
 }
+
+// The most tokens one sequence may hold: the whole pool when the slots share
+// it, an equal share otherwise (or what --fake-slot-context says).
+int slot_context(const Options& options) {
+    if (options.slot_context >= 0) {
+        return options.slot_context;
+    }
+    return options.kv_unified ? options.context : options.context / options.parallel;
+}
+
+// llama-server's /props, the part the supervisor reads.
+std::string props(const Options& options) {
+    return rr::json::dump(rr::json::Json{{"default_generation_settings", {{"n_ctx", slot_context(options)}}},
+                                         {"total_slots", options.parallel},
+                                         {"model_alias", options.alias},
+                                         {"build_info", "fake"}});
+}
+
+// The prompts read lately, whose prefixes a new prompt may reuse.
+class PromptCache {
+public:
+    // The tokens of `prompt` (`tokens` in all) served from the cache, about
+    // four characters each; at least the last token is read again, as
+    // llama-server reads it for its logits. Remembers `prompt`.
+    std::int64_t reuse(const std::string& prompt, std::int64_t tokens) {
+        const std::lock_guard lock(mutex_);
+        std::size_t longest = 0;
+        for (const std::string& earlier : recent_) {
+            const auto [mismatch, unused] = std::ranges::mismatch(prompt, earlier);
+            longest = std::max(longest, static_cast<std::size_t>(mismatch - prompt.begin()));
+        }
+        recent_.push_front(prompt);
+        if (recent_.size() > 16) {
+            recent_.pop_back();
+        }
+        return std::clamp<std::int64_t>(static_cast<std::int64_t>(longest / 4), 0, tokens - 1);
+    }
+
+private:
+    std::mutex mutex_;
+    std::deque<std::string> recent_;
+};
 
 // A knob from the request body, or `fallback` when absent or of another type.
 template <class T>
@@ -199,37 +284,59 @@ rr::fake_engine::ChoicePlan choice_plan(const std::optional<std::string>& reply,
     return choice;
 }
 
+// The prompt, as far as the fake reads it.
+struct Prompt {
+    std::string text;            // each message's role and text, in order: what a prompt cache compares
+    std::size_t characters = 0;  // of the messages' texts
+    std::size_t assistant_turns = 0;
+};
+
+Prompt read_prompt(const rr::json::Json& body) {
+    Prompt prompt;
+    const auto messages = body.find("messages");
+    if (messages == body.end() || !messages->is_array()) {
+        return prompt;
+    }
+    for (const rr::json::Json& message : *messages) {
+        if (!message.is_object()) {
+            continue;
+        }
+        const std::string role = message.value("role", "");
+        if (role == "assistant") {
+            ++prompt.assistant_turns;
+        }
+        prompt.text += std::format("<{}>\n", role);
+        const auto content = message.find("content");
+        if (content == message.end()) {
+            continue;
+        }
+        if (content->is_string()) {
+            prompt.text += content->get<std::string>();
+            prompt.characters += content->get<std::string>().size();
+        } else if (content->is_array()) {
+            for (const rr::json::Json& part : *content) {
+                if (part.is_object() && part.value("type", "") == "text") {
+                    prompt.text += part.value("text", "");
+                    prompt.characters += part.value("text", "").size();
+                }
+            }
+        }
+        prompt.text += '\n';
+    }
+    return prompt;
+}
+
 // What to stream for `body` (see the knobs above).
-rr::fake_engine::StreamPlan plan_for(const rr::json::Json& body, const Options& options) {
+rr::fake_engine::StreamPlan plan_for(const rr::json::Json& body, const Prompt& prompt,
+                                     const Options& options) {
     rr::fake_engine::StreamPlan plan{.model = options.alias, .token_ms = options.token_ms};
     if (const auto stream_options = body.find("stream_options");
         stream_options != body.end() && stream_options->is_object()) {
         plan.include_usage = knob(*stream_options, "include_usage", false);
     }
     // About four characters per token, as for English text.
-    std::size_t characters = 0;
-    std::size_t assistant_turns = 0;
-    if (const auto messages = body.find("messages"); messages != body.end() && messages->is_array()) {
-        for (const rr::json::Json& message : *messages) {
-            if (message.is_object() && message.value("role", "") == "assistant") {
-                ++assistant_turns;
-            }
-            const auto content = message.is_object() ? message.find("content") : message.end();
-            if (content == message.end()) {
-                continue;
-            }
-            if (content->is_string()) {
-                characters += content->get<std::string>().size();
-            } else if (content->is_array()) {
-                for (const rr::json::Json& part : *content) {
-                    if (part.is_object() && part.value("type", "") == "text") {
-                        characters += part.value("text", "").size();
-                    }
-                }
-            }
-        }
-    }
-    plan.prompt_tokens = std::max<std::int64_t>(1, static_cast<std::int64_t>(characters / 4));
+    plan.prompt_tokens = std::max<std::int64_t>(1, static_cast<std::int64_t>(prompt.characters / 4));
+    const std::size_t assistant_turns = prompt.assistant_turns;
 
     std::optional<std::string> reply;
     if (const auto text = body.find("reply"); text != body.end() && text->is_string()) {
@@ -336,6 +443,7 @@ int main(int argc, char** argv) {
     std::atomic<int> completions{0};
     std::atomic<int> abandoned_streams{0};
     std::atomic<int> abandoned_requests{0};
+    PromptCache cache;
 
     HttpServer server{HttpServer::Options{.port = options.port}};
     server.route(rr::net::Method::get, "/health", [&](const auto&) {
@@ -346,6 +454,12 @@ int main(int argc, char** argv) {
                             503,
                             R"({"error":{"code":503,"message":"Loading model","type":"unavailable_error"}})");
     });
+    if (!options.no_props) {
+        server.route(rr::net::Method::get, "/props", [&options](const auto&) {
+            std::this_thread::sleep_for(std::chrono::milliseconds{options.props_ms});
+            return Response::json(200, props(options));
+        });
+    }
     server.route(rr::net::Method::get, "/stats", [&](const auto&) {
         return Response::json(
             200, std::format(R"({{"completions":{},"abandoned_streams":{},"abandoned_requests":{}}})",
@@ -389,8 +503,25 @@ int main(int argc, char** argv) {
                                   .break_mid_event = knob(*body, "break_mid_event", false),
                                   .split_pause_ms = knob(*body, "split_pause_ms", 0),
                                   .error_after = knob(*body, "error_after", -1)};
+        const Prompt prompt = read_prompt(*body);
+        rr::fake_engine::StreamPlan plan = plan_for(*body, prompt, options);
+        // As llama-server does, a prompt its slot cannot hold is refused before
+        // any token.
+        if (const int context = slot_context(options); plan.prompt_tokens >= context) {
+            return Response::json(
+                400, rr::json::dump(rr::json::Json{
+                         {"error",
+                          {{"code", 400},
+                           {"message", "the request exceeds the available context size, try increasing it"},
+                           {"type", "exceed_context_size_error"},
+                           {"n_prompt_tokens", plan.prompt_tokens},
+                           {"n_ctx", context}}}}));
+        }
+        if (options.prompt_cache && knob(*body, "cache_prompt", true)) {
+            plan.cached_tokens = cache.reuse(prompt.text, plan.prompt_tokens);
+        }
         return Response::event_stream(
-            [&abandoned_streams, script, plan = plan_for(*body, options)](HttpServer::ChunkWriter& writer) {
+            [&abandoned_streams, script, plan = std::move(plan)](HttpServer::ChunkWriter& writer) {
                 return stream_answer(writer, plan, script, abandoned_streams);
             });
     });

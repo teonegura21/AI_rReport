@@ -12,10 +12,11 @@
 //   be remembered.
 //
 //   Three rules make that sound:
-//     1. The key is the request's key and the *served model*: the request
-//        names a role ("commander"), and the role's model can change between
-//        a crash and a resume. The served model's file checksum, as the
-//        runtime reports it, enters the key (memo_key()).
+//     1. The key is the request's key and the *served model*: a request
+//        names a model id, and the file behind it can change between a crash
+//        and a resume (a catalog re-pinned to a re-uploaded file keeps its
+//        id). The served model's file checksum, as the runtime reports it
+//        (EngineInfo::model_sha256), enters the key (memo_key()).
 //     2. A request that may sample carries an explicit seed, derived
 //        (derived_seed()); one without is refused. Otherwise three samples of
 //        one window would be three identical requests, and all three would

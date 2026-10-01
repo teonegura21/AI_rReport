@@ -1,5 +1,7 @@
 #include <rr/runtime_api/protocol.hpp>
 
+#include <string>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -12,26 +14,34 @@ using ::testing::HasSubstr;
 using testkit::unwrap;
 
 HealthReport sample_report() {
-    return HealthReport{
-        .version = "0.1.0",
-        .profile = "48gb",
-        .gpus = {GpuInfo{.index = 0,
-                         .name = "NVIDIA L40S",
-                         .memory_total_mib = 46068,
-                         .memory_used_mib = 41000,
-                         .utilization_percent = 87,
-                         .driver_version = "570.124.06"}},
-        .engines = {EngineInfo{
-                        .model = "qwen3.8-27b", .role = "commander", .state = EngineState::ready, .slots = 4},
-                    EngineInfo{.model = "gemma-4-26b-a4b",
-                               .role = "infantry",
-                               .state = EngineState::failed,
-                               .slots = 16,
-                               .restarts = 2,
-                               .last_error = "exit code 1"}},
-        .uptime_s = 3600,
-        .idle_s = 12,
-        .stops_in_s = 1188};
+    return HealthReport{.version = "0.1.0",
+                        .profile = "48gb",
+                        .gpus = {GpuInfo{.index = 0,
+                                         .name = "NVIDIA L40S",
+                                         .memory_total_mib = 46068,
+                                         .memory_used_mib = 41000,
+                                         .utilization_percent = 87,
+                                         .driver_version = "570.124.06"}},
+                        .engines = {EngineInfo{.model = "qwen3.8-27b",
+                                               .role = "commander",
+                                               .state = EngineState::ready,
+                                               .slots = 4,
+                                               .context = 32768,
+                                               .ctx_per_slot = 32768,
+                                               .kv_unified = true,
+                                               .model_sha256 = std::string(64, 'c')},
+                                    EngineInfo{.model = "gemma-4-26b-a4b",
+                                               .role = "infantry",
+                                               .state = EngineState::failed,
+                                               .slots = 16,
+                                               .context = 65536,
+                                               .ctx_per_slot = 4096,
+                                               .model_sha256 = std::string(64, 'e'),
+                                               .restarts = 2,
+                                               .last_error = "exit code 1"}},
+                        .uptime_s = 3600,
+                        .idle_s = 12,
+                        .stops_in_s = 1188};
 }
 
 TEST(HealthReport, RoundTripsThroughJson) {
@@ -59,12 +69,29 @@ TEST(HealthReport, ParsingIsStrictAndNamesThePath) {
     document["engines"][0]["state"] = "exploded";
     EXPECT_THAT(health_report_from_json(document).error().message(), HasSubstr("unknown value 'exploded'"));
 
+    document = to_json(sample_report());
+    document["engines"][0]["kv_unified"] = "yes";
+    EXPECT_THAT(health_report_from_json(document).error().message(),
+                HasSubstr("'engines[0].kv_unified' must be true or false"));
+
+    // What the hub sizes its windows by is never guessed.
+    document = to_json(sample_report());
+    document["engines"][1].erase("ctx_per_slot");
+    EXPECT_THAT(health_report_from_json(document).error().message(),
+                HasSubstr("'engines[1].ctx_per_slot' is missing"));
+
     EXPECT_ERRC(health_report_from_json(json::Json::array()), Errc::invalid_argument);
 }
 
 TEST(HealthReport, RefusesAnotherProtocolVersion) {
     json::Json document = to_json(sample_report());
-    document["protocol"] = "2";
+    EXPECT_EQ(document["protocol"], "2");
+    document["protocol"] = "1";  // a runtime from before engines reported their context
+    const auto older = health_report_from_json(document);
+    ASSERT_ERRC(older, Errc::unsupported);
+    EXPECT_THAT(older.error().message(), HasSubstr("the runtime speaks protocol v1, this hub speaks v2"))
+        << "checked before any field, so the advice is to update, not a missing field";
+    document["protocol"] = "3";
     EXPECT_ERRC(health_report_from_json(document), Errc::unsupported);
 }
 

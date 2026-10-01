@@ -28,6 +28,18 @@
 # cache (8-bit K and V: --cache-type-k/v q8_0, which needs --flash-attn) +
 # compute buffers (~1–2 GB) + a CUDA context (~0.4 GB).
 #
+# The commander's slots (48 and 80 GB). The pipeline asks the commander for
+# k drafts or samples at once (n choices), and runs its missions in
+# parallel; decoding is limited by memory bandwidth, so four streams should
+# give about three times the tokens per second of one. Its four slots share
+# one pool (kv_unified): a request's n choices keep their prompt once, and a
+# long prompt may use the room idle slots leave. The pool keeps the size the
+# one slot had, so the attention cache needs no more memory; Qwen3.8's
+# recurrent layers add a state per slot, which the bench's peak VRAM
+# includes. `rreport bench --commander-parallel 1,2,4 --cache-check`
+# measures both choices on the pod (runbook R1), and its numbers replace
+# these.
+#
 # Every engine gets:
 #   --n-gpu-layers 999   every layer on the GPU. A model that does not fit
 #                        fails to load, loudly, instead of running partly on
@@ -158,8 +170,9 @@ name = "48gb"
 min_vram_mib = 44000
   [[profile.engine]]
   model = "qwen3.8-27b-q4"
-  slots = 1
+  slots = 4
   context = 32768
+  kv_unified = true
   extra_args = ["--n-gpu-layers", "999", "--flash-attn", "on", "--cache-type-k", "q8_0", "--cache-type-v", "q8_0", "--jinja"]
   [[profile.engine]]
   model = "gemma-4-26b-a4b"
@@ -178,8 +191,9 @@ name = "80gb"
 min_vram_mib = 79000
   [[profile.engine]]
   model = "qwen3.8-27b-q8"
-  slots = 1
+  slots = 4
   context = 65536
+  kv_unified = true
   extra_args = ["--n-gpu-layers", "999", "--flash-attn", "on", "--cache-type-k", "q8_0", "--cache-type-v", "q8_0", "--jinja"]
   [[profile.engine]]
   model = "gemma-4-26b-a4b"

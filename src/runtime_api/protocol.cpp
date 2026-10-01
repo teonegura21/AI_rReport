@@ -45,6 +45,14 @@ public:
         return static_cast<int>(value);
     }
 
+    [[nodiscard]] Result<bool> boolean(std::string_view name) const {
+        RR_TRY_ASSIGN(const json::Json* value, required(name));
+        if (!value->is_boolean()) {
+            return type_error(name, "true or false");
+        }
+        return value->get<bool>();
+    }
+
     // Missing or null: std::nullopt.
     [[nodiscard]] Result<std::optional<std::string>> optional_string(std::string_view name) const {
         const auto found = object_->find(name);
@@ -118,6 +126,10 @@ json::Json to_json(const EngineInfo& engine) {
         {"role", engine.role},
         {"state", std::string{to_string(engine.state)}},
         {"slots", engine.slots},
+        {"context", engine.context},
+        {"ctx_per_slot", engine.ctx_per_slot},
+        {"kv_unified", engine.kv_unified},
+        {"model_sha256", engine.model_sha256},
         {"restarts", engine.restarts},
         {"last_error", engine.last_error.has_value() ? json::Json(*engine.last_error) : json::Json()}};
 }
@@ -147,6 +159,10 @@ Result<EngineInfo> engine_from_json(const ObjectReader& reader, const std::strin
     }
     engine.state = *parsed_state;
     RR_TRY_ASSIGN(engine.slots, reader.small_integer("slots"));
+    RR_TRY_ASSIGN(engine.context, reader.small_integer("context"));
+    RR_TRY_ASSIGN(engine.ctx_per_slot, reader.small_integer("ctx_per_slot"));
+    RR_TRY_ASSIGN(engine.kv_unified, reader.boolean("kv_unified"));
+    RR_TRY_ASSIGN(engine.model_sha256, reader.string("model_sha256"));
     RR_TRY_ASSIGN(engine.restarts, reader.small_integer("restarts"));
     RR_TRY_ASSIGN(engine.last_error, reader.optional_string("last_error"));
     return engine;

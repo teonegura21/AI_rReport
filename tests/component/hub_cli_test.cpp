@@ -40,8 +40,10 @@ using Clock = std::chrono::steady_clock;
 constexpr std::string_view kToken = "hub-cli-token";
 constexpr std::string_view kWeights = "pretend these are gigabytes of weights";
 
-// rreport-runtime serving a commander ("chat", two slots, for answers drawn
-// two at a time) and infantry ("squad", four slots), both fake, on free ports.
+// rreport-runtime serving a commander ("chat", two slots sharing one pool,
+// for answers drawn two at a time, and a prompt cache) and infantry
+// ("squad", four slots with a share each, and no prompt cache), both fake,
+// on free ports.
 class Runtime {
 public:
     Runtime() {
@@ -65,7 +67,9 @@ name = "test"
   [[profile.engine]]
   model = "chat"
   slots = 2
-  extra_args = ["--fake-token-ms", "2"]
+  context = 4096
+  kv_unified = true
+  extra_args = ["--fake-token-ms", "2", "--fake-prompt-cache"]
   [[profile.engine]]
   model = "squad"
   slots = 4
@@ -211,7 +215,10 @@ TEST_F(Hub, StartsStopsAndReportsThePod) {
     EXPECT_EQ(status.status.code, 0);
     EXPECT_THAT(status.stdout_text, HasSubstr("$0.44/h"));
     EXPECT_THAT(status.stdout_text, HasSubstr("profile test, no GPU")) << "a test machine has none";
-    EXPECT_THAT(status.stdout_text, HasSubstr("squad (infantry): ready"));
+    EXPECT_THAT(status.stdout_text,
+                HasSubstr("squad (infantry): ready, 4 slot(s), up to 2048 tokens each\n"));
+    EXPECT_THAT(status.stdout_text,
+                HasSubstr("chat (commander): ready, 2 slot(s), up to 4096 tokens each from a shared pool"));
 
     const proc::RunResult stopped = rreport({"pod", "stop"});
     EXPECT_EQ(stopped.status.code, 0);
@@ -266,6 +273,71 @@ TEST_F(Hub, BenchAsksTheCommanderForSeveralAnswersAtOnce) {
     EXPECT_EQ(too_many.status.code, 1);
     EXPECT_THAT(too_many.stderr_text, HasSubstr("3 answers per request need 3 commander slots at once"))
         << "llama-server would hold such a request forever";
+}
+
+TEST_F(Hub, BenchWeighsTheCommandersSlotsAndThePromptCache) {
+    const std::filesystem::path out = home() / "slots.json";
+    const proc::RunResult result =
+        rreport({"bench", "--commander-parallel", "1,2,3", "--cache-check", "--parallel", "1", "--rounds",
+                 "1", "--output-tokens", "8", "--prompt-tokens", "200", "--out", out.string()});
+    ASSERT_EQ(result.status.code, 0) << result.stdout_text << result.stderr_text;
+
+    // The engines, as the pipeline will size its work by them.
+    EXPECT_THAT(result.stdout_text, HasSubstr("| `chat` | commander | 2 | 4096 | 4096 | shared |"));
+    EXPECT_THAT(result.stdout_text, HasSubstr("| `squad` | infantry | 4 | 8192 | 2048 | split |"));
+    // The commander at several requests at once, the third waiting for a slot.
+    EXPECT_THAT(result.stdout_text, HasSubstr("Several requests at once:"));
+    EXPECT_THAT(result.stdout_text, HasSubstr("| 3 (queued) | 2 |"));
+    // One engine's cache serves the shared system message; the other's cannot.
+    EXPECT_THAT(result.stdout_text, HasSubstr("## Prompt cache"));
+    EXPECT_THAT(result.stdout_text, HasSubstr("- `chat`: reused, also by 2 requests at once"));
+    EXPECT_THAT(result.stdout_text,
+                HasSubstr("- `squad`: NOT reused: each request reads the whole system message again"));
+
+    json::Json saved = unwrap(json::parse(unwrap(read_file(out))));
+    EXPECT_EQ(saved["engines"][0]["ctx_per_slot"], 4096);
+    EXPECT_EQ(saved["engines"][0]["kv_unified"], true);
+    EXPECT_EQ(saved["engines"][0]["model_sha256"], sha256(kWeights).hex()) << "which file was measured";
+    ASSERT_EQ(saved["commander"]["parallel"].size(), 3U);
+    EXPECT_EQ(saved["commander"]["parallel"][1]["tokens"], 16) << "two answers of exactly eight tokens";
+    ASSERT_EQ(saved["cache"].size(), 2U);
+    json::Json chat = saved["cache"][0];
+    EXPECT_EQ(chat["model"], "chat");
+    EXPECT_EQ(chat["reused"], true);
+    EXPECT_EQ(chat["first"]["cached_tokens"], 0) << "the run's own system message: nothing to reuse";
+    EXPECT_GT(chat["next"]["cached_tokens"].get<int>(), chat["next"]["prompt_tokens"].get<int>() * 9 / 10)
+        << "all but the question";
+    EXPECT_EQ(chat["together"]["at_once"], 2) << "as many as the engine's slots, at most four";
+    json::Json squad = saved["cache"][1];
+    EXPECT_EQ(squad["reused"], false);
+    EXPECT_EQ(squad["together"]["at_once"], 4);
+    EXPECT_EQ(squad["next"]["cached_tokens"], 0);
+
+    // Every call is accounted for: 1 + (1 + 2 + 3) for the commander, 1 for
+    // the infantry, and (1 + 1 + 2) + (1 + 1 + 4) to check the caches.
+    db::Database library =
+        unwrap(library::open_database(data_dir() / "libraries" / "default" / "library.db"));
+    EXPECT_EQ(unwrap(library::CallLog{library}.list({.purpose = "bench"})).size(), 18U);
+}
+
+TEST_F(Hub, BenchKeepsALevelTheEngineCannotServeAsAResult) {
+    // 3000 tokens: the commander's shared pool of 4096 holds one such
+    // request; the infantry's share of 2048 per slot holds none.
+    const std::filesystem::path out = home() / "long.json";
+    const proc::RunResult result = rreport({"bench", "--prompt-tokens", "3000", "--output-tokens", "4",
+                                            "--rounds", "1", "--parallel", "1,2", "--out", out.string()});
+    ASSERT_EQ(result.status.code, 0) << "a limit found is a result, not a failure of the bench\n"
+                                     << result.stdout_text << result.stderr_text;
+    EXPECT_THAT(result.stdout_text, HasSubstr("## Commander `chat`"));
+    EXPECT_THAT(result.stdout_text, HasSubstr("| 2 | 4 | – | – | – | 2 | – |"));
+    EXPECT_THAT(
+        result.stdout_text,
+        HasSubstr("- 2 at once: 2 of 2 failed: HTTP 400: the request exceeds the available context size"));
+    const json::Json saved = unwrap(json::parse(unwrap(read_file(out))));
+    EXPECT_EQ(saved["infantry"]["rows"][0]["failed"], 1);
+    EXPECT_THAT(saved["infantry"]["rows"][0]["error"].get<std::string>(),
+                HasSubstr("exceeds the available context size"));
+    EXPECT_GT(saved["commander"]["generation_tokens_per_second"].get<double>(), 0) << "the commander served";
 }
 
 TEST_F(Hub, BenchTimesAColdStart) {

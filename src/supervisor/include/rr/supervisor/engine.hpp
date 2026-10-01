@@ -14,6 +14,11 @@
 //
 //   * Readiness is llama-server's own signal: /health answers 503 while the
 //     model loads (minutes for a large model), then 200.
+//   * Before the engine is declared ready, it is asked how much context
+//     each slot really has (/props): llama-server caps the catalog's
+//     arithmetic at the model's training context, and the hub sizes its
+//     windows by the result. If it cannot say, the catalog's figure stands,
+//     and the discrepancy or the failure is logged.
 //   * A crash is followed by a restart after an exponentially growing pause.
 //     The count of consecutive failures resets once the engine becomes
 //     ready, so a model that works but crashes once a day is not given up.
@@ -32,6 +37,7 @@
 
 #include <rr/core/result.hpp>
 #include <rr/runtime_api/protocol.hpp>
+#include <rr/supervisor/catalog.hpp>
 
 namespace rr::supervisor {
 
@@ -49,7 +55,9 @@ public:
         std::function<void(std::string_view line)> on_output{};  // the process's log lines
     };
 
-    Engine(std::string model, std::string role, int slots, Settings settings);
+    // Serves `model` as `spec` says (the health report describes it so);
+    // settings.command is the process that does it (llama_server_command()).
+    Engine(const Model& model, const EngineSpec& spec, Settings settings);
     Engine(const Engine&) = delete;
     Engine& operator=(const Engine&) = delete;
     Engine(Engine&&) = delete;

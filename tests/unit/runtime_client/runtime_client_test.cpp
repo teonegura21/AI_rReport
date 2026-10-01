@@ -233,7 +233,7 @@ TEST(RuntimeClient, RefusesARuntimeOfAnotherProtocol) {
                    [](const auto&) { return net::HttpServer::Response::text(200, "pong"); });
     impostor.route(net::Method::get, "/v1/health", [](const auto&) {
         runtime_api::HealthReport report;
-        report.protocol = "2";
+        report.protocol = "1";  // a runtime from an older release
         return net::HttpServer::Response::json(200, json::dump(runtime_api::to_json(report)));
     });
     ASSERT_OK(impostor.start());
@@ -245,7 +245,7 @@ TEST(RuntimeClient, RefusesARuntimeOfAnotherProtocol) {
     EXPECT_ERRC(client.ping(), Errc::unsupported) << "something answers, but not a runtime";
     const auto health = client.health();
     ASSERT_ERRC(health, Errc::unsupported);
-    EXPECT_THAT(health.error().message(), HasSubstr("speaks protocol v2"));
+    EXPECT_THAT(health.error().message(), HasSubstr("the runtime speaks protocol v1, this hub speaks v2"));
     EXPECT_ERRC(client.wait_until_ready(20s, {}, 50ms), Errc::unsupported)
         << "and waiting will not change that";
 }
