@@ -11,6 +11,7 @@
 | `src/hub/…/doctor.hpp` | The checks, as data (findings) |
 | `src/hub/…/bench.hpp` | The benchmark |
 | `src/hub/…/model_stack.hpp` | The providers every model call goes through: built against the runtime only (ADR-0017), wired by `llm.mode` ([llm.md](llm.md#a-call-as-it-is-wired)) |
+| `src/hub/…/army_engines.hpp` | The army's engines, from the pod's health report and each family's sampling presets ([agents.md](agents.md#engines-and-roles)) |
 | `src/runtime_client/…/pod_manager.hpp` | Starting the pod and waiting until its engines are ready |
 | `src/runpod/…/runpod.hpp` | RunPod's pod API |
 | `config/default.toml` | The built-in defaults, which are also the schema |

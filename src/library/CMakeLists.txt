@@ -1,18 +1,22 @@
 # rr_library — a library's database (ADR-0008): its schema (migrations/,
-# compiled in) and the repositories over it: the model-call log, and a job's
-# memo of its calls (ADR-0020). Hub only.
+# compiled in) and the repositories over it: the model-call log, a job's memo
+# of its calls (ADR-0020), and the battle log of its missions (ADR-0011).
+# Hub only.
 rr_add_embedded_library(library_migrations
     NAMESPACE rr::embedded::library_migrations
     FILES
         migrations/0001_accounting.sql
-        migrations/0002_call_memo.sql)
+        migrations/0002_call_memo.sql
+        migrations/0003_missions.sql)
 
 rr_add_module(library
     SOURCES
         call_log.cpp
         call_memo.cpp
         library.cpp
+        mission_log.cpp
     PUBLIC_DEPS
+        rr::agents
         rr::core
         rr::db
         rr::json

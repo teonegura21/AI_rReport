@@ -25,32 +25,6 @@ std::string_view unfenced(std::string_view text) {
     return trim(text.substr(body + 1, closing - body - 1));
 }
 
-// What is wrong with an answer (nothing: `value` holds it).
-std::vector<std::string> problems_with(const ChatResponse& response, const json::Schema& schema,
-                                       const AnswerCheck& check, json::Json& value) {
-    std::vector<std::string> problems;
-    auto parsed = json::parse(unfenced(response.first().content));
-    if (!parsed.has_value()) {
-        problems.push_back(std::format("it is not JSON: {}", parsed.error().message()));
-    } else {
-        for (const json::Violation& violation : schema.check(*parsed)) {
-            problems.push_back(std::format("{} ({}): {}",
-                                           violation.instance_path.empty() ? "/" : violation.instance_path,
-                                           violation.keyword, violation.message));
-        }
-        if (problems.empty() && check) {
-            problems = check(*parsed);
-        }
-        if (problems.empty()) {
-            value = std::move(*parsed);
-        }
-    }
-    if (!problems.empty() && response.first().finish == FinishReason::length) {
-        problems.emplace_back("the answer was cut off at the token limit, so it must be shorter");
-    }
-    return problems;
-}
-
 std::string as_lines(const std::vector<std::string>& problems) {
     std::string lines;
     for (const std::string& problem : problems) {
@@ -64,6 +38,47 @@ std::string as_lines(const std::vector<std::string>& problems) {
 }
 
 }  // namespace
+
+ChatRequest structured_request(ChatRequest request, const json::Schema& schema, ProviderCaps caps) {
+    if (caps.json_schema) {
+        request.json_schema = schema.model_facing();
+    }
+    if (caps.thinking && !request.thinking.has_value()) {
+        request.thinking = false;
+    }
+    return request;
+}
+
+CheckedAnswer check_structured(const Choice& answer, const json::Schema& schema, const AnswerCheck& check) {
+    CheckedAnswer checked;
+    auto parsed = json::parse(unfenced(answer.content));
+    if (!parsed.has_value()) {
+        checked.problems.push_back(std::format("it is not JSON: {}", parsed.error().message()));
+    } else {
+        for (const json::Violation& violation : schema.check(*parsed)) {
+            checked.problems.push_back(
+                std::format("{} ({}): {}", violation.instance_path.empty() ? "/" : violation.instance_path,
+                            violation.keyword, violation.message));
+        }
+        if (checked.problems.empty() && check) {
+            checked.problems = check(*parsed);
+        }
+        if (checked.problems.empty()) {
+            checked.value = std::move(*parsed);
+        }
+    }
+    if (!checked.problems.empty() && answer.finish == FinishReason::length) {
+        checked.problems.emplace_back("the answer was cut off at the token limit, so it must be shorter");
+    }
+    return checked;
+}
+
+ChatRequest repair_request(ChatRequest request, const Choice& answer,
+                           const std::vector<std::string>& problems, std::string_view instruction) {
+    request.messages.push_back(Message::assistant(answer.content));
+    request.messages.push_back(Message::user(replace_all(instruction, "{problems}", as_lines(problems))));
+    return request;
+}
 
 Result<StructuredAnswer> structured_json(const LlmProvider& provider, ChatRequest request,
                                          const json::Schema& schema, const StreamSink& sink,
@@ -82,32 +97,24 @@ Result<StructuredAnswer> structured_json(const LlmProvider& provider, ChatReques
                         "own validation and repair",
                         request.model, request.n.value_or(1)));
     }
-    const ProviderCaps caps = provider.caps();
-    if (caps.json_schema) {
-        request.json_schema = schema.model_facing();
-    }
-    if (caps.thinking && !request.thinking.has_value()) {
-        request.thinking = false;
-    }
+    request = structured_request(std::move(request), schema, provider.caps());
     for (int repairs = 0;; ++repairs) {
         if (repairs > 0 && sink.on_restart) {
             sink.on_restart();  // the answer shown so far is void
         }
         RR_TRY_ASSIGN(ChatResponse response, provider.chat(request, sink, stop));
-        json::Json value;
-        const std::vector<std::string> problems = problems_with(response, schema, options.check, value);
-        if (problems.empty()) {
+        CheckedAnswer checked = check_structured(response.first(), schema, options.check);
+        if (checked.usable()) {
             return StructuredAnswer{
-                .value = std::move(value), .response = std::move(response), .repairs = repairs};
+                .value = std::move(checked.value), .response = std::move(response), .repairs = repairs};
         }
         if (repairs >= options.repairs) {
             return fail(Errc::model_output_invalid,
                         std::format("'{}' gave no usable answer in {} attempt(s); the last one: {}",
-                                    request.model, repairs + 1, join(problems, "; ")));
+                                    request.model, repairs + 1, join(checked.problems, "; ")));
         }
-        request.messages.push_back(Message::assistant(response.first().content));
-        request.messages.push_back(
-            Message::user(replace_all(options.repair_instruction, "{problems}", as_lines(problems))));
+        request = repair_request(std::move(request), response.first(), checked.problems,
+                                 options.repair_instruction);
     }
 }
 

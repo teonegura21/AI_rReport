@@ -122,7 +122,7 @@ TEST_F(DoctorTest, AHubWithoutAPodIsHealthyAndSaysWhatIsMissing) {
     EXPECT_TRUE(healthy(findings));
     EXPECT_EQ(about(findings, "data directory").severity, Severity::ok);
     EXPECT_THAT(about(findings, "data directory").detail, HasSubstr("100.0 GiB free"));
-    EXPECT_EQ(about(findings, "library").detail, "'default' (schema version 2)") << "created on the way";
+    EXPECT_EQ(about(findings, "library").detail, "'default' (schema version 3)") << "created on the way";
     EXPECT_EQ(about(findings, "yt-dlp").severity, Severity::ok);
     EXPECT_EQ(about(findings, "RunPod").severity, Severity::warning);
     EXPECT_EQ(about(findings, "runtime").severity, Severity::warning);

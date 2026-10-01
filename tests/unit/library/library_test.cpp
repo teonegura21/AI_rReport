@@ -26,6 +26,9 @@ TEST(Library, MigrationsAreNumberedInOrder) {
     ASSERT_GE(all.size(), 2U);
     EXPECT_EQ(all[1].name, "0002_call_memo");
     EXPECT_THAT(all[1].sql, HasSubstr("CREATE TABLE llm_memo"));
+    ASSERT_GE(all.size(), 3U);
+    EXPECT_EQ(all[2].name, "0003_missions");
+    EXPECT_THAT(all[2].sql, HasSubstr("CREATE TABLE missions"));
 }
 
 TEST(Library, OpeningCreatesTheDatabaseWithTheSchema) {

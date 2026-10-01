@@ -184,6 +184,37 @@ TEST(Structured, SaysWhenAnAnswerWasCutShort) {
     EXPECT_THAT(fine.requests().at(1).messages.back().text(), Not(HasSubstr("token limit")));
 }
 
+TEST(Structured, TheStepsCanBeRunApart) {
+    const json::Schema schema = book_schema();
+
+    // 1. The schema where decoding can be constrained, and thinking off unless asked.
+    const ChatRequest constrained = structured_request(ask("a book"), schema, kLlamaServer);
+    EXPECT_EQ(constrained.json_schema, schema.model_facing());
+    EXPECT_EQ(constrained.thinking, false);
+    ChatRequest thinking = ask("a book");
+    thinking.thinking = true;
+    EXPECT_EQ(structured_request(thinking, schema, kLlamaServer).thinking, true) << "a choice made stays";
+    const ChatRequest plain = structured_request(ask("a book"), schema, ProviderCaps{});
+    EXPECT_FALSE(plain.json_schema.has_value());
+    EXPECT_FALSE(plain.thinking.has_value()) << "not asked of a provider that cannot";
+
+    // 2. An answer read and checked.
+    const CheckedAnswer good =
+        check_structured(answer(R"({"title": "Dune", "year": 1965})").first(), schema, {});
+    EXPECT_TRUE(good.usable());
+    EXPECT_EQ(good.value["year"], 1965);
+    const CheckedAnswer bad = check_structured(answer(R"({"title": "Dune"})").first(), schema, {});
+    EXPECT_FALSE(bad.usable());
+    EXPECT_TRUE(bad.value.is_null()) << "no value without its checks";
+
+    // 3. The conversation that asks for a repair.
+    const ChatRequest repair =
+        repair_request(ask("a book"), answer("{}").first(), {"no title", "no year"}, "Fix it:\n{problems}");
+    ASSERT_EQ(repair.messages.size(), 3U);
+    EXPECT_EQ(repair.messages[1], Message::assistant("{}"));
+    EXPECT_EQ(repair.messages[2], Message::user("Fix it:\n- no title\n- no year"));
+}
+
 TEST(Structured, ProviderFailuresPassThrough) {
     const ScriptedProvider model{{fail(Errc::unavailable, "pod stopped")}, kLlamaServer};
     EXPECT_ERRC(structured<Book>(model, ask("a book"), book_schema(), to_book, {}, {}), Errc::unavailable);

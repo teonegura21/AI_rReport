@@ -177,7 +177,7 @@ How rReport reads such an answer (`ChatStreamReader`):
 
 Two rules guard the request itself:
 - **`n` > 1 needs sampling.** At temperature 0 every choice would be the same answer, so such a request is refused (`sampling_problems()`).
-- **`structured_json()` takes one answer.** Each sample needs its own validation and repair conversation, which the army's squads will run (plan P8).
+- **`structured_json()` takes one answer.** Each sample needs its own validation and repair conversation, which the army runs: it asks for a mission's samples in one request, then checks and repairs each on its own ([agents.md](agents.md#samples-share-a-prompt)).
 
 ## Answers that satisfy a schema
 
@@ -189,6 +189,8 @@ Missions ask for data, not prose, and nothing uses an answer before it is valida
 4. **Fails with `model_output_invalid` if it is still unusable,** listing every problem, so the caller can escalate to another model.
 
 Each attempt is an ordinary call: accounted for, retried and replayable like any other.
+
+The steps are public too: `structured_request()` (1), `check_structured()` (2) and `repair_request()` (3). The army (`rr_agents`) runs the loop itself, so that each attempt takes an engine slot of its own, and an answer that cannot be repaired can climb to another model ([agents.md](agents.md#answers-checked-repaired-escalated)). Running the steps apart keeps one implementation of what an answer must be, and of how a repair is asked.
 
 ## Record and replay
 

@@ -24,6 +24,12 @@
 //   Each attempt is an ordinary provider call: accounted, retried and
 //   replayable like any other.
 //
+//   The steps are public too (structured_request(), check_structured(),
+//   repair_request()), for a caller that runs the loop itself: rr_agents'
+//   Army gives each attempt its own engine slot, and may take an answer that
+//   cannot be repaired to another model. The loop is then written once, and
+//   only the scheduling differs.
+//
 // Thread-safety: reentrant; as thread-safe as the provider.
 #pragma once
 
@@ -31,6 +37,7 @@
 #include <optional>
 #include <stop_token>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -45,14 +52,16 @@ namespace rr::llm {
 // Problems the caller finds in an answer the schema accepted (none: accepted).
 using AnswerCheck = std::function<std::vector<std::string>(const json::Json& answer)>;
 
+// Sent (as the user) with an answer to repair; "{problems}" becomes the list
+// of problems, one per line.
+inline constexpr std::string_view kRepairInstruction =
+    "Your answer cannot be used. Problems:\n{problems}\n"
+    "Reply with the corrected JSON only, and nothing else.";
+
 struct StructuredOptions {
     int repairs = 1;  // times an unacceptable answer is sent back to be fixed
     AnswerCheck check{};
-    // Sent (as the user) with an answer to repair; "{problems}" becomes the
-    // list of problems, one per line.
-    std::string repair_instruction =
-        "Your answer cannot be used. Problems:\n{problems}\n"
-        "Reply with the corrected JSON only, and nothing else.";
+    std::string repair_instruction{kRepairInstruction};
 };
 
 struct StructuredAnswer {
@@ -60,6 +69,32 @@ struct StructuredAnswer {
     ChatResponse response{};  // the last call's; its content is the raw answer
     int repairs = 0;          // repairs it took
 };
+
+// An answer, read: its value, or what is wrong with it.
+struct CheckedAnswer {
+    json::Json value{};                   // the answer, when it has no problem
+    std::vector<std::string> problems{};  // what is wrong with it (empty: nothing)
+
+    [[nodiscard]] bool usable() const noexcept { return problems.empty(); }
+};
+
+// Step 1: the request to send for an answer in `schema`. It carries the
+// schema's model-facing form when the provider can constrain decoding, and
+// thinking is off unless the request says otherwise.
+[[nodiscard]] ChatRequest structured_request(ChatRequest request, const json::Schema& schema,
+                                             ProviderCaps caps);
+
+// Step 2: `answer` read as JSON (a Markdown code fence around it is
+// tolerated), checked against `schema`, then by `check` (which may be empty).
+// An answer with problems that was cut short says so: the cut is likely why.
+[[nodiscard]] CheckedAnswer check_structured(const Choice& answer, const json::Schema& schema,
+                                             const AnswerCheck& check);
+
+// Step 3: `request` continued with `answer` and the instruction to repair it
+// ("{problems}" in `instruction` becomes the problems, one per line).
+[[nodiscard]] ChatRequest repair_request(ChatRequest request, const Choice& answer,
+                                         const std::vector<std::string>& problems,
+                                         std::string_view instruction);
 
 // Asks for an answer satisfying `schema` (see the header comment).
 [[nodiscard]] Result<StructuredAnswer> structured_json(const LlmProvider& provider, ChatRequest request,

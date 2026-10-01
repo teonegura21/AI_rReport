@@ -1,0 +1,9 @@
+rr_add_test_suite(agents
+    SOURCES
+        army_test.cpp
+        ladder_test.cpp
+        mission_test.cpp
+        sizing_test.cpp
+    DEPS
+        rr::agents
+        rr::log)
