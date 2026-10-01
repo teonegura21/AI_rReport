@@ -80,6 +80,8 @@ python3 -m unittest discover -s docker/runtime -p 'test_*.py'   # the pod image'
 python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 
+A nightly job (`.github/workflows/nightly.yml`) also runs the runtime against a real llama-server, built for the CPU, with a tiny model made on the spot: [docs/design/runtime.md](docs/design/runtime.md#the-real-engine-nightly-l4) says what it checks, and how to run it yourself.
+
 ## Running the pod
 
 The GPU pod runs `rreport-runtime` from a CUDA image (`docker/runtime/`, built by `.github/workflows/runtime-image.yml`). **[deploy/runpod/README.md](deploy/runpod/README.md)** takes you from a green CI to a measured pod:

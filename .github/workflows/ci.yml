@@ -6,7 +6,9 @@
 #   tidy        clang-tidy with warnings as errors on every rReport translation unit
 #   fetch       dependencies built from pinned git tags only (proves ADR-0012's fallback)
 #   scripts     the pod image's entry point (shellcheck, and its tests with fake
-#               tools) and scripts/ (their tests, against a fake Hugging Face Hub)
+#               tools) and scripts/ (their tests: a fake Hugging Face Hub, the
+#               tiny model's GGUF read back)
+# The runtime against a real llama-server runs nightly (nightly.yml).
 name: ci
 
 on:

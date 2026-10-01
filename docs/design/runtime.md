@@ -286,6 +286,43 @@ It probes its client every 10 ms while silent, as llama-server does, and exits w
 
 **Ports.** Tests draw engine ports at random from 20000–32000, below Linux's ephemeral range (32768–60999). A port picked from the ephemeral range could be taken, between the probe and the engine's `bind()`, as the local port of one of the test's own client connections.
 
+## The real engine, nightly (L4)
+
+The fake engine is only as faithful as what it was told. Once a night, `.github/workflows/nightly.yml` checks it against the real thing: llama-server built for the CPU at the image's pinned llama.cpp (the same tag and commit as `docker/runtime/Dockerfile`), behind a real `rreport-runtime`, called through the hub's own client (`tests/live/live_test.cpp`).
+
+**The model is made, not downloaded.** `scripts/tiny-model.py` writes a 25 MB GGUF in two seconds, in plain Python:
+- llama.cpp's `qwen3` architecture at toy size (2 layers, width 64, grouped-query attention, per-head norms);
+- Qwen's tokenizer, copied from the vocabulary-only file llama.cpp keeps for its tokenizer tests, with `<think>` and `</think>` restored at Qwen3's ids;
+- Qwen3.5's chat template, which opens the thinking block in the prompt, so a thinking budget can be checked with a model that would never open one;
+- weights drawn from a seed: the same seed writes the same bytes.
+
+Its weights are random, so what it says is noise. That is enough, because what the tests check is the server's mechanics, not a model's skill:
+
+| Check | What it confirms |
+|---|---|
+| Each engine's context per slot | An even split, a shared pool, and the model's trained context capping the catalog's figure, all as `/props` reports them and the runtime relays them |
+| A grammar keeps the fields in the order written | P1's ordered schemas reach llama.cpp's grammar intact |
+| Several answers report their own usage | P3's per-choice parsing, against llama-server's own stream |
+| A thinking budget ends the thinking | With a budget the model answers; without one it thinks to the end |
+| A shared system message is served from the cache | The prompt layout the pipeline relies on |
+| A prompt beyond a slot's share is refused before it starts | The fake's `400 exceed_context_size_error` |
+| Requests that overflow a shared pool all fail, and the engine carries on | The claim behind the army's token budget, and runbook R1's long-prompt step |
+
+Without `RR_LIVE_LLAMA_SERVER` and `RR_LIVE_MODEL`, every live test skips itself. The suite is built and run in every CI job, so it cannot rot unnoticed. The job also runs whenever the suite itself changes (its workflow, `tiny-model.py`, `tests/live/`), so a change to it is checked before anything relies on it.
+
+**Run it on your own machine:**
+
+```sh
+git clone --depth 1 --branch v0.5.0 https://github.com/ggml-org/llama.cpp ~/llama.cpp
+cmake -S ~/llama.cpp -B ~/llama.cpp/build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF
+cmake --build ~/llama.cpp/build --target llama-server -j
+scripts/tiny-model.py --llama-cpp ~/llama.cpp --out /tmp/tiny-qwen3.gguf
+RR_LIVE_LLAMA_SERVER=~/llama.cpp/build/bin/llama-server RR_LIVE_MODEL=/tmp/tiny-qwen3.gguf \
+  build/dev/tests/live/rr_live_tests
+```
+
+Each test starts a runtime of its own, three engines of the tiny model, in a second or two; the suite takes about 20 seconds on four cores.
+
 ## How the tests were validated
 
 Each mechanism was removed on purpose, and the named end-to-end test was confirmed to fail. (Mutants are applied by pattern, and a pattern must match exactly once.)

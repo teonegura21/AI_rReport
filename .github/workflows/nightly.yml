@@ -1,0 +1,85 @@
+# Nightly (L4): rReport's runtime against a real llama-server.
+#
+# Everywhere else, rr_fake_engine stands in for llama-server. This job checks
+# that the real one behaves as the fake says, and as the runtime documents:
+# llama-server built for the CPU at the image's pinned llama.cpp, serving a
+# tiny model made here by scripts/tiny-model.py (random weights, Qwen's
+# tokenizer and Qwen3's chat template; nothing downloaded). What it checks is
+# the server's mechanics, not a model's skill: tests/live/live_test.cpp lists
+# them.
+#
+# Run it by hand: Actions → nightly → Run workflow.
+name: nightly
+
+on:
+  schedule:
+    - cron: "23 3 * * *"  # 03:23 UTC every day (on the default branch)
+  workflow_dispatch:
+  # And whenever the live suite itself changes, so a change to it is checked
+  # before it is relied on.
+  push:
+    branches: [main, "claude/**"]
+    paths:
+      - .github/workflows/nightly.yml
+      - scripts/tiny-model.py
+      - tests/live/**
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # The image's llama.cpp (docker/runtime/Dockerfile): a tag, and the commit it
+  # must name, since a tag can be moved.
+  LLAMA_CPP_TAG: v0.5.0
+  LLAMA_CPP_COMMIT: 7fe450e19305b828c199d602c23a8337aaa1f03b
+
+jobs:
+  live:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo scripts/install-deps-ubuntu.sh
+
+      # llama-server takes about ten minutes to build; it depends only on the
+      # commit, so it is kept between runs. GGML_NATIVE=OFF: a cached build
+      # must run on whichever CPU the next runner has.
+      - name: Cache llama.cpp
+        id: llama
+        uses: actions/cache@v4
+        with:
+          path: ~/llama.cpp
+          key: llama-cpp-cpu-${{ env.LLAMA_CPP_COMMIT }}
+
+      - name: Build llama-server for the CPU
+        if: steps.llama.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "$LLAMA_CPP_TAG" https://github.com/ggml-org/llama.cpp ~/llama.cpp
+          actual="$(git -C ~/llama.cpp rev-parse HEAD)"
+          if [ "$actual" != "$LLAMA_CPP_COMMIT" ]; then
+            echo "llama.cpp $LLAMA_CPP_TAG is $actual, expected $LLAMA_CPP_COMMIT" >&2
+            exit 1
+          fi
+          cmake -S ~/llama.cpp -B ~/llama.cpp/build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF \
+            -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF
+          cmake --build ~/llama.cpp/build --target llama-server -j"$(nproc)"
+
+      - name: Make the tiny model
+        run: python3 scripts/tiny-model.py --llama-cpp ~/llama.cpp --out ~/tiny-qwen3.gguf
+
+      - name: Build rReport
+        run: |
+          cmake --preset dev
+          cmake --build --preset dev --target rr_live_tests rreport-runtime
+
+      - name: Run the live tests
+        run: |
+          RR_LIVE_LLAMA_SERVER="$HOME/llama.cpp/build/bin/llama-server" \
+          RR_LIVE_MODEL="$HOME/tiny-qwen3.gguf" \
+            build/dev/tests/live/rr_live_tests

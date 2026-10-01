@@ -35,6 +35,7 @@ src/<module>/include/rr/<module>/*.hpp   public headers of a module (the only in
 src/<module>/*.cpp                        implementation (third-party types stay in here)
 apps/<binary>/                            executables: thin mains wiring modules together
 tests/unit/<module>/                      GoogleTest suites, one executable per module
+tests/component/ tests/live/              the executables from outside; against a real llama-server
 cmake/                                    build helpers (warnings, sanitizers, modules, deps, embed)
 config/ migrations/ prompts/ schemas/     data files compiled into the binaries
 docker/ deploy/                           runtime image and pod runbooks

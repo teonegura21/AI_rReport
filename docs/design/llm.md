@@ -161,6 +161,7 @@ Test-time compute samples: k drafts of a section, k labellings of a window (ADR-
 - **Choice i is sampled with the seed + i** (`server_task::add_child()`). This is why derived seeds are spaced as ADR-0020 says.
 - **It needs n free slots at once.** Until they are free, the request waits. With fewer slots in all it would wait forever, so a caller must never ask a model for more choices than its slots. `bench --n` checks this, and `Limiter::acquire(stop, priority, Slots{k})` holds k slots for k choices; it fails at once, rather than waiting forever, when k exceeds the limiter's capacity (`rr/core/limiter.hpp`).
 - **Choice 0 is the request itself**, and the children are 1 … n − 1 (`server_response_reader::post_tasks()`).
+- **Non-streamed, the usage is one answer's.** For n answers, llama-server's non-streamed response reports only one answer's completion tokens (seen at 7fe450e: two answers of 6 tokens, reported as 6). Streamed, each answer reports its own, and the reader sums them: one more reason every call streams. The live tests pin the streamed sum against a real llama-server ([runtime.md](runtime.md#the-real-engine-nightly-l4)).
 
 How rReport reads such an answer (`ChatStreamReader`):
 
