@@ -18,6 +18,18 @@ TEST(Parse, InvalidDocument_ReportsPositionWithoutThrowing) {
     EXPECT_NE(parsed.error().message().find("byte"), std::string::npos) << parsed.error().message();
 }
 
+TEST(Parse, ANumberTooLargeIsAnErrorNotAThrow) {
+    for (const std::string_view text : {"1e999", R"({"tStartMs": -1e99999})", "155e24854602823"}) {
+        Result<Json> parsed = Json{};
+        ASSERT_NO_THROW(parsed = parse(text)) << text;
+        ASSERT_FALSE(parsed.has_value()) << text;
+        EXPECT_EQ(parsed.error().code(), Errc::invalid_argument);
+        EXPECT_NE(parsed.error().message().find("number overflow"), std::string::npos)
+            << parsed.error().message();
+        EXPECT_FALSE(parse_ordered(text).has_value()) << text;
+    }
+}
+
 TEST(Dump, IsCanonical_KeysSortedNoWhitespace) {
     EXPECT_EQ(dump(parse(R"({ "b": 1, "a": {"d": true, "c": [3, 2]} })").value()),
               R"({"a":{"c":[3,2],"d":true},"b":1})");

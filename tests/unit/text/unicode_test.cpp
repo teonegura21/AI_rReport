@@ -116,6 +116,14 @@ TEST(Unicode, KnowsCase) {
     EXPECT_FALSE(is_lower(U'1'));
 }
 
+TEST(Unicode, LowersCase) {
+    EXPECT_EQ(to_lower(U'A'), U'a');
+    EXPECT_EQ(to_lower(U'\u00C9'), U'\u00E9') << "\u00C9 keeps its accent";
+    EXPECT_EQ(to_lower(U'\u0394'), U'\u03B4') << "Greek";
+    EXPECT_EQ(to_lower(U'a'), U'a');
+    EXPECT_EQ(to_lower(U'7'), U'7');
+}
+
 TEST(Unicode, KnowsOpeningAndClosingPunctuation) {
     for (const char32_t opening : {U'(', U'[', U'{', U'\u201C', U'\u2018', U'\u00AB'}) {
         EXPECT_TRUE(is_opening(opening)) << static_cast<unsigned>(opening);
@@ -142,6 +150,19 @@ TEST(Unicode, ReadsTheDigitsOfAnyScript) {
     EXPECT_EQ(digit_value(U'\U0001D7E1'), 9);
     EXPECT_EQ(digit_value(U'a'), -1);
     EXPECT_EQ(digit_value(U'\u00B2'), -1) << "a superscript is not a decimal digit";
+}
+
+TEST(Unicode, EncodesCodePointsInUtf8) {
+    std::string out;
+    for (const char32_t code_point : {U'A', U'\u00E9', U'\u2014', U'\U0001F600'}) {
+        append_utf8(out, code_point);
+    }
+    EXPECT_EQ(out, "A\u00E9\u2014\U0001F600");
+    EXPECT_TRUE(valid_utf8(out));
+    out.clear();
+    append_utf8(out, char32_t{0xD800});
+    append_utf8(out, char32_t{0x110000});
+    EXPECT_EQ(out, "\uFFFD\uFFFD") << "a surrogate and a value beyond Unicode are no characters";
 }
 
 }  // namespace

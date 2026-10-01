@@ -58,6 +58,14 @@ TEST(Timestamps, ParseRejectsMalformedText) {
     }
 }
 
+TEST(Timestamps, ParseRefusesWhatAMillisecondCountCannotHold) {
+    for (const char* huge : {"99999999999999999:00:00", "9223372036854775807", "2562047788015:12:55"}) {
+        EXPECT_FALSE(parse_timestamp(huge).has_value()) << huge << " would overflow";
+    }
+    EXPECT_EQ(parse_timestamp("2562047788015:12:54").value(), milliseconds{9'223'372'036'854'774'000})
+        << "the most seconds a count of milliseconds holds";
+}
+
 TEST(Timestamps, FormatThenParse_RoundTripsWholeSeconds) {
     for (const long long ms : {0LL, 59'000LL, 60'000LL, 3'599'000LL, 3'600'000LL, 36'000'000LL}) {
         EXPECT_EQ(parse_timestamp(format_timestamp(milliseconds{ms})).value(), milliseconds{ms});

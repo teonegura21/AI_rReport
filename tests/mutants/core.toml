@@ -1,0 +1,23 @@
+# Mutants of rr_core. M0 tested rr_core's mutants by hand; this spec starts
+# with the timestamp parser (P14), whose overflow check the caption fuzzer
+# asked for. Run: scripts/mutate.py tests/mutants/core.toml
+
+target = "rr_core_tests"
+binary = "build/dev/tests/unit/core/rr_core_tests"
+timeout = 120
+
+[[mutant]]
+name = "timestamps-a-second-past-the-bound"
+file = "src/core/time_span.cpp"
+expect = "Timestamps.ParseRefusesWhatAMillisecondCountCannotHold"
+  [[mutant.edit]]
+  from = '''        if (past_sixty || seconds > (kMostSeconds - value) / 60) {'''
+  to = '''        if (past_sixty || seconds > ((kMostSeconds - value) / 60) + 1) {'''
+
+[[mutant]]
+name = "minutes-past-sixty"
+file = "src/core/time_span.cpp"
+expect = "Timestamps.ParseRejectsMalformedText"
+  [[mutant.edit]]
+  from = '''        const bool past_sixty = index > 0 && value >= 60;'''
+  to = '''        const bool past_sixty = false;'''

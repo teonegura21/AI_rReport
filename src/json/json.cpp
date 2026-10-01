@@ -9,8 +9,10 @@ namespace rr::json {
 namespace {
 
 // nlohmann reports errors by throwing; this adapter is the one place where
-// that exception is caught and turned into a Result (ADR-0007). Both document
-// types throw the same parse_error.
+// those exceptions are caught and turned into a Result (ADR-0007). Both
+// document types throw the same ones. Most are a parse_error, which says
+// where; a number too large for a double ("1e999") is an out_of_range, and is
+// as much the document's fault.
 template <class Document>
 Result<Document> parse_as(std::string_view text) {
     try {
@@ -18,6 +20,8 @@ Result<Document> parse_as(std::string_view text) {
     } catch (const Json::parse_error& error) {
         return fail(Errc::invalid_argument,
                     std::format("invalid JSON at byte {}: {}", error.byte, error.what()));
+    } catch (const Json::exception& error) {
+        return fail(Errc::invalid_argument, std::format("invalid JSON: {}", error.what()));
     }
 }
 

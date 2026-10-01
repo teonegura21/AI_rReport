@@ -5,9 +5,9 @@
 #   build-test  GCC debug; Clang + ASan/UBSan; Clang + TSan — all tests green
 #   tidy        clang-tidy with warnings as errors on every rReport translation unit
 #   fetch       dependencies built from pinned git tags only (proves ADR-0012's fallback)
-#   fuzz        libFuzzer searches each fuzz target (rr_text, the article's markers) for
-#               inputs that break its invariants, for 90 seconds each (every
-#               build-test job also replays the committed corpora)
+#   fuzz        libFuzzer searches each fuzz target (rr_text, the article's markers,
+#               caption files) for inputs that break its invariants, for 90 seconds
+#               each (every build-test job also replays the committed corpora)
 #   scripts     the pod image's entry point (shellcheck, and its tests with fake
 #               tools) and scripts/ (their tests: a fake Hugging Face Hub, the
 #               tiny model's GGUF read back)
@@ -91,10 +91,10 @@ jobs:
       - name: Configure
         run: cmake --preset fuzz
       - name: Build the fuzzers
-        run: cmake --build --preset fuzz --target rr_text_fuzzer rr_markers_fuzzer
+        run: cmake --build --preset fuzz --target rr_text_fuzzer rr_markers_fuzzer rr_captions_fuzzer
       - name: Fuzz each target
         run: |
-          for target in text markers; do
+          for target in text markers captions; do
             mkdir -p fuzz-findings/$target
             build/fuzz/tests/fuzz/rr_${target}_fuzzer -max_total_time=90 -timeout=10 -rss_limit_mb=2048 \
               -artifact_prefix=fuzz-findings/$target- fuzz-findings/$target tests/fuzz/corpus/$target

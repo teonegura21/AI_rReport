@@ -38,6 +38,8 @@ A text can be written many ways that a reader cannot tell apart, and comparing b
 
 So there are two forms. `nfc()` is the canonical form a text is *kept* in: the same characters, the same bytes. `fold()` is the form texts are *compared* in, and never shown. Both refuse invalid UTF-8 (`Errc::invalid_argument`). A file in another encoding is an error to report, not a text to guess at. `repair()` replaces each invalid byte with U+FFFD for text that must be read anyway, and everything else reads an invalid byte as U+FFFD, one byte long, so no function fails on bad input.
 
+Two helpers serve the code that writes text rather than compares it (P14). `append_utf8()` encodes a code point, and anything that is no Unicode scalar value is written as U+FFFD; a caption's `&#x2014;` is decoded with it. `to_lower()` is Unicode's simple lowercase of one code point, which keeps accents: `É` is `é`. A model's word that differs from a caption's only in capitals is told by it, where `fold()` would also erase an accent.
+
 ## Tokens and terms
 
 A **word** is a run of letters, marks and digits with at least one letter, in any script: `GPT4`, `3D` and `1st` are words. An apostrophe between letters stays in the word (`don't`, `l’été`), and a hyphen splits (`state-of-the-art` is four words). A **number** is a run of digits; a point between digits is a decimal point (`3.14`), and a comma followed by exactly three digits separates thousands (`1,234,567`, but `1,2,3` is three numbers). Punctuation and symbols are one code point each, and spaces and controls separate tokens.
@@ -175,3 +177,5 @@ The final run kills all 110 mutants:
 | Names and mentions | 18 | "I"; acronyms; capitals-only sentences; possessives; numbers in names; connectors, one or two; "&" and hyphens; titles and initials; function words at the head; clause starts (sentence, quote, colon); possessive mentions; overlaps |
 | Alignment | 7 | verbatim (edits; empty quotes); matches counted; gaps counted; the first of equal places; where a path starts; what a gap costs |
 | BM25 | 7 | idf; saturation; length; repeated query terms; ties; passages without a term; `top` |
+
+P14 added `append_utf8()` and `to_lower()`, each with a test (115 tests now) and a mutant (112), both killed: U+D800 itself encoded as a character, and nothing lowered.

@@ -76,6 +76,10 @@ enum class CharClass : std::uint8_t {
 // A lowercase letter (Ll).
 [[nodiscard]] bool is_lower(char32_t code_point) noexcept;
 
+// The lowercase of a letter by Unicode's simple case mapping ("É" is "é"),
+// or the code point itself.
+[[nodiscard]] char32_t to_lower(char32_t code_point) noexcept;
+
 // Punctuation that opens a phrase (Ps, Pi: "(", "[", "“", "«") or closes one
 // (Pe, Pf: ")", "]", "”", "»"). The straight quotes '"' and "'" are neither:
 // they do both, and a caller decides by position.
@@ -85,5 +89,9 @@ enum class CharClass : std::uint8_t {
 // The value, 0 to 9, of a decimal digit of any script ("7", "٧", "७", "７"), or
 // -1 for a code point that is not one (Nd).
 [[nodiscard]] int digit_value(char32_t code_point) noexcept;
+
+// Appends `code_point` to `out` in UTF-8. A code point that is no Unicode
+// scalar value (a surrogate, or beyond U+10FFFF) is appended as U+FFFD.
+void append_utf8(std::string& out, char32_t code_point);
 
 }  // namespace rr::text

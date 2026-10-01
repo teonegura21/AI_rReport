@@ -1,0 +1,451 @@
+# Mutants of rr_transcript: each removes one rule of reading captions,
+# projecting punctuation or cutting sentences, and names the test that must
+# fail without it. Run: scripts/mutate.py tests/mutants/transcript.toml
+# What they found is in docs/design/transcript.md, "How the tests were validated".
+
+target = "rr_transcript_tests"
+binary = "build/dev/tests/unit/transcript/rr_transcript_tests"
+timeout = 60
+
+# --- What every format shares (cues.cpp) ---------------------------------------
+
+[[mutant]]
+name = "numeric-references-unread"
+file = "src/transcript/cues.cpp"
+expect = "Captions.CharacterReferencesAreDecoded"
+  [[mutant.edit]]
+  from = '''    return value == 0 ? std::nullopt : std::optional<char32_t>{value};'''
+  to = '''    return value == 1234567 ? std::optional<char32_t>{value} : std::nullopt;'''
+
+[[mutant]]
+name = "a-nul-reference-decoded"
+file = "src/transcript/cues.cpp"
+expect = "Captions.CharacterReferencesAreDecoded"
+  [[mutant.edit]]
+  from = '''    return value == 0 ? std::nullopt : std::optional<char32_t>{value};'''
+  to = '''    return std::optional<char32_t>{value};'''
+
+[[mutant]]
+name = "named-references-unread"
+file = "src/transcript/cues.cpp"
+expect = "Captions.CharacterReferencesAreDecoded"
+  [[mutant.edit]]
+  from = '''    const auto* const named = std::ranges::find(kNamed, name, &Named::name);'''
+  to = '''    const auto* const named = kNamed.end();'''
+
+[[mutant]]
+name = "controls-in-words"
+file = "src/transcript/cues.cpp"
+expect = "Captions.ControlsSeparateWordsAndJoinersJoinThem"
+  [[mutant.edit]]
+  from = '''    return kind == text::CharClass::space || kind == text::CharClass::other;'''
+  to = '''    return kind == text::CharClass::space;'''
+
+[[mutant]]
+name = "joiners-split-words"
+file = "src/transcript/cues.cpp"
+expect = "Captions.ControlsSeparateWordsAndJoinersJoinThem"
+  [[mutant.edit]]
+  from = '''is_joiner(at(end)) && end + 1 < last && !is_blank(at(end + 1)) && !is_note(at(end + 1));'''
+  to = '''false && is_joiner(at(end)) && end + 1 < last && !is_blank(at(end + 1)) && !is_note(at(end + 1));'''
+
+[[mutant]]
+name = "notes-are-words"
+file = "src/transcript/cues.cpp"
+expect = "Captions.SoundsAreSetApartFromWhatWasSaid"
+  [[mutant.edit]]
+  from = '''    return code_point == U'\u2669' || code_point == U'\u266A' || code_point == U'\u266B' ||
+           code_point == U'\u266C';'''
+  to = '''    return false && (code_point == U'\u2669' || code_point == U'\u266A' || code_point == U'\u266B' ||
+                     code_point == U'\u266C');'''
+
+[[mutant]]
+name = "marks-time-the-space"
+file = "src/transcript/cues.cpp"
+expect = "Captions.Json3TimesEveryWordOfAutomaticCaptions"
+  [[mutant.edit]]
+  from = '''            while (offset < cue.text.size() && (cue.text[offset] == ' ' || cue.text[offset] == '\n')) {'''
+  to = '''            while (false && offset < cue.text.size()) {'''
+
+[[mutant]]
+name = "marks-ignored"
+file = "src/transcript/cues.cpp"
+expect = "Captions.Json3TimesEveryWordOfAutomaticCaptions"
+  [[mutant.edit]]
+  from = '''            if (offset < anchors_.back().offset || offset > cue.text.size()) {'''
+  to = '''            if (true) {'''
+
+[[mutant]]
+name = "a-cues-time-unshared"
+file = "src/transcript/cues.cpp"
+expect = "Captions.AWordWithoutItsOwnTimeSharesItsCues"
+  [[mutant.edit]]
+  from = '''        return before.time + ((after->time - before.time) * into / span);'''
+  to = '''        return before.time + ((after->time - before.time) * into / span * 0);'''
+
+[[mutant]]
+name = "brackets-close-on-another-line"
+file = "src/transcript/cues.cpp"
+expect = "Captions.SoundsAreSetApartFromWhatWasSaid"
+  [[mutant.edit]]
+  from = '''                next = {kNone, kNone};'''
+  to = '''                (void)0;'''
+
+[[mutant]]
+name = "turns-unread"
+file = "src/transcript/cues.cpp"
+expect = "Captions.ACaptionersLabelNamesTheSpeaker"
+  [[mutant.edit]]
+  from = '''        if (marks - index >= 2) {'''
+  to = '''        if (marks - index >= 200) {'''
+
+[[mutant]]
+name = "dialogue-dashes-unread"
+file = "src/transcript/cues.cpp"
+expect = "Captions.SubRipCuesAreReadWithoutTheirStyles"
+  [[mutant.edit]]
+  from = '''        if (dash && index + 1 < last && is_blank(at(index + 1))) {'''
+  to = '''        if (false && dash && index + 1 < last && is_blank(at(index + 1))) {'''
+
+[[mutant]]
+name = "labels-unread"
+file = "src/transcript/cues.cpp"
+expect = "Captions.ACaptionersLabelNamesTheSpeaker"
+  [[mutant.edit]]
+  from = '''        if (std::optional<Label> label = label_at(index, last)) {'''
+  to = '''        if (std::optional<Label> label = std::nullopt) {'''
+
+[[mutant]]
+name = "one-capital-labels"
+file = "src/transcript/cues.cpp"
+expect = "Captions.ACaptionersLabelNamesTheSpeaker"
+  [[mutant.edit]]
+  from = '''                if (!ends || letters < kMinLetters) {'''
+  to = '''                if (!ends || letters < kMinLetters - 1) {'''
+
+[[mutant]]
+name = "a-turn-keeps-the-label"
+file = "src/transcript/cues.cpp"
+expect = "Captions.ACaptionersLabelNamesTheSpeaker"
+  [[mutant.edit]]
+  from = '''            labelled_.reset();  // a new speaker, not named'''
+  to = '''            (void)0;  // a new speaker, not named'''
+
+[[mutant]]
+name = "annotations-are-words"
+file = "src/transcript/cues.cpp"
+expect = "Captions.SoundsAreSetApartFromWhatWasSaid"
+  [[mutant.edit]]
+  from = '''            } else if (const std::size_t close = closer(index); close != kNone) {'''
+  to = '''            } else if (const std::size_t close = closer(index); false && close != kNone) {'''
+
+[[mutant]]
+name = "a-gap-is-a-sound"
+file = "src/transcript/cues.cpp"
+expect = "Captions.SoundsAreSetApartFromWhatWasSaid"
+  [[mutant.edit]]
+  from = '''        if (says_unclear(text_.substr(begin, end - begin))) {'''
+  to = '''        if (false && says_unclear(text_.substr(begin, end - begin))) {'''
+
+[[mutant]]
+name = "voices-unread"
+file = "src/transcript/cues.cpp"
+expect = "Captions.WebVttCuesAreReadWithTheirVoices"
+  [[mutant.edit]]
+  from = '''        if (offset >= voice.begin && offset < voice.end) {'''
+  to = '''        if (false && offset >= voice.begin && offset < voice.end) {'''
+
+[[mutant]]
+name = "starts-may-decrease"
+file = "src/transcript/cues.cpp"
+expect = "Captions.AWordNeverStartsBeforeTheOneBefore"
+  [[mutant.edit]]
+  from = '''            timed[index].start = std::max(timed[index].start, timed[index - 1].start);'''
+  to = '''            (void)0;'''
+
+[[mutant]]
+name = "ends-run-past-the-next-start"
+file = "src/transcript/cues.cpp"
+expect = "Captions.Json3TimesEveryWordOfAutomaticCaptions"
+  [[mutant.edit]]
+  from = '''        timed[index].end = std::min(timed[index].end, timed[index + 1].start);'''
+  to = '''        (void)0;'''
+
+[[mutant]]
+name = "cues-unsorted"
+file = "src/transcript/cues.cpp"
+expect = "Captions.WordsAreReadInTheOrderSaid"
+  [[mutant.edit]]
+  from = '''    std::ranges::stable_sort(cues, {}, &Cue::start);'''
+  to = '''    (void)0;'''
+
+[[mutant]]
+name = "a-new-speaker-no-paragraph"
+file = "src/transcript/cues.cpp"
+expect = "Captions.WebVttCuesAreReadWithTheirVoices"
+  [[mutant.edit]]
+  from = '''            const bool changed = !track.words.empty() && track.words.back().speaker != speaker;'''
+  to = '''            const bool changed = false;'''
+
+[[mutant]]
+name = "blank-lines-no-paragraph"
+file = "src/transcript/cues.cpp"
+expect = "Captions.PlainTextIsUntimedParagraphs"
+  [[mutant.edit]]
+  from = '''            const bool paragraph = piece.turn || (first && cue.paragraph) || changed;'''
+  to = '''            const bool paragraph = piece.turn || (first && cue.paragraph && false) || changed;'''
+
+# --- The formats (captions.cpp, json3.cpp, vtt.cpp, srt.cpp) --------------------
+
+[[mutant]]
+name = "a-byte-order-mark-is-read"
+file = "src/transcript/captions.cpp"
+expect = "Captions.AByteOrderMarkIsNoText"
+  [[mutant.edit]]
+  from = '''    if (content.starts_with("\xEF\xBB\xBF")) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "crlf-is-two-lines"
+file = "src/transcript/captions.cpp"
+expect = "Captions.SubRipCuesAreReadWithoutTheirStyles"
+  [[mutant.edit]]
+  from = '''        if (content[at] == '\r' && at + 1 < content.size() && content[at + 1] == '\n') {'''
+  to = '''        if (false) {'''
+
+[[mutant]]
+name = "milliseconds-in-any-digits"
+file = "src/transcript/captions.cpp"
+expect = "Captions.WebVttThatIsNotSaysWhere"
+  [[mutant.edit]]
+  from = '''text.size() - point - 1 == kFraction;'''
+  to = '''text.size() - point - 1 <= kFraction;'''
+
+[[mutant]]
+name = "timings-unbounded"
+file = "src/transcript/captions.cpp"
+expect = "Captions.WebVttThatIsNotSaysWhere"
+  [[mutant.edit]]
+  from = '''    return parsed.has_value() && *parsed <= kLatest ? std::optional<Millis>{*parsed} : std::nullopt;'''
+  to = '''    return parsed.has_value() ? std::optional<Millis>{*parsed} : std::nullopt;'''
+
+[[mutant]]
+name = "json3-times-unbounded"
+file = "src/transcript/json3.cpp"
+expect = "Captions.Json3ThatIsNotSaysWhere"
+  [[mutant.edit]]
+  from = '''found->get<double>() <= static_cast<double>(kLatest.count());'''
+  to = '''true;'''
+
+[[mutant]]
+name = "json3-word-times-ignored"
+file = "src/transcript/json3.cpp"
+expect = "Captions.Json3TimesEveryWordOfAutomaticCaptions"
+  [[mutant.edit]]
+  from = '''                cue.marks.push_back(cues::Mark{.offset = cue.text.size(), .time = start + offset});'''
+  to = '''                (void)offset;'''
+
+[[mutant]]
+name = "rolling-repeats-kept"
+file = "src/transcript/vtt.cpp"
+expect = "Captions.RollingCaptionsAreReadOnce"
+  [[mutant.edit]]
+  from = '''            if (!timed(line) && (text.empty() || text == last_line)) {'''
+  to = '''            if (!timed(line) && text.empty()) {'''
+
+[[mutant]]
+name = "never-rolling"
+file = "src/transcript/vtt.cpp"
+expect = "Captions.RollingCaptionsAreReadOnce"
+  [[mutant.edit]]
+  from = '''blocks, [](const Block& block) { return std::ranges::any_of(block.lines, timed); });'''
+  to = '''blocks, [](const Block& block) { return false && std::ranges::any_of(block.lines, timed); });'''
+
+[[mutant]]
+name = "notes-are-cues"
+file = "src/transcript/vtt.cpp"
+expect = "Captions.WebVttCuesAreReadWithTheirVoices"
+  [[mutant.edit]]
+  from = '''        if (starts_block(first, "NOTE") || starts_block(first, "STYLE") || starts_block(first, "REGION")) {'''
+  to = '''        if (starts_block(first, "STYLE") || starts_block(first, "REGION")) {'''
+
+[[mutant]]
+name = "a-header-swallows-its-cue"
+file = "src/transcript/vtt.cpp"
+expect = "Captions.AHeaderRunningIntoItsFirstCueKeepsIt"
+  [[mutant.edit]]
+  from = '''    if (timing_in_header == header.lines.end()) {'''
+  to = '''    if (true) {'''
+
+[[mutant]]
+name = "voices-never-close"
+file = "src/transcript/vtt.cpp"
+expect = "Captions.AVoiceSpeaksOnlyWhatItWraps"
+  [[mutant.edit]]
+  from = '''        } else if (tag == "/v") {'''
+  to = '''        } else if (tag == "/never") {'''
+
+[[mutant]]
+name = "voice-tags-ignored"
+file = "src/transcript/vtt.cpp"
+expect = "Captions.WebVttCuesAreReadWithTheirVoices"
+  [[mutant.edit]]
+  from = '''        } else if (tag == "v" || tag.starts_with("v ") || tag.starts_with("v.") || tag.starts_with("v\t")) {'''
+  to = '''        } else if (false) {'''
+
+[[mutant]]
+name = "override-codes-kept"
+file = "src/transcript/srt.cpp"
+expect = "Captions.SubRipCuesAreReadWithoutTheirStyles"
+  [[mutant.edit]]
+  from = '''        const bool code = c == '{' && at + 1 < line.size() && line[at + 1] == '\\';'''
+  to = '''        const bool code = false;'''
+
+[[mutant]]
+name = "cue-numbers-required"
+file = "src/transcript/srt.cpp"
+expect = "Captions.SubRipThatIsNotSaysWhere"
+  [[mutant.edit]]
+  from = '''        const std::size_t timing_line = all_digits(lines[index]) ? index + 1 : index;'''
+  to = '''        const std::size_t timing_line = all_digits(lines[index]) || true ? index + 1 : index;'''
+
+# --- Projection (projection.cpp) ----------------------------------------------
+
+[[mutant]]
+name = "accents-taken-as-capitals"
+file = "src/transcript/projection.cpp"
+expect = "Projection.OnlyCapitalsChange"
+  [[mutant.edit]]
+  from = '''text::to_lower(left.value) == text::to_lower(right.value);'''
+  to = '''text::classify(left.value) == text::classify(right.value);'''
+
+[[mutant]]
+name = "symbols-projected"
+file = "src/transcript/projection.cpp"
+expect = "Projection.NeitherAHyphenNorASymbolIsAdded"
+  [[mutant.edit]]
+  from = '''    return ends_sentence(code_point) || kMarks.contains(code_point) || text::is_opening(code_point) ||'''
+  to = '''    return true || ends_sentence(code_point) || kMarks.contains(code_point) || text::is_opening(code_point) ||'''
+
+[[mutant]]
+name = "spaces-divide-nothing"
+file = "src/transcript/projection.cpp"
+expect = "Projection.QuotesAndBracketsGoWhereTheModelPutThem"
+  [[mutant.edit]]
+  from = '''            return {gap.substr(0, spaces->begin), gap.substr(spaces->end)};'''
+  to = '''            return {gap, gap.substr(gap.size())};'''
+
+[[mutant]]
+name = "an-opening-bracket-joins-the-word-before"
+file = "src/transcript/projection.cpp"
+expect = "Projection.QuotesAndBracketsGoWhereTheModelPutThem"
+  [[mutant.edit]]
+  from = '''        const std::size_t cut = opening.value_or(gap.size());'''
+  to = '''        const std::size_t cut = std::max(opening.value_or(gap.size()), gap.size());'''
+
+[[mutant]]
+name = "the-changed-word-not-paired"
+file = "src/transcript/projection.cpp"
+expect = "Projection.AWordTheModelChangedIsNotTaken"
+  [[mutant.edit]]
+  from = '''            if (best == diagonal) {
+                step = Step::both;
+            } else if (best == up) {
+                step = Step::dropped;
+            }'''
+  to = '''            if (best == up) {
+                step = Step::dropped;
+            } else if (best == diagonal) {
+                step = Step::both;
+            }'''
+
+[[mutant]]
+name = "an-added-words-end-dropped"
+file = "src/transcript/projection.cpp"
+expect = "Projection.AnAddedWordIsNotTakenButItsSentenceEndIs"
+  [[mutant.edit]]
+  from = '''            if (last_paired.has_value() && last_of_word(said, *last_paired) && has_sentence_end(marks)) {'''
+  to = '''            if (false && last_paired.has_value() && last_of_word(said, *last_paired) && has_sentence_end(marks)) {'''
+
+[[mutant]]
+name = "a-carried-end-overrides"
+file = "src/transcript/projection.cpp"
+expect = "Projection.AnAddedWordIsNotTakenButItsSentenceEndIs"
+  [[mutant.edit]]
+  from = '''    if (!has_sentence_end(gain.after) && !gain.carried.empty()) {'''
+  to = '''    if (!gain.carried.empty()) {'''
+
+[[mutant]]
+name = "the-captions-end-overwritten"
+file = "src/transcript/projection.cpp"
+expect = "Projection.TheCaptionsOwnPunctuationStays"
+  [[mutant.edit]]
+  from = '''    if (!has_projectable(
+            text::text_of(word, text::Span{.begin = terms.back().span.end, .end = word.size()}))) {'''
+  to = '''    if (true) {'''
+
+[[mutant]]
+name = "the-captions-opening-overwritten"
+file = "src/transcript/projection.cpp"
+expect = "Projection.TheCaptionsOwnPunctuationStays"
+  [[mutant.edit]]
+  from = '''    if (!has_projectable(text::text_of(word, text::Span{.begin = 0, .end = terms.front().span.begin}))) {'''
+  to = '''    if (true) {'''
+
+[[mutant]]
+name = "capitals-not-taken"
+file = "src/transcript/projection.cpp"
+expect = "Projection.LaysTheModelsPunctuationAndCapitalsOnTheWords"
+  [[mutant.edit]]
+  from = '''        if (same && recased(text::text_of(words[term.word].text, term.term.span), model)) {'''
+  to = '''        if (false && same && recased(text::text_of(words[term.word].text, term.term.span), model)) {'''
+
+# --- Sentences (sentences.cpp) ------------------------------------------------
+
+[[mutant]]
+name = "paragraphs-joined"
+file = "src/transcript/sentences.cpp"
+expect = "Sentences.ANewSpeakerStartsASentence"
+  [[mutant.edit]]
+  from = '''                text_ += words[index].paragraph ? "\n\n" : " ";'''
+  to = '''                text_ += " ";'''
+
+[[mutant]]
+name = "pauses-ignored"
+file = "src/transcript/sentences.cpp"
+expect = "Sentences.ALongSentenceIsCutWhereItPausesLongest"
+  [[mutant.edit]]
+  from = '''            if (pause > best || (pause == best && imbalance(word) < imbalance(at))) {'''
+  to = '''            if (pause == best && imbalance(word) < imbalance(at)) {'''
+
+[[mutant]]
+name = "the-middle-ignored"
+file = "src/transcript/sentences.cpp"
+expect = "Sentences.ALongSentenceIsCutWhereItPausesLongest"
+  [[mutant.edit]]
+  from = '''            if (pause > best || (pause == best && imbalance(word) < imbalance(at))) {'''
+  to = '''            if (pause > best || (pause == best && imbalance(word) < imbalance(at) && false)) {'''
+
+[[mutant]]
+name = "a-words-time-unshared"
+file = "src/transcript/sentences.cpp"
+expect = "Sentences.ASentenceEndingInsideAWordTakesItsShareOfTheTime"
+  [[mutant.edit]]
+  from = '''        return said.start + ((said.end - said.start) * into / length);'''
+  to = '''        return said.start + ((said.end - said.start) * into / length * 0);'''
+
+[[mutant]]
+name = "a-closing-quote-hides-the-end"
+file = "src/transcript/sentences.cpp"
+expect = "Sentences.PunctuatedCaptionsEndSentencesOften"
+  [[mutant.edit]]
+  from = '''        if (!text::is_closing(point.value)) {'''
+  to = '''        if (true) {'''
+
+[[mutant]]
+name = "one-end-is-enough"
+file = "src/transcript/sentences.cpp"
+expect = "Sentences.PunctuatedCaptionsEndSentencesOften"
+  [[mutant.edit]]
+  from = '''ends * std::max<std::size_t>(every, 1) >= words.size()'''
+  to = '''ends * std::max<std::size_t>(every, 1) * 100 >= words.size()'''

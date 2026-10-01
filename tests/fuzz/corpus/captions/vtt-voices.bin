@@ -1,0 +1,15 @@
+WEBVTT
+Kind: captions
+
+NOTE a comment
+
+STYLE
+::cue { color: red }
+
+intro
+00:00:01.000 --> 00:00:03.000 align:start position:0%
+<v.loud Ada>Hello, <i>everyone</i>.</v> <c.yellow>Fish &amp; chips</c> &#x2014; ok
+
+00:00:03.500 --> 00:00:05.000
+- How are you?
+- Fine, thanks. ♪ la ♪

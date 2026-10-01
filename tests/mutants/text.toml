@@ -899,3 +899,21 @@ expect = "Bm25.TopLimitsTheHits"
   [[mutant.edit]]
   from = '''const auto kept = static_cast<std::ptrdiff_t>(std::min(top, hits.size()));'''
   to = '''const auto kept = static_cast<std::ptrdiff_t>(hits.size());'''
+
+# --- Writing text (P14) ---------------------------------------------------------
+
+[[mutant]]
+name = "the-first-surrogate-encoded"
+file = "src/text/unicode.cpp"
+expect = "Unicode.EncodesCodePointsInUtf8"
+  [[mutant.edit]]
+  from = '''    const bool surrogate = code_point >= kSurrogatesBegin && code_point <= kSurrogatesEnd;'''
+  to = '''    const bool surrogate = code_point > kSurrogatesBegin && code_point <= kSurrogatesEnd;'''
+
+[[mutant]]
+name = "nothing-lowered"
+file = "src/text/unicode.cpp"
+expect = "Unicode.LowersCase"
+  [[mutant.edit]]
+  from = '''    return static_cast<char32_t>(utf8proc_tolower(static_cast<utf8proc_int32_t>(code_point)));'''
+  to = '''    return code_point;'''

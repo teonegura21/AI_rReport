@@ -29,8 +29,8 @@ The work is cut into thirty phases, each one commit that builds, passes CI and i
 | **3. Text, transcript, ledger, pipeline** | | |
 | P11 | `rr_text`: sentences, numbers by value, names, quote alignment, BM25; fuzzing ([text.md](design/text.md)) | done: `d5ccefc` |
 | P12 | `rr_knowledge`: the knowledge model's types, artifact schemas, the `[A#]` marker parser, fuzzed ([knowledge.md](design/knowledge.md)) | done: `d32213c` |
-| P13 | `rr_fidelity`: the deterministic ledger checks, each with a repair message; the oracle's faults caught ([fidelity.md](design/fidelity.md)) | this commit |
-| P14 | `rr_media`, `rr_transcript`: captions → `S#` sentences with timings; auto captions re-punctuated by projection | |
+| P13 | `rr_fidelity`: the deterministic ledger checks, each with a repair message; the oracle's faults caught ([fidelity.md](design/fidelity.md)) | done: `3f78d77` |
+| P14 | `rr_media`, `rr_transcript`: captions → `S#` sentences with timings; auto captions re-punctuated by projection ([transcript.md](design/transcript.md)) | this commit |
 | P15 | `rr_pipeline`: stages, the executor, the stage cache; `rreport ingest / resume / jobs` | |
 | P16 | Eval data: `eval fetch` (snapshots), `eval annotate` (silver) → **runbook R2** | |
 | **4. The vertical slice** | | |

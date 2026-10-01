@@ -47,3 +47,10 @@ rr_add_fuzz_target(markers
     SOURCES markers_fuzz.cpp
     DEPS rr::knowledge
     CORPUS ${CMAKE_CURRENT_SOURCE_DIR}/corpus/markers)
+
+# Caption files, from YouTube or from disk, read into words, cut into
+# sentences, and a model's punctuation projected onto them (rr_transcript).
+rr_add_fuzz_target(captions
+    SOURCES captions_fuzz.cpp
+    DEPS rr::transcript
+    CORPUS ${CMAKE_CURRENT_SOURCE_DIR}/corpus/captions)

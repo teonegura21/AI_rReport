@@ -1,0 +1,212 @@
+# Mutants of rr_media: each removes one rule of reading yt-dlp's description,
+# choosing captions, or running yt-dlp, and names the test that must fail
+# without it. Run: scripts/mutate.py tests/mutants/media.toml
+# What they found is in docs/design/transcript.md, "How the tests were validated".
+
+target = "rr_media_tests"
+binary = "build/dev/tests/unit/media/rr_media_tests"
+timeout = 90
+
+# --- The video (video.cpp) ------------------------------------------------------
+
+[[mutant]]
+name = "anything-is-a-video"
+file = "src/media/video.cpp"
+expect = "Video.IsOneVideoWithAnId"
+  [[mutant.edit]]
+  from = '''    if (!info.is_object()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-playlist-is-a-video"
+file = "src/media/video.cpp"
+expect = "Video.IsOneVideoWithAnId"
+  [[mutant.edit]]
+  from = '''        type.has_value() && *type != "video") {'''
+  to = '''        type.has_value() && *type == "never") {'''
+
+[[mutant]]
+name = "a-chapter-ending-before-it-starts-kept"
+file = "src/media/video.cpp"
+expect = "Video.IsReadFromYtDlpsDescription"
+  [[mutant.edit]]
+  from = '''        Result<TimeSpan> span = TimeSpan::make(*start, *end);'''
+  to = '''        Result<TimeSpan> span = TimeSpan::make(*start, std::max(*start, *end));'''
+
+[[mutant]]
+name = "a-live-chat-is-captions"
+file = "src/media/video.cpp"
+expect = "Video.IsReadFromYtDlpsDescription"
+  [[mutant.edit]]
+  from = '''        if (language == "live_chat" || !formats.is_array()) {'''
+  to = '''        if (!formats.is_array()) {'''
+
+[[mutant]]
+name = "any-date-read"
+file = "src/media/video.cpp"
+expect = "Video.WhatIsNotToldIsLeftOut"
+  [[mutant.edit]]
+  from = '''        written->find_first_not_of("0123456789") != std::string::npos) {'''
+  to = '''        false) {'''
+
+[[mutant]]
+name = "negative-seconds"
+file = "src/media/video.cpp"
+expect = "Video.WhatIsNotToldIsLeftOut"
+  [[mutant.edit]]
+  from = '''    const bool time = seconds >= 0 && seconds <= kLongest;'''
+  to = '''    const bool time = seconds <= kLongest;'''
+
+[[mutant]]
+name = "the-uploader-ignored"
+file = "src/media/video.cpp"
+expect = "Video.WhatIsNotToldIsLeftOut"
+  [[mutant.edit]]
+  from = '''                .channel = text_at(info, "channel").value_or(text_at(info, "uploader").value_or("")),'''
+  to = '''                .channel = text_at(info, "channel").value_or(""),'''
+
+[[mutant]]
+name = "upcoming-is-not-live"
+file = "src/media/video.cpp"
+expect = "Video.ALiveStreamHasNoCaptionsYet"
+  [[mutant.edit]]
+  from = '''                 status == "is_live" || status == "is_upcoming";'''
+  to = '''                 status == "is_live";'''
+
+[[mutant]]
+name = "a-live-streams-captions-chosen"
+file = "src/media/video.cpp"
+expect = "Video.ALiveStreamHasNoCaptionsYet"
+  [[mutant.edit]]
+  from = '''    if (video.live) {'''
+  to = '''    if (false) {'''
+
+# --- Which captions (video.cpp) -------------------------------------------------
+
+[[mutant]]
+name = "the-recognized-language-unheard"
+file = "src/media/video.cpp"
+expect = "CaptionChoice.TheLanguageSpokenIsTheOneRecognized"
+  [[mutant.edit]]
+  from = '''    if (!spoken.has_value() && recognized != video.captions.end()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "the-very-language-not-first"
+file = "src/media/video.cpp"
+expect = "CaptionChoice.ARegionalVariantIsTheLanguageToo"
+  [[mutant.edit]]
+  from = '''        add([&](const CaptionOffer& offer) { return manual(offer) && offer.language == *spoken; });'''
+  to = '''        add([&](const CaptionOffer& offer) { return manual(offer) && offer.language == "never"; });'''
+
+[[mutant]]
+name = "a-translation-chosen"
+file = "src/media/video.cpp"
+expect = "CaptionChoice.NeverATranslation"
+  [[mutant.edit]]
+  from = '''            return manual(offer) && primary(offer.language) == primary(*spoken);'''
+  to = '''            return manual(offer);'''
+
+[[mutant]]
+name = "an-older-ytdlps-track-passed-by"
+file = "src/media/video.cpp"
+expect = "CaptionChoice.AnOlderYtDlpNamesTheRecognizedTrackByItsLanguage"
+  [[mutant.edit]]
+  from = '''        if (recognized == video.captions.end()) {  // an older yt-dlp: the track in the language spoken'''
+  to = '''        if (false) {  // an older yt-dlp: the track in the language spoken'''
+
+[[mutant]]
+name = "one-of-several-guessed"
+file = "src/media/video.cpp"
+expect = "CaptionChoice.ALanguageNeverToldLeavesTheCreatorsOnlyTrack"
+  [[mutant.edit]]
+  from = '''    } else if (std::ranges::count(video.captions, CaptionKind::manual, &CaptionOffer::kind) == 1) {'''
+  to = '''    } else if (std::ranges::count(video.captions, CaptionKind::manual, &CaptionOffer::kind) >= 1) {'''
+
+[[mutant]]
+name = "an-unreadable-track-chosen"
+file = "src/media/video.cpp"
+expect = "CaptionChoice.Json3IsReadFirstThenWebVttThenSubRip"
+  [[mutant.edit]]
+  from = '''    return std::nullopt;
+}
+
+// "en (the creator's), en-orig (automatic)": what is on offer, for a message.'''
+  to = '''    return CaptionFormat::json3;
+}
+
+// "en (the creator's), en-orig (automatic)": what is on offer, for a message.'''
+
+[[mutant]]
+name = "webvtt-before-json3"
+file = "src/media/video.cpp"
+expect = "CaptionChoice.TheCreatorsCaptionsInTheLanguageSpokenComeFirst"
+  [[mutant.edit]]
+  from = '''    for (const CaptionFormat format : {CaptionFormat::json3, CaptionFormat::vtt, CaptionFormat::srt}) {'''
+  to = '''    for (const CaptionFormat format : {CaptionFormat::vtt, CaptionFormat::json3, CaptionFormat::srt}) {'''
+
+# --- Running yt-dlp (ytdlp.cpp) -------------------------------------------------
+
+[[mutant]]
+name = "an-address-without-its-separator"
+file = "src/media/ytdlp.cpp"
+expect = "YtDlp.DescribesTheVideo"
+  [[mutant.edit]]
+  from = '''    command.argv.emplace_back("--");'''
+  to = '''    (void)0;'''
+
+[[mutant]]
+name = "any-address"
+file = "src/media/ytdlp.cpp"
+expect = "YtDlp.OnlyAWebAddressIsGiven"
+  [[mutant.edit]]
+  from = '''    if (url.starts_with("https://") || url.starts_with("http://")) {'''
+  to = '''    if (true) {'''
+
+[[mutant]]
+name = "the-creators-for-automatic"
+file = "src/media/ytdlp.cpp"
+expect = "YtDlp.DownloadsTheCaptionsChosen"
+  [[mutant.edit]]
+  from = '''choice.kind == CaptionKind::manual ? "--write-subs" : "--write-auto-subs"'''
+  to = '''choice.kind == CaptionKind::manual ? "--write-auto-subs" : "--write-subs"'''
+
+[[mutant]]
+name = "an-earlier-tries-captions-read"
+file = "src/media/ytdlp.cpp"
+expect = "YtDlp.CaptionsNeverWrittenAreNotFound"
+  [[mutant.edit]]
+  from = '''    std::filesystem::remove(file, error);'''
+  to = '''    (void)file;'''
+
+[[mutant]]
+name = "a-bot-check-unrecognized"
+file = "src/media/ytdlp.cpp"
+expect = "YtDlp.FailuresAreToldInRReportsTerms"
+  [[mutant.edit]]
+  from = '''    {.says = "sign in to confirm",'''
+  to = '''    {.says = "sign in to confirm never",'''
+
+[[mutant]]
+name = "an-outage-is-a-missing-video"
+file = "src/media/ytdlp.cpp"
+expect = "YtDlp.FailuresAreToldInRReportsTerms"
+  [[mutant.edit]]
+  from = '''    {.says = "http error 5", .code = Errc::unavailable, .meaning = "YouTube is failing for now"},'''
+  to = '''    {.says = "http error 5 never", .code = Errc::unavailable, .meaning = "YouTube is failing for now"},'''
+
+[[mutant]]
+name = "the-last-error-unquoted"
+file = "src/media/ytdlp.cpp"
+expect = "YtDlp.AFailureQuotesItsLastError"
+  [[mutant.edit]]
+  from = '''line.starts_with("ERROR:")) {'''
+  to = '''line.starts_with("NEVER:")) {'''
+
+[[mutant]]
+name = "a-missing-ytdlp-is-not-the-users"
+file = "src/media/ytdlp.cpp"
+expect = "YtDlp.ItsAbsenceIsTheUsersToFix"
+  [[mutant.edit]]
+  from = '''        if (ran.error().code() == Errc::not_found) {'''
+  to = '''        if (false) {'''

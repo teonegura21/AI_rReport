@@ -1,0 +1,17 @@
+# Mutants of rr_json. M0 tested rr_json's mutants by hand; this spec starts
+# with the parser's promise never to throw (P14), which the caption fuzzer
+# found broken. Run: scripts/mutate.py tests/mutants/json.toml
+
+target = "rr_json_tests"
+binary = "build/dev/tests/unit/json/rr_json_tests"
+timeout = 60
+
+[[mutant]]
+name = "a-number-overflow-throws"
+file = "src/json/json.cpp"
+expect = "Parse.ANumberTooLargeIsAnErrorNotAThrow"
+  [[mutant.edit]]
+  from = '''    } catch (const Json::exception& error) {
+        return fail(Errc::invalid_argument, std::format("invalid JSON: {}", error.what()));
+    }'''
+  to = '''    }'''

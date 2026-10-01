@@ -23,6 +23,8 @@ endif()
 if(RR_BUILD_HUB)
     add_subdirectory(text)      # text made comparable: tokens, sentences, numbers, names, alignment
     add_subdirectory(knowledge) # the knowledge model: IDs, transcript, atoms, the article's markers
+    add_subdirectory(transcript) # captions into numbered, timed sentences; punctuation by projection
+    add_subdirectory(media)     # where a video comes from: yt-dlp, its description, its captions
     add_subdirectory(fidelity)  # the ledger checks: every sentence, atom, number and quote accounted for
     add_subdirectory(db)
     add_subdirectory(llm)       # calling models

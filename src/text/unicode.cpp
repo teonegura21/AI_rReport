@@ -167,6 +167,10 @@ bool is_closing(char32_t code_point) noexcept {
     return category == UTF8PROC_CATEGORY_PE || category == UTF8PROC_CATEGORY_PF;
 }
 
+char32_t to_lower(char32_t code_point) noexcept {
+    return static_cast<char32_t>(utf8proc_tolower(static_cast<utf8proc_int32_t>(code_point)));
+}
+
 int digit_value(char32_t code_point) noexcept {
     const auto is_digit = [](char32_t candidate) {
         return utf8proc_category(static_cast<utf8proc_int32_t>(candidate)) == UTF8PROC_CATEGORY_ND;
@@ -183,6 +187,41 @@ int digit_value(char32_t code_point) noexcept {
         --first;
     }
     return static_cast<int>((code_point - first) % 10);
+}
+
+void append_utf8(std::string& out, char32_t code_point) {
+    constexpr char32_t kLastOneByte = 0x7F;
+    constexpr char32_t kLastTwoBytes = 0x7FF;
+    constexpr char32_t kLastThreeBytes = 0xFFFF;
+    constexpr char32_t kLast = 0x10FFFF;
+    constexpr char32_t kSurrogatesBegin = 0xD800;
+    constexpr char32_t kSurrogatesEnd = 0xDFFF;
+    const bool surrogate = code_point >= kSurrogatesBegin && code_point <= kSurrogatesEnd;
+    if (surrogate || code_point > kLast) {
+        out += kReplacement;
+        return;
+    }
+    // Each continuation byte carries six bits under the marker 10xxxxxx; the
+    // first byte's marker says how many follow (110, 1110, 11110).
+    const auto byte = [&](unsigned marker, unsigned shift, unsigned bits) {
+        out.push_back(static_cast<char>(marker | ((code_point >> shift) & bits)));
+    };
+    constexpr unsigned kSix = 0x3FU;
+    if (code_point <= kLastOneByte) {
+        out.push_back(static_cast<char>(code_point));
+    } else if (code_point <= kLastTwoBytes) {
+        byte(0xC0U, 6U, 0x1FU);
+        byte(0x80U, 0U, kSix);
+    } else if (code_point <= kLastThreeBytes) {
+        byte(0xE0U, 12U, 0x0FU);
+        byte(0x80U, 6U, kSix);
+        byte(0x80U, 0U, kSix);
+    } else {
+        byte(0xF0U, 18U, 0x07U);
+        byte(0x80U, 12U, kSix);
+        byte(0x80U, 6U, kSix);
+        byte(0x80U, 0U, kSix);
+    }
 }
 
 }  // namespace rr::text
