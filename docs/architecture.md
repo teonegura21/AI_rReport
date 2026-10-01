@@ -52,7 +52,7 @@ Modules marked *(M0)* exist now; the rest arrive in the milestone shown.
 | `rr_core` *(M0)* | `Result`/`Error`, strong IDs + ULIDs, time spans + clocks, BLAKE3/SHA-256, `Secret`, `RR_ASSERT`, `ThreadPool`, `Limiter`, careful POSIX file I/O (EINTR, short writes, fsync of files and directories, whole files replaced atomically) | std, BLAKE3, OpenSSL (crypto) |
 | `rr_log` *(M0)* | Structured logging (console + rotating JSONL) with per-thread context | core, nlohmann_json |
 | `rr_config` *(M0)* | Layered TOML config with value origins and secrets | core, toml++ |
-| `rr_json` *(M0)* | JSON parse/dump, canonical form, JSON-Schema validation, portable-schema lint | core, nlohmann_json, jsoncons |
+| `rr_json` *(M0)* | JSON parse/dump, canonical form, JSON-Schema validation, portable-schema lint; schemas keep their field order for models | core, nlohmann_json, jsoncons |
 | `rr_db` *(M0)* | SQLite wrapper (WAL, writer + reader pool), migrations ([design](design/database.md)) | core, SQLite |
 | `rr_blob` *(M0)* | Content-addressed, crash-safe blob store (BLAKE3 names, atomic publish) | core |
 | `rr_proc` *(M0)* | Subprocesses: run-to-completion and supervised children, each in its own process group (ADR-0013); termination signals as a stop request | core (posix_spawn) |

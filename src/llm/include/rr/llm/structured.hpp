@@ -6,8 +6,9 @@
 //   uses an answer before it is validated (plan §8). A grammar sent for
 //   constrained decoding narrows what a model can say, but is never taken as
 //   proof. structured() puts the steps together:
-//     1. The schema's model-facing form (json::to_model_facing()) goes with
-//       the request when the provider can use it. Thinking is switched off
+//     1. The schema's model-facing form (json::Schema::model_facing(), its
+//       fields in the order they were written) goes with the request when
+//       the provider can use it. Thinking is switched off
 //       unless the request says otherwise: a reasoning model under a grammar
 //       can spend its whole budget thinking, and some servers constrain the
 //       thinking too.

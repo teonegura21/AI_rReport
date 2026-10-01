@@ -69,7 +69,7 @@ Result<StructuredAnswer> structured_json(const LlmProvider& provider, ChatReques
                                          const std::stop_token& stop, const StructuredOptions& options) {
     const ProviderCaps caps = provider.caps();
     if (caps.json_schema) {
-        request.json_schema = json::to_model_facing(schema.document());
+        request.json_schema = schema.model_facing();
     }
     if (caps.thinking && !request.thinking.has_value()) {
         request.thinking = false;

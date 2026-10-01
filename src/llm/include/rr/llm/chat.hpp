@@ -8,7 +8,8 @@
 //   asked, never *how* a server wants it spelled:
 //     * `thinking` is a request, not a template flag: llama-server spells it
 //       chat_template_kwargs.enable_thinking, other servers otherwise;
-//     * `json_schema` is the model-facing schema (json::to_model_facing()):
+//     * `json_schema` is the model-facing schema's text
+//       (json::Schema::model_facing()), its fields in the author's order:
 //       the provider turns it into constrained decoding where it can. The
 //       answer is validated against the full schema afterwards
 //       (rr/llm/structured.hpp), never trusted because a grammar was sent;
@@ -88,9 +89,15 @@ struct ChatRequest {
     std::optional<double> top_p{};
     std::optional<std::int64_t> seed{};
     std::vector<std::string> stop{};
-    // Constrained output: the model-facing schema, and a name for it (some
-    // APIs require one: [a-zA-Z0-9_-], at most 64 characters).
-    std::optional<json::Json> json_schema{};
+    // Constrained output: the model-facing schema as compact JSON text
+    // (json::Schema::model_facing()), and a name for it (some APIs require
+    // one: [a-zA-Z0-9_-], at most 64 characters).
+    //   Text, not a Json value: Json sorts object members, and their order is
+    //   part of what the model is told. llama.cpp builds its grammar from the
+    //   properties in the order it reads them, so the model writes its
+    //   answer's fields in this text's order (evidence before verdict). The
+    //   order is part of the request's identity for the same reason.
+    std::optional<std::string> json_schema{};
     std::string schema_name = "answer";
     // Chain of thought for models that can think: on, off, or the model's default.
     std::optional<bool> thinking{};

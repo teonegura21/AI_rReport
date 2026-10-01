@@ -30,7 +30,7 @@ In record mode a `RecordingProvider` sits above the live provider. In replay mod
 The vocabulary says *what* is asked, never how a server spells it:
 
 - **`thinking` is a request, not a template flag.** llama-server spells it `chat_template_kwargs.enable_thinking`. To switch thinking off, the provider also sends `reasoning_effort: "none"`, which some templates honour instead.
-- **`json_schema` is the model-facing schema** (`json::to_model_facing()`); validation always uses the full one.
+- **`json_schema` is the model-facing schema's text** (`json::Schema::model_facing()`), with its fields in the order they were written; validation always uses the full schema. Why text: see "Field order is part of the prompt" below.
 - **The tag says why a call was made** (purpose, job, mission). It is recorded, never sent, and not part of the call's identity.
 - **`extra` carries server-specific fields** (`cache_prompt`, `ignore_eos`, `id_slot`). A key the provider sets itself is refused rather than silently overwritten.
 
@@ -69,8 +69,32 @@ These facts come from llama.cpp's source at `db00347` (2026-09-30), and the fake
 
 - **The schema goes in OpenAI's shape**, the one llama-server reads it from. llama.cpp's README also shows `{"type": "json_schema", "schema": …}`, but the server's code ignores that `schema`.
 - **The schema never reaches the prompt,** so prompts must describe the format themselves.
+- **The schema keeps its field order on the wire.** The body is built as an ordered document (`json::OrderedJson`) and serialized as such; see below.
 - **A message with one text part is sent as a plain string.** Every compatible server takes that form. Otherwise the content is an array of parts, with images as `image_url`.
 - **The dialect decides the two extensions.** `llama_server` switches thinking and reads `timings`. `openai` refuses a request that sets `thinking`, because no standard field carries it.
+
+## Field order is part of the prompt
+
+A constrained decoder writes an object's fields in the schema's order. In llama.cpp at the image's pin (`7fe450e`):
+- the server parses requests into `common_json`, whose objects "keep the order in which [keys] are added" (`common/json.h`);
+- the schema reader keeps each object's properties in a list, in that order (`common/json-schema.cpp`);
+- the grammar builder walks that list (`_build_object_rule`, `common/json-schema-to-grammar.cpp`).
+
+So the schema's order is the order in which the model thinks *on the page*:
+- `{"quote", "rationale", "decision"}` makes it quote its evidence, reason, then decide;
+- `{"decision", "quote", "rationale"}` makes it decide first and justify afterwards. Worse, the justification then has a decision to defend.
+
+`rr::json::Json` sorts object keys (that is what makes it canonical, ADR-0004). Before this was handled, every schema reached the model in *alphabetical* order, and nothing failed: the answers were valid, just reasoned in the wrong order. Now:
+
+| Step | Keeps the order because |
+|---|---|
+| Loading a schema | `Schema::compile_text()` (and `SchemaRegistry::add_text()`) parse into `json::OrderedJson` |
+| The model-facing form | `Schema::model_facing()` strips validation-only keywords from the ordered document, once, at compile time |
+| The request | `ChatRequest::json_schema` holds that *text*; a `Json` value would sort it again |
+| The request key | The text is part of it, so two orders are two different calls (their answers can differ) |
+| The body | `chat_request_body()` returns an `OrderedJson`, and the provider serializes it as one |
+
+`Schema::compile(const Json&)` still exists for schemas built as canonical values. Their properties reach the model alphabetically, so a schema meant for a model is loaded from text.
 
 ## Answers that satisfy a schema
 
@@ -87,7 +111,7 @@ Each attempt is an ordinary call: accounted for, retried and replayable like any
 
 Pipeline tests (layer L3) run whole videos without a GPU:
 
-- **Keys.** A recording is `<directory>/<request key>.json`. The key is BLAKE3 over the canonical JSON of what the model sees, prefixed with the provider's name. Unset fields are left out of that JSON, so adding a field to `ChatRequest` later changes no existing key.
+- **Keys.** A recording is `<directory>/<request key>.json`. The key is BLAKE3 over the canonical JSON of what the model sees, prefixed with the provider's name. Unset fields are left out of that JSON, so adding a field to `ChatRequest` later changes no existing key. The schema enters as its text, so its field order is part of the key.
 - **Files.** A recording keeps the request, pretty-printed, so people can read it and review its diff. It is written atomically (`write_file_atomically()`).
 - **What is recorded.** Only successes. A replayed transient failure would make a test depend on luck.
 - **Replay is strict.** A request without a recording fails with `not_found` and names its key. A recording copied under another call's name is refused as `integrity`.
@@ -132,6 +156,16 @@ Each rule was removed on purpose, and the named test was confirmed to fail. (Mut
 | The provider's name is part of the key | `TheRequestKeyIsWhatTheModelSees` |
 | The tag is not part of the key | `TheRequestKeyIsWhatTheModelSees` |
 | Unset fields stay out of the JSON, and so out of the key | `TheJsonFormLeavesUnsetFieldsOut` |
+| The schema's field order is part of the key | `TheSchemasFieldOrderIsPartOfTheKey` |
+| The body stays ordered until it is serialized | `TheSchemaReachesTheServerInItsOwnOrder` |
+| The schema is parsed in order | `TheSchemaReachesTheServerInItsOwnOrder` |
+| A schema that is not JSON is refused | `RefusesWhatItCannotCarry` |
+| `structured()` sends the ordered model-facing form | `AsksForTheFieldsInTheOrderTheSchemaWasWritten` |
+| `rr_json`: `parse_ordered()` and its `dump()` keep the order | `OrderedJson.KeepsMembersInTheOrderWritten` |
+| `rr_json`: text and ordered documents compile in order | `Schema.TheModelGetsTheFieldsInTheOrderWritten` |
+| `rr_json`: the registry loads text in order | `SchemaRegistry.SchemasLoadedFromTextKeepTheirOrder` |
+| `rr_json`: stripping keeps an ordered document's order | `ToModelFacing.KeepsTheOrderOfAnOrderedDocument` |
+| `rr_json`: validation keeps the full rules | `Schema.TheModelGetsTheFieldsInTheOrderWritten` |
 | One repair | `SendsAnInvalidAnswerBackWithItsProblems` |
 | Validation against the full schema, even under a grammar | `SendsAnInvalidAnswerBackWithItsProblems` |
 | Thinking off for structured calls | `AcceptsAValidAnswer` |

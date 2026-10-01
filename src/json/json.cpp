@@ -6,19 +6,42 @@
 
 namespace rr::json {
 
-Result<Json> parse(std::string_view text) {
-    // nlohmann reports errors by throwing; this adapter is the one place where
-    // that exception is caught and turned into a Result (ADR-0007).
+namespace {
+
+// nlohmann reports errors by throwing; this adapter is the one place where
+// that exception is caught and turned into a Result (ADR-0007). Both document
+// types throw the same parse_error.
+template <class Document>
+Result<Document> parse_as(std::string_view text) {
     try {
-        return Json::parse(text);
+        return Document::parse(text);
     } catch (const Json::parse_error& error) {
         return fail(Errc::invalid_argument,
                     std::format("invalid JSON at byte {}: {}", error.byte, error.what()));
     }
 }
 
+template <class Document>
+std::string compact(const Document& value) {
+    return value.dump(-1, ' ', /*ensure_ascii=*/false, Document::error_handler_t::replace);
+}
+
+}  // namespace
+
+Result<Json> parse(std::string_view text) {
+    return parse_as<Json>(text);
+}
+
+Result<OrderedJson> parse_ordered(std::string_view text) {
+    return parse_as<OrderedJson>(text);
+}
+
 std::string dump(const Json& value) {
-    return value.dump(-1, ' ', /*ensure_ascii=*/false, Json::error_handler_t::replace);
+    return compact(value);
+}
+
+std::string dump(const OrderedJson& value) {
+    return compact(value);
 }
 
 std::string dump_pretty(const Json& value, int indent) {

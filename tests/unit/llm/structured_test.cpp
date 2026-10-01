@@ -22,7 +22,7 @@ using testkit::unwrap;
 
 // {"title": string (at least 3 characters), "year": integer}
 json::Schema book_schema() {
-    return unwrap(json::Schema::compile(unwrap(json::parse(R"({
+    return unwrap(json::Schema::compile_text(R"({
         "type": "object",
         "additionalProperties": false,
         "required": ["title", "year"],
@@ -30,7 +30,7 @@ json::Schema book_schema() {
             "title": {"type": "string", "minLength": 3},
             "year": {"type": "integer"}
         }
-    })"))));
+    })"));
 }
 
 struct Book {
@@ -57,9 +57,26 @@ TEST(Structured, AcceptsAValidAnswer) {
 
     const ChatRequest sent = model.requests().at(0);
     ASSERT_TRUE(sent.json_schema.has_value()) << "constrained where the provider can";
-    EXPECT_FALSE(sent.json_schema->at("properties").at("title").contains("minLength"))
+    EXPECT_THAT(*sent.json_schema, Not(HasSubstr("minLength")))
         << "the grammar gets the model-facing schema; validation uses the full one";
     EXPECT_EQ(sent.thinking, false) << "thinking is off unless the request says otherwise";
+}
+
+TEST(Structured, AsksForTheFieldsInTheOrderTheSchemaWasWritten) {
+    // The year first, though "title" sorts before it.
+    const json::Schema schema = unwrap(json::Schema::compile_text(R"({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["year", "title"],
+        "properties": {"year": {"type": "integer"}, "title": {"type": "string", "minLength": 3}}
+    })"));
+    const ScriptedProvider model{{answer(R"({"year": 1965, "title": "Dune"})")}, kLlamaServer};
+    ASSERT_OK(structured<Book>(model, ask("a book"), schema, to_book, {}, {}));
+    const ChatRequest sent = model.requests().at(0);
+    ASSERT_TRUE(sent.json_schema.has_value());
+    EXPECT_EQ(*sent.json_schema,
+              R"({"type":"object","additionalProperties":false,"required":["year","title"],)"
+              R"("properties":{"year":{"type":"integer"},"title":{"type":"string"}}})");
 }
 
 TEST(Structured, LeavesWhatTheProviderCannotDoAlone) {

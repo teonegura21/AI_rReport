@@ -47,9 +47,10 @@ public:
     }
 
     [[nodiscard]] std::string url() const { return std::format("http://127.0.0.1:{}/", server_.port()); }
-    [[nodiscard]] json::Json last_body() const {
+    [[nodiscard]] json::Json last_body() const { return unwrap(json::parse(last_raw_body())); }
+    [[nodiscard]] std::string last_raw_body() const {
         const std::lock_guard lock(mutex_);
-        return unwrap(json::parse(bodies_.back()));
+        return bodies_.back();
     }
     [[nodiscard]] std::string authorization() const {
         const std::lock_guard lock(mutex_);
@@ -143,7 +144,7 @@ TEST(OpenAiProvider, SendsWhatLlamaServerReads) {
     request.max_tokens = 512;
     request.temperature = 0.2;
     request.seed = 42;
-    request.json_schema = json::Json{{"type", "object"}};
+    request.json_schema = R"({"type":"object"})";
     request.schema_name = "atom";
     request.thinking = false;
     request.extra = {{"cache_prompt", false}};
@@ -168,6 +169,20 @@ TEST(OpenAiProvider, SendsWhatLlamaServerReads) {
     EXPECT_EQ(body["cache_prompt"], false) << "extras pass through";
 }
 
+TEST(OpenAiProvider, TheSchemaReachesTheServerInItsOwnOrder) {
+    const ModelServer server{[](const auto&) { return stream_of(llama_server_stream()); }};
+    ChatRequest request = ask("Is the sentence supported?");
+    // Not alphabetical: sorted, "decision" would come first, and the model
+    // would decide before quoting its evidence.
+    const std::string schema =
+        R"({"type":"object","properties":{"quote":{"type":"string"},"rationale":{"type":"string"},)"
+        R"("decision":{"enum":["supported","unsupported"]}},"required":["quote","rationale","decision"]})";
+    request.json_schema = schema;
+    ASSERT_OK(provider_for(server).chat(request, {}, {}));
+    EXPECT_NE(server.last_raw_body().find(schema), std::string::npos)
+        << "llama.cpp's grammar follows the order it reads: " << server.last_raw_body();
+}
+
 TEST(OpenAiProvider, ImagesTravelAsParts) {
     ChatRequest request = ask("");
     request.messages[0].content = {{.kind = ContentPart::Kind::text, .value = "What is on this slide?"},
@@ -185,8 +200,12 @@ TEST(OpenAiProvider, RefusesWhatItCannotCarry) {
     EXPECT_ERRC(chat_request_body(with_image, Dialect::llama_server, {}), Errc::unsupported);
 
     ChatRequest with_schema = ask("x");
-    with_schema.json_schema = json::Json::object();
+    with_schema.json_schema = "{}";
     EXPECT_ERRC(chat_request_body(with_schema, Dialect::llama_server, {}), Errc::unsupported);
+    with_schema.json_schema = R"({"type": "object",)";
+    EXPECT_ERRC(chat_request_body(with_schema, Dialect::llama_server, {.json_schema = true}),
+                Errc::invalid_argument)
+        << "a schema that is not JSON";
 
     ChatRequest thinking = ask("x");
     thinking.thinking = true;

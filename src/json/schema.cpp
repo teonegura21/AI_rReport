@@ -34,7 +34,10 @@ bool contains(std::span<const std::string_view> list, std::string_view value) {
 
 // Converts to jsoncons through text. Our documents are small (schemas and
 // model outputs are kilobytes), so clarity beats a hand-written tree walk.
-jsoncons::json to_jsoncons(const Json& value) {
+// Validation does not depend on member order, so jsoncons' sorted json serves
+// both document types.
+template <class Document>
+jsoncons::json to_jsoncons(const Document& value) {
     return jsoncons::json::parse(dump(value));
 }
 
@@ -116,6 +119,7 @@ std::string describe(const std::vector<Violation>& violations) {
 struct Schema::Impl {
     Json document;
     jsch::json_schema<jsoncons::json> compiled;
+    std::string model_facing;
 };
 
 Schema::Schema(std::unique_ptr<Impl> impl) noexcept : impl_(std::move(impl)) {}
@@ -123,13 +127,24 @@ Schema::Schema(Schema&&) noexcept = default;
 Schema& Schema::operator=(Schema&&) noexcept = default;
 Schema::~Schema() = default;
 
-Result<Schema> Schema::compile(const Json& document) {
+Result<Schema> Schema::compile_ordered(const OrderedJson& document) {
     try {
         auto compiled = jsch::make_json_schema(to_jsoncons(document));
-        return Schema{std::make_unique<Impl>(Impl{.document = document, .compiled = std::move(compiled)})};
+        return Schema{std::make_unique<Impl>(Impl{.document = Json(document),
+                                                  .compiled = std::move(compiled),
+                                                  .model_facing = dump(to_model_facing(document))})};
     } catch (const std::exception& error) {
         return fail(Errc::invalid_argument, std::format("invalid JSON Schema: {}", error.what()));
     }
+}
+
+Result<Schema> Schema::compile_text(std::string_view text) {
+    RR_TRY_ASSIGN(const OrderedJson document, parse_ordered(text));
+    return compile_ordered(document);
+}
+
+Result<Schema> Schema::compile(const Json& document) {
+    return compile_ordered(OrderedJson(document));
 }
 
 std::vector<Violation> Schema::check(const Json& instance) const {
@@ -159,28 +174,30 @@ const Json& Schema::document() const noexcept {
     return impl_->document;
 }
 
+const std::string& Schema::model_facing() const noexcept {
+    return impl_->model_facing;
+}
+
 // ---------------------------------------------------------------------------
 // SchemaRegistry
 // ---------------------------------------------------------------------------
 Result<void> SchemaRegistry::add(std::string name, const Json& document) {
-    if (schemas_.contains(name)) {
-        return fail(Errc::conflict, std::format("schema '{}' is already registered", name));
-    }
-    auto compiled = Schema::compile(document);
-    if (!compiled) {
-        return fail(
-            std::move(compiled).error().with_context(std::format("while compiling schema '{}'", name)));
-    }
-    schemas_.emplace(std::move(name), std::move(*compiled));
-    return ok();
+    return add_compiled(std::move(name), Schema::compile(document));
 }
 
 Result<void> SchemaRegistry::add_text(std::string name, std::string_view json_text) {
-    auto document = parse(json_text);
-    if (!document) {
-        return fail(std::move(document).error().with_context(std::format("while parsing schema '{}'", name)));
+    return add_compiled(std::move(name), Schema::compile_text(json_text));
+}
+
+Result<void> SchemaRegistry::add_compiled(std::string name, Result<Schema> compiled) {
+    if (schemas_.contains(name)) {
+        return fail(Errc::conflict, std::format("schema '{}' is already registered", name));
     }
-    return add(std::move(name), *document);
+    if (!compiled) {
+        return fail(std::move(compiled).error().with_context(std::format("while loading schema '{}'", name)));
+    }
+    schemas_.emplace(std::move(name), std::move(*compiled));
+    return ok();
 }
 
 const Schema* SchemaRegistry::find(std::string_view name) const noexcept {
@@ -298,33 +315,48 @@ std::vector<std::string> lint_portable(const Json& schema) {
     return problems;
 }
 
-Json to_model_facing(const Json& schema) {
+namespace {
+
+// to_model_facing() for either document type. Members are visited in the
+// input's order and inserted in that order, which an OrderedJson keeps.
+template <class Document>
+Document strip_for_model(const Document& schema) {
     if (schema.is_array()) {
-        Json result = Json::array();
-        for (const Json& element : schema) {
-            result.push_back(to_model_facing(element));
+        Document result = Document::array();
+        for (const Document& element : schema) {
+            result.push_back(strip_for_model(element));
         }
         return result;
     }
     if (!schema.is_object()) {
         return schema;
     }
-    Json result = Json::object();
+    Document result = Document::object();
     for (const auto& [key, value] : schema.items()) {
-        if (key == "properties" || key == "$defs") {
+        if ((key == "properties" || key == "$defs") && value.is_object()) {
             // Values are schemas keyed by *names*; recurse into each value only.
-            Json mapped = Json::object();
+            Document mapped = Document::object();
             for (const auto& [name, subschema] : value.items()) {
-                mapped[name] = to_model_facing(subschema);
+                mapped[name] = strip_for_model(subschema);
             }
             result[key] = std::move(mapped);
         } else if (key == "items" || key == "anyOf" || key == "allOf") {
-            result[key] = to_model_facing(value);
+            result[key] = strip_for_model(value);
         } else if (!contains(kValidationOnlyKeywords, key)) {
             result[key] = value;
         }
     }
     return result;
+}
+
+}  // namespace
+
+Json to_model_facing(const Json& schema) {
+    return strip_for_model(schema);
+}
+
+OrderedJson to_model_facing(const OrderedJson& schema) {
+    return strip_for_model(schema);
 }
 
 }  // namespace rr::json

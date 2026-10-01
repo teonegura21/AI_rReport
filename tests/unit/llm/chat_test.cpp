@@ -44,7 +44,7 @@ TEST(Chat, TheJsonFormLeavesUnsetFieldsOut) {
     full.top_p = 0.9;
     full.seed = 7;
     full.stop = {"END"};
-    full.json_schema = json::Json{{"type", "object"}};
+    full.json_schema = R"({"type":"object"})";
     full.schema_name = "atoms";
     full.thinking = false;
     full.extra = {{"cache_prompt", true}};
@@ -74,6 +74,15 @@ TEST(Chat, TheRequestKeyIsWhatTheModelSees) {
     ChatRequest extra = ask("hi");
     extra.extra = {{"id_slot", 2}};
     EXPECT_NE(request_key("runtime", extra), key) << "server-specific extras are";
+}
+
+TEST(Chat, TheSchemasFieldOrderIsPartOfTheKey) {
+    ChatRequest quote_first = ask("Is the sentence supported?");
+    quote_first.json_schema = R"({"type":"object","properties":{"quote":{},"decision":{}}})";
+    ChatRequest decision_first = quote_first;
+    decision_first.json_schema = R"({"type":"object","properties":{"decision":{},"quote":{}}})";
+    EXPECT_NE(request_key("runtime", quote_first), request_key("runtime", decision_first))
+        << "the model writes its fields in the schema's order, so the order can change the answer";
 }
 
 }  // namespace

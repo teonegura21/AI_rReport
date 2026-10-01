@@ -3,12 +3,12 @@
 // Why this exists
 //   Every model output and every artifact is validated against a JSON Schema
 //   before it is stored (plan §8). One schema serves two jobs:
-//     * constraining generation: llama-server compiles it into a grammar, and
-//       Claude accepts it as output_config.format;
+//     * constraining generation: llama-server compiles it into a grammar (as
+//       vLLM and SGLang would);
 //     * validating the result afterwards, with the *full* rules.
 //
-//   The two consumers support different keyword sets, so schemas are written
-//   in a **portable subset**, checked by lint_portable():
+//   The decoder and the validator support different keyword sets, so schemas
+//   are written in a **portable subset**, checked by lint_portable():
 //     * every object has "additionalProperties": false;
 //     * every property is listed in "required" (optional values use a null
 //       type instead, e.g. {"type": ["string", "null"]});
@@ -20,6 +20,15 @@
 //   maximum, pattern, ...) are allowed in the schema but removed by
 //   to_model_facing(). They are still enforced by validation after
 //   generation.
+//
+//   **Field order is part of the prompt.** A constrained decoder writes an
+//   object's properties in the schema's order: llama.cpp's grammar builder
+//   walks them as it reads them. A schema that lists "evidence" before
+//   "verdict" makes the model quote before it decides; the reverse makes it
+//   decide first and justify afterwards. Json sorts object members, which
+//   would silently put every schema's properties in alphabetical order. So a
+//   schema keeps the order it was written in (compile_text(),
+//   compile_ordered()), and model_facing() hands that order to the model.
 //
 // The validator (jsoncons, draft 2020-12) is hidden behind a pimpl, so only
 // schema.cpp pays its compile-time cost.
@@ -55,8 +64,20 @@ struct Violation {
 
 class Schema {
 public:
-    // Compiles `document` (draft 2020-12). Fails with Errc::invalid_argument if
-    // the document is not a valid schema.
+    // Compiles a schema written as text (draft 2020-12), the usual way to load
+    // one. Every object keeps its members' order, so model_facing() lists the
+    // properties as the author wrote them. Errc::invalid_argument if the text
+    // is not JSON, or not a valid schema.
+    [[nodiscard]] static Result<Schema> compile_text(std::string_view text);
+
+    // Compiles a schema built in code, keeping its members' order.
+    // Errc::invalid_argument if it is not a valid schema.
+    [[nodiscard]] static Result<Schema> compile_ordered(const OrderedJson& document);
+
+    // Compiles a canonical document. Its objects are sorted, so model_facing()
+    // lists properties alphabetically: fine for a schema that only validates,
+    // wrong for one whose field order should guide a model.
+    // Errc::invalid_argument if it is not a valid schema.
     [[nodiscard]] static Result<Schema> compile(const Json& document);
 
     Schema(Schema&&) noexcept;
@@ -71,7 +92,13 @@ public:
     // Errc::invalid_argument listing every violation; ok() if valid.
     [[nodiscard]] Result<void> validate(const Json& instance) const;
 
+    // The document, canonical (members sorted).
     [[nodiscard]] const Json& document() const noexcept;
+
+    // What constrained decoding gets: to_model_facing() of the document, as
+    // compact JSON text with every object's members in their authored order.
+    // Computed once, when the schema is compiled.
+    [[nodiscard]] const std::string& model_facing() const noexcept;
 
 private:
     struct Impl;
@@ -82,7 +109,9 @@ private:
 // Named, compiled schemas (e.g. "llm/atomize", "artifacts/article").
 class SchemaRegistry {
 public:
-    // Errc::conflict if `name` is already registered.
+    // Errc::conflict if `name` is already registered. add_text() keeps the
+    // text's member order (Schema::compile_text()); add() takes a canonical
+    // document (Schema::compile()).
     [[nodiscard]] Result<void> add(std::string name, const Json& document);
     [[nodiscard]] Result<void> add_text(std::string name, std::string_view json_text);
 
@@ -94,6 +123,8 @@ public:
     [[nodiscard]] std::vector<std::string> names() const;
 
 private:
+    [[nodiscard]] Result<void> add_compiled(std::string name, Result<Schema> compiled);
+
     std::map<std::string, Schema, std::less<>> schemas_;
 };
 
@@ -101,7 +132,9 @@ private:
 [[nodiscard]] std::vector<std::string> lint_portable(const Json& schema);
 
 // A copy of `schema` without keywords that constrained decoders do not
-// reliably support. Use it for generation, never for validation.
+// reliably support. Use it for generation, never for validation. Every object
+// keeps its members in the input's order (sorted, for a Json).
 [[nodiscard]] Json to_model_facing(const Json& schema);
+[[nodiscard]] OrderedJson to_model_facing(const OrderedJson& schema);
 
 }  // namespace rr::json

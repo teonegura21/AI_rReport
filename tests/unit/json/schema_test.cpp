@@ -1,6 +1,8 @@
 #include <rr/json/schema.hpp>
 
 #include <algorithm>
+#include <string>
+#include <string_view>
 
 #include <gtest/gtest.h>
 
@@ -20,6 +22,42 @@ const Json kAtomSchema = parse(R"({
   }
 })")
                              .value();
+
+// A judge's answer, written in the order a model should think: the quote,
+// then the reasoning, then the decision. Alphabetically, the decision would
+// come first, and the model would decide before it had read its evidence.
+constexpr std::string_view kJudgeSchema = R"({
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sentences", "overall"],
+  "properties": {
+    "sentences": {"type": "array", "items": {"$ref": "#/$defs/sentence"}},
+    "overall": {"type": "string", "enum": ["keep", "revise"]}
+  },
+  "$defs": {
+    "sentence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["quote", "rationale", "decision"],
+      "properties": {
+        "quote": {"type": "string", "minLength": 1},
+        "rationale": {"type": "string"},
+        "decision": {"anyOf": [{"type": "string", "maxLength": 12}, {"type": "null"}]}
+      }
+    }
+  }
+})";
+
+// kJudgeSchema for the model: in the order written, without the keywords
+// decoders do not all support (minLength, maxLength), and compact.
+constexpr std::string_view kJudgeModelFacing =
+    R"({"type":"object","additionalProperties":false,"required":["sentences","overall"],)"
+    R"("properties":{"sentences":{"type":"array","items":{"$ref":"#/$defs/sentence"}},)"
+    R"("overall":{"type":"string","enum":["keep","revise"]}},)"
+    R"("$defs":{"sentence":{"type":"object","additionalProperties":false,)"
+    R"("required":["quote","rationale","decision"],)"
+    R"("properties":{"quote":{"type":"string"},"rationale":{"type":"string"},)"
+    R"("decision":{"anyOf":[{"type":"string"},{"type":"null"}]}}}}})";
 
 bool has_problem_containing(const std::vector<std::string>& problems, std::string_view needle) {
     return std::ranges::any_of(problems,
@@ -65,6 +103,31 @@ TEST(Schema, InvalidSchemaDocumentIsRejected) {
     const auto compiled = Schema::compile(parse(R"({"$ref": "#/$defs/missing"})").value());
     ASSERT_FALSE(compiled.has_value());
     EXPECT_EQ(compiled.error().code(), Errc::invalid_argument);
+    EXPECT_EQ(Schema::compile_text(R"({"$ref": "#/$defs/missing"})").error().code(), Errc::invalid_argument);
+    EXPECT_EQ(Schema::compile_text("{not json").error().code(), Errc::invalid_argument);
+}
+
+TEST(Schema, TheModelGetsTheFieldsInTheOrderWritten) {
+    const Schema schema = Schema::compile_text(kJudgeSchema).value();
+    EXPECT_EQ(schema.model_facing(), kJudgeModelFacing)
+        << "every object, nested and in $defs, keeps its authored order";
+    EXPECT_EQ(Schema::compile_ordered(parse_ordered(kJudgeSchema).value()).value().model_facing(),
+              kJudgeModelFacing)
+        << "a document built in code keeps its order too";
+
+    EXPECT_EQ(schema.document(), parse(kJudgeSchema).value()) << "the document itself is canonical";
+    const Json judgement = parse(R"({"sentences": [{"quote": "", "rationale": "r", "decision": "keep"}],
+                                     "overall": "keep"})")
+                               .value();
+    EXPECT_FALSE(schema.check(judgement).empty()) << "validation keeps the full rules (minLength)";
+}
+
+TEST(Schema, ACanonicalDocumentHasNoOrderToKeep) {
+    // Json sorted the members as it parsed them: "overall" before "sentences",
+    // "decision" before "quote". That is why schemas are compiled from text.
+    const std::string facing = Schema::compile(parse(kJudgeSchema).value()).value().model_facing();
+    EXPECT_LT(facing.find(R"("overall")"), facing.find(R"("sentences")")) << facing;
+    EXPECT_LT(facing.find(R"("decision")"), facing.find(R"("quote")")) << facing;
 }
 
 TEST(SchemaRegistry, AddFindValidateAndConflicts) {
@@ -77,6 +140,14 @@ TEST(SchemaRegistry, AddFindValidateAndConflicts) {
     EXPECT_EQ(registry.validate("nope", Json::object()).error().code(), Errc::not_found);
     EXPECT_FALSE(registry.validate("llm/atom", Json::object()).has_value());
     EXPECT_EQ(registry.names(), (std::vector<std::string>{"llm/atom"}));
+}
+
+TEST(SchemaRegistry, SchemasLoadedFromTextKeepTheirOrder) {
+    SchemaRegistry registry;
+    ASSERT_TRUE(registry.add_text("llm/judge", kJudgeSchema).has_value());
+    ASSERT_NE(registry.find("llm/judge"), nullptr);
+    EXPECT_EQ(registry.find("llm/judge")->model_facing(), kJudgeModelFacing);
+    EXPECT_EQ(registry.add_text("llm/judge", kJudgeSchema).error().code(), Errc::conflict);
 }
 
 TEST(LintPortable, PortableSchemaHasNoProblems) {
@@ -130,6 +201,10 @@ TEST(ToModelFacing, StripsValidationOnlyKeywordsButKeepsStructure) {
     EXPECT_EQ(facing["properties"]["kind"]["enum"].size(), 3U);
     EXPECT_EQ(facing["additionalProperties"], false);
     EXPECT_EQ(facing["required"].size(), 4U);
+}
+
+TEST(ToModelFacing, KeepsTheOrderOfAnOrderedDocument) {
+    EXPECT_EQ(dump(to_model_facing(parse_ordered(kJudgeSchema).value())), kJudgeModelFacing);
 }
 
 TEST(ToModelFacing, KeepsPropertiesWhoseNamesLookLikeKeywords) {

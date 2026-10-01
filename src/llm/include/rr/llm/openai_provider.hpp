@@ -81,11 +81,13 @@ private:
     OpenAiOptions options_;
 };
 
-// The request body as sent. Errc::unsupported for what the provider cannot
-// carry (images, a schema, thinking); Errc::invalid_argument for an `extra`
-// that is not an object or would override a field set here.
-[[nodiscard]] Result<json::Json> chat_request_body(const ChatRequest& request, Dialect dialect,
-                                                   const ProviderCaps& caps);
+// The request body as sent. An OrderedJson, so the schema inside keeps its
+// fields' order on the wire (ChatRequest::json_schema). Errc::unsupported for
+// what the provider cannot carry (images, a schema, thinking);
+// Errc::invalid_argument for a schema that is not JSON, or an `extra` that is
+// not an object or would override a field set here.
+[[nodiscard]] Result<json::OrderedJson> chat_request_body(const ChatRequest& request, Dialect dialect,
+                                                          const ProviderCaps& caps);
 
 // Assembles a streamed answer from its events' data.
 class ChatStreamReader {

@@ -16,11 +16,11 @@ using std::chrono::milliseconds;
 
 // A message's content: a plain string when it is one piece of text (what
 // every OpenAI-compatible server understands), else an array of parts.
-json::Json content_json(const Message& message) {
+json::OrderedJson content_json(const Message& message) {
     if (message.content.size() == 1 && message.content[0].kind == ContentPart::Kind::text) {
         return message.content[0].value;
     }
-    json::Json parts = json::Json::array();
+    json::OrderedJson parts = json::OrderedJson::array();
     for (const ContentPart& part : message.content) {
         if (part.kind == ContentPart::Kind::text) {
             parts.push_back({{"type", "text"}, {"text", part.value}});
@@ -72,18 +72,19 @@ void read_usage(const json::Json& usage, Usage& into) {
 
 }  // namespace
 
-Result<json::Json> chat_request_body(const ChatRequest& request, Dialect dialect, const ProviderCaps& caps) {
+Result<json::OrderedJson> chat_request_body(const ChatRequest& request, Dialect dialect,
+                                            const ProviderCaps& caps) {
     if (has_images(request) && !caps.images) {
         return fail(Errc::unsupported, std::format("'{}' takes no images", request.model));
     }
-    json::Json messages = json::Json::array();
+    json::OrderedJson messages = json::OrderedJson::array();
     for (const Message& message : request.messages) {
         messages.push_back({{"role", to_string(message.role)}, {"content", content_json(message)}});
     }
-    json::Json body{{"model", request.model},
-                    {"messages", std::move(messages)},
-                    {"stream", true},
-                    {"stream_options", {{"include_usage", true}}}};
+    json::OrderedJson body{{"model", request.model},
+                           {"messages", std::move(messages)},
+                           {"stream", true},
+                           {"stream_options", {{"include_usage", true}}}};
     if (request.max_tokens.has_value()) {
         body["max_tokens"] = *request.max_tokens;
     }
@@ -104,11 +105,17 @@ Result<json::Json> chat_request_body(const ChatRequest& request, Dialect dialect
             return fail(Errc::unsupported,
                         std::format("'{}' cannot be held to a JSON schema", request.model));
         }
+        // Parsed in order, so the grammar gets the fields in the order written.
+        auto schema = json::parse_ordered(*request.json_schema);
+        if (!schema.has_value()) {
+            return fail(Errc::invalid_argument, std::format("the schema for '{}' is not JSON: {}",
+                                                            request.model, schema.error().message()));
+        }
         // OpenAI's shape: the one llama-server reads the schema from.
         body["response_format"] = {
             {"type", "json_schema"},
             {"json_schema",
-             {{"name", request.schema_name}, {"schema", *request.json_schema}, {"strict", true}}}};
+             {{"name", request.schema_name}, {"schema", std::move(*schema)}, {"strict", true}}}};
     }
     if (request.thinking.has_value()) {
         if (dialect != Dialect::llama_server || !caps.thinking) {
@@ -205,7 +212,8 @@ OpenAiProvider::OpenAiProvider(const net::HttpClient& http, OpenAiOptions option
 
 Result<ChatResponse> OpenAiProvider::chat(const ChatRequest& request, const StreamSink& sink,
                                           const std::stop_token& stop) const {
-    RR_TRY_ASSIGN(const json::Json body, chat_request_body(request, options_.dialect, options_.caps));
+    // OrderedJson to the end: a Json would sort the schema's fields again.
+    RR_TRY_ASSIGN(const json::OrderedJson body, chat_request_body(request, options_.dialect, options_.caps));
     net::HttpClient::Request call{.method = net::Method::post,
                                   .url = options_.base_url + "/v1/chat/completions",
                                   .body = json::dump(body),
