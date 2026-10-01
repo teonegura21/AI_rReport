@@ -1,0 +1,385 @@
+# Mutants of rr_reason: the reducers' and the tiers' rules: each removes one rule, and names the test
+# that must fail without it. Run: scripts/mutate.py tests/mutants/reason.toml
+# What they found is in docs/design/reasoning.md, "How the tests were validated".
+
+target = "rr_reason_tests"
+binary = "build/dev/tests/unit/reason/rr_reason_tests"
+timeout = 60
+
+[[mutant]]
+name = "quorum-without-slack"
+file = "src/reason/vote.cpp"
+expect = "Vote.AQuorumIsAShareOfTheVotesCast"
+  [[mutant.edit]]
+  from = '''return static_cast<double>(votes) + kSlack >= quorum'''
+  to = '''return static_cast<double>(votes) + (0 * kSlack) >= quorum'''
+
+[[mutant]]
+name = "tie-settled"
+file = "src/reason/vote.cpp"
+expect = "Vote.ATieIsNeverSettled"
+  [[mutant.edit]]
+  from = '''return top > runner_up(counts) && reaches(top, cast, quorum);'''
+  to = '''return top >= runner_up(counts) && reaches(top, cast, quorum);'''
+
+[[mutant]]
+name = "quorum-ignored"
+file = "src/reason/vote.cpp"
+expect = "Vote.AQuorumIsAShareOfTheVotesCast"
+  [[mutant.edit]]
+  from = '''return top > runner_up(counts) && reaches(top, cast, quorum);'''
+  to = '''return top > runner_up(counts) && (reaches(top, cast, quorum) || true);'''
+
+[[mutant]]
+name = "stray-ballot-ignored"
+file = "src/reason/vote.cpp"
+expect = "Vote.RefusesBallotsItCannotCount"
+  [[mutant.edit]]
+  from = '''        if (found == position.end()) {
+            return fail('''
+  to = '''        if (found == position.end()) {
+            continue;
+            return fail('''
+
+[[mutant]]
+name = "double-vote-counted"
+file = "src/reason/vote.cpp"
+expect = "Vote.RefusesBallotsItCannotCount"
+  [[mutant.edit]]
+  from = '''if (!voted.emplace(found->second, ballot.sample).second) {'''
+  to = '''if (!voted.emplace(found->second, ballot.sample).second && false) {'''
+
+[[mutant]]
+name = "items-listed-twice"
+file = "src/reason/vote.cpp"
+expect = "Vote.RefusesBallotsItCannotCount"
+  [[mutant.edit]]
+  from = '''        if (!position.emplace(items[index], index).second) {'''
+  to = '''        if (!position.emplace(items[index], index).second && false) {'''
+
+[[mutant]]
+name = "counts-unsorted"
+file = "src/reason/vote.cpp"
+expect = "Vote.TheWinnerNeedNotBeVotedFirst"
+  [[mutant.edit]]
+  from = '''        std::ranges::stable_sort(consensus.counts, std::ranges::greater{}, &Count::votes);
+'''
+  to = ''''''
+
+[[mutant]]
+name = "medoid-of-all-ballots"
+file = "src/reason/vote.cpp"
+expect = "Vote.TheMedoidIsTheWinnersMostTypicalText"
+  [[mutant.edit]]
+  from = '''            if (ballot->value == *consensus.winner) {'''
+  to = '''            if (true) {'''
+
+[[mutant]]
+name = "medoid-tie-to-last"
+file = "src/reason/vote.cpp"
+expect = "Medoid.PicksTheTextClosestToAllOthers"
+  [[mutant.edit]]
+  from = '''        if (sum < least) {  // strictly: a tie keeps the first'''
+  to = '''        if (sum <= least) {'''
+
+[[mutant]]
+name = "waves-never-futile"
+file = "src/reason/vote.cpp"
+expect = "Waves.DrawMoreOnlyWhereItCanHelp"
+  [[mutant.edit]]
+  from = '''return top > runner_up(item.counts) && reaches(top, item.votes + remaining, waves.quorum);'''
+  to = '''return top > runner_up(item.counts) || reaches(top, item.votes + remaining, waves.quorum);'''
+
+[[mutant]]
+name = "waves-past-max"
+file = "src/reason/vote.cpp"
+expect = "Waves.DrawMoreOnlyWhereItCanHelp"
+  [[mutant.edit]]
+  from = '''return could_settle ? std::min(waves.step, remaining) : 0;'''
+  to = '''return could_settle ? waves.step : 0;'''
+
+[[mutant]]
+name = "waves-for-settled-items"
+file = "src/reason/vote.cpp"
+expect = "Waves.DrawMoreOnlyWhereItCanHelp"
+  [[mutant.edit]]
+  from = '''        if (settled(item.counts, waves.quorum)) {
+            return false;
+        }
+        // At best'''
+  to = '''        // At best'''
+
+[[mutant]]
+name = "waves-unchecked-first"
+file = "src/reason/vote.cpp"
+expect = "Waves.AreChecked"
+  [[mutant.edit]]
+  from = '''    if (waves.first < 1) {'''
+  to = '''    if (waves.first < 0) {'''
+
+[[mutant]]
+name = "waves-unchecked-unreachable-max"
+file = "src/reason/vote.cpp"
+expect = "Waves.AreChecked"
+  [[mutant.edit]]
+  from = '''    } else if (waves.step == 0 && waves.max != waves.first) {'''
+  to = '''    } else if (false) {'''
+
+[[mutant]]
+name = "waves-unchecked-quorum"
+file = "src/reason/vote.cpp"
+expect = "Waves.AreChecked"
+  [[mutant.edit]]
+  from = '''if (std::isnan(waves.quorum) || waves.quorum <= 0.0 || waves.quorum > 1.0) {'''
+  to = '''if (waves.quorum <= 0.0 || waves.quorum > 1.0) {'''
+
+[[mutant]]
+name = "words-not-lowercased"
+file = "src/reason/vote.cpp"
+expect = "Medoid.WordsAreLowercasedAndUnicodeKept"
+  [[mutant.edit]]
+  from = '''            word += static_cast<char>(std::tolower(byte));'''
+  to = '''            word += static_cast<char>(byte);'''
+
+[[mutant]]
+name = "utf8-splits-words"
+file = "src/reason/vote.cpp"
+expect = "Medoid.WordsAreLowercasedAndUnicodeKept"
+  [[mutant.edit]]
+  from = '''if (std::isalnum(byte) != 0 || byte >= 0x80) {'''
+  to = '''if (std::isalnum(byte) != 0) {'''
+
+[[mutant]]
+name = "boundary-spread-ignored"
+file = "src/reason/boundaries.cpp"
+expect = "Boundaries.OutlinesThatAgreeWithinTheToleranceGiveOneBoundary"
+  [[mutant.edit]]
+  from = '''std::tuple{-lhs.support, lhs.spread, lhs.position} <
+               std::tuple{-rhs.support, rhs.spread, rhs.position}'''
+  to = '''std::tuple{-lhs.support, lhs.position} <
+               std::tuple{-rhs.support, rhs.position}'''
+
+[[mutant]]
+name = "boundary-no-suppression"
+file = "src/reason/boundaries.cpp"
+expect = "Boundaries.OutlinesThatAgreeWithinTheToleranceGiveOneBoundary"
+  [[mutant.edit]]
+  from = '''        if (!near_kept) {'''
+  to = '''        if (!near_kept || true) {'''
+
+[[mutant]]
+name = "boundary-quorum-without-slack"
+file = "src/reason/boundaries.cpp"
+expect = "Boundaries.AQuorumIsExactDespiteFloatingPoint"
+  [[mutant.edit]]
+  from = '''std::ceil((quorum * static_cast<double>(outlines.size())) - 1e-9)'''
+  to = '''std::ceil(quorum * static_cast<double>(outlines.size()))'''
+
+[[mutant]]
+name = "boundary-tolerance-exclusive"
+file = "src/reason/boundaries.cpp"
+expect = "Boundaries.TheToleranceIsInSentences"
+  [[mutant.edit]]
+  from = '''if (const int distance = nearest(outline, position); distance <= tolerance) {'''
+  to = '''if (const int distance = nearest(outline, position); distance < tolerance) {'''
+
+[[mutant]]
+name = "boundary-quorum-ignored"
+file = "src/reason/boundaries.cpp"
+expect = "Boundaries.ABoundaryTooFewOutlinesPlaceIsDropped"
+  [[mutant.edit]]
+  from = '''        if (candidate.support < std::max(needed, 1)) {'''
+  to = '''        if (candidate.support < std::max(needed * 0, 1)) {'''
+
+[[mutant]]
+name = "boundary-nearest-after-only"
+file = "src/reason/boundaries.cpp"
+expect = "Boundaries.OutlinesThatAgreeWithinTheToleranceGiveOneBoundary"
+  [[mutant.edit]]
+  from = '''    if (after != outline.begin()) {
+        distance = std::min(distance, position - *std::prev(after));
+    }
+'''
+  to = ''''''
+
+[[mutant]]
+name = "pairwise-first-order-trusted"
+file = "src/reason/pairwise.cpp"
+expect = "Pairwise.AWinMustSurviveTheSwap"
+  [[mutant.edit]]
+  from = '''    return one == other ? one : Winner::tie;'''
+  to = '''    return one == other || true ? one : Winner::tie;'''
+
+[[mutant]]
+name = "pairwise-swap-not-mapped"
+file = "src/reason/pairwise.cpp"
+expect = "Pairwise.AWinMustSurviveTheSwap"
+  [[mutant.edit]]
+  from = '''    const Winner other = as_shown(shown_b_first, false);'''
+  to = '''    const Winner other = as_shown(shown_b_first, true);'''
+
+[[mutant]]
+name = "pairwise-inconsistency-uncounted"
+file = "src/reason/pairwise.cpp"
+expect = "Pairwise.ATallyCountsWinsTiesAndTheJudgesInconsistency"
+  [[mutant.edit]]
+  from = '''        ++inconsistent;'''
+  to = '''        (void)inconsistent;'''
+
+[[mutant]]
+name = "pairwise-tie-worth-nothing"
+file = "src/reason/pairwise.cpp"
+expect = "Pairwise.ATallyCountsWinsTiesAndTheJudgesInconsistency"
+  [[mutant.edit]]
+  from = '''(static_cast<double>(a) + (0.5 * static_cast<double>(ties)))'''
+  to = '''(static_cast<double>(a) + (0.0 * static_cast<double>(ties)))'''
+
+[[mutant]]
+name = "pairwise-empty-is-zero"
+file = "src/reason/pairwise.cpp"
+expect = "Pairwise.ATallyCountsWinsTiesAndTheJudgesInconsistency"
+  [[mutant.edit]]
+  from = '''    if (pairs() == 0) {
+        return 0.5;'''
+  to = '''    if (pairs() == 0) {
+        return 0.0;'''
+
+[[mutant]]
+name = "select-nan-not-worst"
+file = "src/reason/select.cpp"
+expect = "Select.NotANumberIsTheWorst"
+  [[mutant.edit]]
+  from = '''    if (std::isnan(lhs)) {
+        return false;
+    }
+    return std::isnan(rhs) || lhs < rhs;'''
+  to = '''    return lhs < rhs;'''
+
+[[mutant]]
+name = "select-later-keys-overrule"
+file = "src/reason/select.cpp"
+expect = "Select.AnEarlierKeyOutweighsEveryLaterOne"
+  [[mutant.edit]]
+  from = '''            if (better(holder, challenger)) {
+                break;  // the holder stays
+            }'''
+  to = '''            if (better(holder, challenger)) {
+                continue;  // the holder stays
+            }'''
+
+[[mutant]]
+name = "select-sizes-unchecked"
+file = "src/reason/select.cpp"
+expect = "Select.RefusesWhatItCannotCompare"
+  [[mutant.edit]]
+  from = '''        if (candidates[index].size() != keys) {'''
+  to = '''        if (candidates[index].size() > keys) {'''
+
+[[mutant]]
+name = "select-tie-to-last"
+file = "src/reason/select.cpp"
+expect = "Select.AFullTieGoesToTheFirst"
+  [[mutant.edit]]
+  from = '''            if (better(challenger, holder)) {'''
+  to = '''            if (!better(holder, challenger)) {'''
+
+[[mutant]]
+name = "tier-unknown-keys"
+file = "src/reason/tier.cpp"
+expect = "Tier.IsReadStrictly"
+  [[mutant.edit]]
+  from = '''            if (!read_.contains(key.str())) {'''
+  to = '''            if (!read_.contains(key.str()) && false) {'''
+
+[[mutant]]
+name = "tier-unknown-sections"
+file = "src/reason/tier.cpp"
+expect = "Tier.IsReadStrictly"
+  [[mutant.edit]]
+  from = '''        if (std::ranges::find(kStages, key.str()) == kStages.end()) {'''
+  to = '''        if (std::ranges::find(kStages, key.str()) == kStages.end() && false) {'''
+
+[[mutant]]
+name = "tier-judge-of-one"
+file = "src/reason/tier.cpp"
+expect = "Tier.IsReadStrictly"
+  [[mutant.edit]]
+  from = '''    if (write.judge_top == 1 || write.judge_top > write.drafts) {'''
+  to = '''    if (write.judge_top > write.drafts) {'''
+
+[[mutant]]
+name = "tier-waves-unchecked"
+file = "src/reason/tier.cpp"
+expect = "Tier.IsReadStrictly"
+  [[mutant.edit]]
+  from = '''    if (const std::vector<std::string> problems = waves_problems(atomize.waves); !problems.empty()) {'''
+  to = '''    if (const std::vector<std::string> problems = waves_problems(atomize.waves); false) {'''
+
+[[mutant]]
+name = "tier-share-unbounded"
+file = "src/reason/tier.cpp"
+expect = "Tier.IsReadStrictly"
+  [[mutant.edit]]
+  from = '''if (std::isnan(share) || share <= 0.0 || share > 1.0) {'''
+  to = '''if (std::isnan(share) || share <= 0.0) {'''
+
+[[mutant]]
+name = "tier-share-nan"
+file = "src/reason/tier.cpp"
+expect = "Tier.IsReadStrictly"
+  [[mutant.edit]]
+  from = '''if (std::isnan(share) || share <= 0.0 || share > 1.0) {'''
+  to = '''if (share <= 0.0 || share > 1.0) {'''
+
+[[mutant]]
+name = "tier-share-no-integer"
+file = "src/reason/tier.cpp"
+expect = "Tier.IsReadStrictly"
+  [[mutant.edit]]
+  from = '''        } else if (const auto* whole = value->as_integer()) {'''
+  to = '''        } else if (const auto* whole = value->as_integer(); whole != nullptr && false) {'''
+
+[[mutant]]
+name = "tier-canonical-drops-a-key"
+file = "src/reason/tier.cpp"
+expect = "Tier.AStagesCanonicalFormIsItsCacheKeyMaterial"
+  [[mutant.edit]]
+  from = '''                        {"recall_pass", atomize.recall_pass},
+'''
+  to = ''''''
+
+[[mutant]]
+name = "tier-default-drift"
+file = "src/reason/tier.cpp"
+expect = "Tier.AnEmptyTierIsTheDefaults"
+  [[mutant.edit]]
+  from = '''    RR_TRY_ASSIGN(outline.samples, section.count("samples", defaults.samples, 1));'''
+  to = '''    RR_TRY_ASSIGN(outline.samples, section.count("samples", defaults.samples + 1, 1));'''
+
+[[mutant]]
+name = "tier-seams-modes-swapped"
+file = "src/reason/tier.cpp"
+expect = "Tier.MaxIsWhatAdr0018Describes"
+  [[mutant.edit]]
+  from = '''    if (mode == "rewrite") {
+        seams.mode = SeamsMode::rewrite;'''
+  to = '''    if (mode == "rewrite") {
+        seams.mode = SeamsMode::recheck;'''
+
+[[mutant]]
+name = "tier-plan-mode-ignored"
+file = "src/reason/tier.cpp"
+expect = "Tier.MaxIsWhatAdr0018Describes"
+  [[mutant.edit]]
+  from = '''    plan.mode = mode == "assign" ? PlanMode::assign : PlanMode::group;'''
+  to = '''    plan.mode = mode == "never" ? PlanMode::assign : PlanMode::group;'''
+
+[[mutant]]
+name = "tier-any-name"
+file = "src/reason/tier.cpp"
+expect = "Tier.ThreeShipAndMaxIsTheDefault"
+  [[mutant.edit]]
+  from = '''    if (std::ranges::find(kTiers, name) == kTiers.end()) {
+        return fail(Errc::not_found,'''
+  to = '''    if (false) {
+        return fail(Errc::not_found,'''

@@ -1,0 +1,571 @@
+# Mutants of rr_agents: the army's rules: each removes one rule, and names the test
+# that must fail without it. Run: scripts/mutate.py tests/mutants/agents.toml
+# What they found is in docs/design/agents.md, "How the tests were validated".
+
+target = "rr_agents_tests"
+binary = "build/dev/tests/unit/agents/rr_agents_tests"
+timeout = 150
+
+[[mutant]]
+name = "answers-share-one-slot"
+file = "src/agents/army.cpp"
+expect = "Army.EachAnswerTakesASlot"
+  [[mutant.edit]]
+  from = '''battalion.slots().acquire(stop, priority, Slots{static_cast<std::size_t>(choices)})'''
+  to = '''battalion.slots().acquire(stop, priority, Slots{1})'''
+
+[[mutant]]
+name = "pool-not-reserved"
+file = "src/agents/army.cpp"
+expect = "Army.ASharedPoolRunsOnlyWhatItsTokensHold"
+  [[mutant.edit]]
+  from = '''    if (Limiter* pool = battalion.pool()) {'''
+  to = '''    if (Limiter* pool = battalion.pool(); false) {'''
+
+[[mutant]]
+name = "pool-reserves-one-answer"
+file = "src/agents/army.cpp"
+expect = "Army.ASharedPoolReservesRoomForEveryAnswer"
+  [[mutant.edit]]
+  from = '''reservation(battalion.engine(), footprint, choices);'''
+  to = '''reservation(battalion.engine(), footprint, 1);'''
+
+[[mutant]]
+name = "split-ignores-fit"
+file = "src/agents/army.cpp"
+expect = "Army.SamplesAreSplitWhereTheyDoNotFitAtOnce"
+  [[mutant.edit]]
+  from = '''std::min(samples - first, choices_that_fit(engine, footprint))'''
+  to = '''samples - first + (0 * choices_that_fit(engine, footprint))'''
+
+[[mutant]]
+name = "fit-ignores-pool"
+file = "src/agents/sizing.cpp"
+expect = "Sizing.ASharedPoolKeepsThePromptOnceAndEachAnswersRoom"
+  [[mutant.edit]]
+  from = '''    if (!engine.kv_unified) {
+        return engine.slots;'''
+  to = '''    if (true) {
+        return engine.slots;'''
+
+[[mutant]]
+name = "fit-ignores-slot"
+file = "src/agents/sizing.cpp"
+expect = "Sizing.EachSlotOfASplitEngineHoldsOneSequence"
+  [[mutant.edit]]
+  from = '''footprint.prompt + footprint.answer > engine.ctx_per_slot'''
+  to = '''footprint.prompt > engine.ctx_per_slot'''
+
+[[mutant]]
+name = "reservation-prompt-per-answer"
+file = "src/agents/sizing.cpp"
+expect = "Sizing.ASharedPoolKeepsThePromptOnceAndEachAnswersRoom"
+  [[mutant.edit]]
+  from = '''footprint.prompt + (choices * footprint.answer)'''
+  to = '''choices * (footprint.prompt + footprint.answer)'''
+
+[[mutant]]
+name = "no-message-markers"
+file = "src/agents/sizing.cpp"
+expect = "Sizing.APromptIsItsMessagesAndTheirMarkers"
+  [[mutant.edit]]
+  from = '''        tokens += prompt::TokenEstimator::kTokensPerMessage;
+'''
+  to = ''''''
+
+[[mutant]]
+name = "images-estimated-as-nothing"
+file = "src/agents/sizing.cpp"
+expect = "Sizing.APromptIsItsMessagesAndTheirMarkers"
+  [[mutant.edit]]
+  from = '''            if (part.kind != llm::ContentPart::Kind::text) {'''
+  to = '''            if (false) {'''
+
+[[mutant]]
+name = "too-long-accepted"
+file = "src/agents/army.cpp"
+expect = "Army.RefusesMissionsItCannotRun"
+  [[mutant.edit]]
+  from = '''    if (choices_that_fit(engine, *footprint) < 1) {
+        return refuse('''
+  to = '''    if (false) {
+        return refuse('''
+
+[[mutant]]
+name = "no-thinking-room"
+file = "src/agents/army.cpp"
+expect = "Army.ClimbsToThinkingThenToTheCommander"
+  [[mutant.edit]]
+  from = '''    if (rung.thinking && request.thinking_budget.has_value()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "escalation-keeps-mission-sampling"
+file = "src/agents/army.cpp"
+expect = "Army.ClimbsToThinkingThenToTheCommander"
+  [[mutant.edit]]
+  from = '''    if (rung.step != Step::as_ordered) {
+        clear_sampling(request);'''
+  to = '''    if (false) {
+        clear_sampling(request);'''
+
+[[mutant]]
+name = "n-for-one"
+file = "src/agents/army.cpp"
+expect = "Army.AnswersAMissionAndSaysWhatItAsked"
+  [[mutant.edit]]
+  from = '''        if (choices > 1) {
+            request.n = choices;'''
+  to = '''        if (choices > 0) {
+            request.n = choices;'''
+
+[[mutant]]
+name = "split-seed-not-offset"
+file = "src/agents/army.cpp"
+expect = "Army.SamplesAreSplitWhereTheyDoNotFitAtOnce"
+  [[mutant.edit]]
+  from = '''request.seed = seed_of(asked) + first;'''
+  to = '''request.seed = seed_of(asked);'''
+
+[[mutant]]
+name = "repair-seed-not-offset"
+file = "src/agents/army.cpp"
+expect = "Army.EachSampleIsRepairedOnItsOwn"
+  [[mutant.edit]]
+  from = '''    conversation.seed = seed_of(asked) + sample;'''
+  to = '''    conversation.seed = seed_of(asked);'''
+
+[[mutant]]
+name = "samples-on-escalation"
+file = "src/agents/army.cpp"
+expect = "Army.AnEscalationAsksForOneAnswer"
+  [[mutant.edit]]
+  from = '''run.rung.step == Step::as_ordered ? run.mission.samples : 1'''
+  to = '''run.mission.samples'''
+
+[[mutant]]
+name = "thinking-sent-to-provider-without-it"
+file = "src/agents/army.cpp"
+expect = "Army.NeverAsksAProviderThatCannotThinkToThink"
+  [[mutant.edit]]
+  from = '''    if (!caps.thinking) {
+        request.thinking.reset();'''
+  to = '''    if (false) {
+        request.thinking.reset();'''
+
+[[mutant]]
+name = "mission-tag-kept"
+file = "src/agents/army.cpp"
+expect = "Army.AnswersAMissionAndSaysWhatItAsked"
+  [[mutant.edit]]
+  from = '''    request.tag = llm::CallTag{.purpose = mission.kind, .job_id = options.job_id, .mission_id = mission.id};
+'''
+  to = ''''''
+
+[[mutant]]
+name = "seedless-accepted"
+file = "src/agents/army.cpp"
+expect = "Army.RefusesMissionsItCannotRun"
+  [[mutant.edit]]
+  from = '''    if (!request.seed.has_value()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "penalties-accepted"
+file = "src/agents/army.cpp"
+expect = "Army.RefusesMissionsItCannotRun"
+  [[mutant.edit]]
+  from = '''    if (const auto penalties = llm::penalty_problems(request); !penalties.empty()) {'''
+  to = '''    if (const auto penalties = llm::penalty_problems(request); false) {'''
+
+[[mutant]]
+name = "greedy-samples-accepted"
+file = "src/agents/army.cpp"
+expect = "Army.RefusesMissionsItCannotRun"
+  [[mutant.edit]]
+  from = '''    if (mission.samples > 1 && asked.temperature.value_or(1.0) == 0.0) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "duplicate-ids-accepted"
+file = "src/agents/army.cpp"
+expect = "Army.RefusesMissionsItCannotRun"
+  [[mutant.edit]]
+  from = '''        if (!ids.insert(mission.id).second) {'''
+  to = '''        if (false) {'''
+
+[[mutant]]
+name = "prose-cut-accepted"
+file = "src/agents/army.cpp"
+expect = "Army.ProseCutShortOrEmptyIsAProblem"
+  [[mutant.edit]]
+  from = '''    // Prose has no closing brace to show it is whole: a cut is always a problem.
+    if (answer.finish == llm::FinishReason::length) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "prose-empty-accepted"
+file = "src/agents/army.cpp"
+expect = "Army.ProseCutShortOrEmptyIsAProblem"
+  [[mutant.edit]]
+  from = '''    if (trim(answer.content).empty()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "prose-told-json"
+file = "src/agents/army.cpp"
+expect = "Army.ProseIsCheckedAndRepairedToo"
+  [[mutant.edit]]
+  from = '''    return mission.schema ? llm::kRepairInstruction : kProseRepairInstruction;'''
+  to = '''    return llm::kRepairInstruction;'''
+
+[[mutant]]
+name = "refusal-repaired"
+file = "src/agents/army.cpp"
+expect = "Army.ARefusalGoesToAnotherFamilyUnrepaired"
+  [[mutant.edit]]
+  from = '''            ++battle.refusals;
+            return ok();  // repairing'''
+  to = '''            ++battle.refusals;
+            (void)0;  // repairing'''
+
+[[mutant]]
+name = "stage-refusal-ignored"
+file = "src/agents/army.cpp"
+expect = "Army.AStageCanSayWhatARefusalLooksLike"
+  [[mutant.edit]]
+  from = '''mission.refusal ? mission.refusal(answer)'''
+  to = '''mission.refusal && false ? mission.refusal(answer)'''
+
+[[mutant]]
+name = "refusal-not-told-to-ladder"
+file = "src/agents/army.cpp"
+expect = "Army.ACommandersRefusalGoesToTheInfantry"
+  [[mutant.edit]]
+  from = '''    const bool refused = battle.refusals > 0;'''
+  to = '''    const bool refused = false;'''
+
+[[mutant]]
+name = "refused-reported-invalid"
+file = "src/agents/army.cpp"
+expect = "Army.WhatEveryFamilyRefusesIsAFinding"
+  [[mutant.edit]]
+  from = '''refused ? Verdict::refused : Verdict::invalid'''
+  to = '''Verdict::invalid'''
+
+[[mutant]]
+name = "thinking-out-repaired"
+file = "src/agents/army.cpp"
+expect = "Army.ThinkingThatRunsOutIsAskedAgainWithoutThinking"
+  [[mutant.edit]]
+  from = '''conversation.thinking.value_or(false) && answer.finish == llm::FinishReason::length'''
+  to = '''false'''
+
+[[mutant]]
+name = "asked-twice"
+file = "src/agents/army.cpp"
+expect = "Army.NeverAsksTheSameQuestionTwice"
+  [[mutant.edit]]
+  from = '''        if (run.asked.contains(llm::request_key(provider->name(), next))) {'''
+  to = '''        if (false) {'''
+
+[[mutant]]
+name = "one-sample-enough-to-escalate"
+file = "src/agents/army.cpp"
+expect = "Army.SomeSamplesAreEnough"
+  [[mutant.edit]]
+  from = '''    if (!outcome.answers.empty()) {
+        outcome.verdict = Verdict::accepted;'''
+  to = '''    if (outcome.answers.size() == static_cast<std::size_t>(run.mission.samples)) {
+        outcome.verdict = Verdict::accepted;'''
+
+[[mutant]]
+name = "problems-dropped-on-climb"
+file = "src/agents/army.cpp"
+expect = "Army.ClimbsToThinkingThenToTheCommander"
+  [[mutant.edit]]
+  from = '''    if (!battle.problems.empty()) {
+        outcome.problems = std::move(battle.problems);'''
+  to = '''    if (true) {
+        outcome.problems = std::move(battle.problems);'''
+
+[[mutant]]
+name = "repair-too-long-sent"
+file = "src/agents/army.cpp"
+expect = "Army.ARepairThatWouldNotFitIsNotSent"
+  [[mutant.edit]]
+  from = '''        if (choices_that_fit(engine, footprint) < 1) {
+            battle.problems.push_back('''
+  to = '''        if (false) {
+            battle.problems.push_back('''
+
+[[mutant]]
+name = "ladder-no-thinking-rung"
+file = "src/agents/ladder.cpp"
+expect = "Ladder.TheInfantryThinksThenCallsTheCommander"
+  [[mutant.edit]]
+  from = '''    if (escalation.thinking && can_think) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "ladder-commander-is-own"
+file = "src/agents/ladder.cpp"
+expect = "Ladder.TheCommanderIsNeverItsOwnEscalation"
+  [[mutant.edit]]
+  from = '''commander.has_value() && *commander != own'''
+  to = '''commander.has_value()'''
+
+[[mutant]]
+name = "ladder-other-family-without-refusal"
+file = "src/agents/ladder.cpp"
+expect = "Ladder.TheCommanderHasNoOneAboveIt"
+  [[mutant.edit]]
+  from = '''candidates_.size() + (refused_.empty() ? 0 : others_.size())'''
+  to = '''candidates_.size() + others_.size()'''
+
+[[mutant]]
+name = "ladder-refusers-asked-again"
+file = "src/agents/ladder.cpp"
+expect = "Ladder.ARefusalGoesToAnotherFamily"
+  [[mutant.edit]]
+  from = '''climbed(rung) || refused_.contains(engines_[rung.engine].family) || !holds(rung)'''
+  to = '''climbed(rung) || !holds(rung)'''
+
+[[mutant]]
+name = "ladder-repeats-rungs"
+file = "src/agents/ladder.cpp"
+expect = "Ladder.NeverClimbsARungTwice"
+  [[mutant.edit]]
+  from = '''climbed(rung) || refused_.contains'''
+  to = '''refused_.contains'''
+
+[[mutant]]
+name = "ladder-ignores-holds"
+file = "src/agents/ladder.cpp"
+expect = "Ladder.PassesOverAnEngineThatCannotHoldTheMission"
+  [[mutant.edit]]
+  from = '''|| !holds(rung)'''
+  to = '''|| !(holds(rung) || true)'''
+
+[[mutant]]
+name = "ladder-commander-not-first"
+file = "src/agents/ladder.cpp"
+expect = "Ladder.TheOtherFamilyStartsWithTheCommander"
+  [[mutant.edit]]
+  from = '''        if (commander.has_value()) {
+            others_.push_back('''
+  to = '''        if (false) {
+            others_.push_back('''
+
+[[mutant]]
+name = "ladder-thinks-without-provider"
+file = "src/agents/ladder.cpp"
+expect = "Ladder.WithoutThinkingOnlyTheModelsChange"
+  [[mutant.edit]]
+  from = '''.thinking = asks_thinking && can_think}'''
+  to = '''.thinking = asks_thinking}'''
+
+[[mutant]]
+name = "ladder-ignores-escalation"
+file = "src/agents/ladder.cpp"
+expect = "Ladder.KeepsToTheMissionsEscalation"
+  [[mutant.edit]]
+  from = '''    if (escalation.other_family) {'''
+  to = '''    if (true) {'''
+
+[[mutant]]
+name = "fifo-not-priority"
+file = "src/agents/army.cpp"
+expect = "Army.AHigherPriorityGoesFirst"
+  [[mutant.edit]]
+  from = '''        if (lhs.priority != rhs.priority) {
+            return lhs.priority < rhs.priority;
+        }
+'''
+  to = ''''''
+
+[[mutant]]
+name = "lifo-within-priority"
+file = "src/agents/army.cpp"
+expect = "Army.AHigherPriorityGoesFirst"
+  [[mutant.edit]]
+  from = '''        return lhs.sequence > rhs.sequence;'''
+  to = '''        return lhs.sequence < rhs.sequence;'''
+
+[[mutant]]
+name = "escalation-inline"
+file = "src/agents/army.cpp"
+expect = "Army.EscalationsNeverHoldUpTheInfantry"
+  [[mutant.edit]]
+  from = '''        Battalion& next = *battalions[run->rung.engine];
+        const Priority priority = run->mission.priority;
+        next.post(priority, [this, run = std::move(run)]() mutable { run_leg(std::move(run)); });
+        return;'''
+  to = '''        run_leg(std::move(run));
+        return;'''
+
+[[mutant]]
+name = "outcomes-in-finish-order"
+file = "src/agents/army.cpp"
+expect = "Army.OutcomesComeBackInTheirMissionsOrder"
+  [[mutant.edit]]
+  from = '''            squad->outcomes[run->index] = std::move(run->outcome);'''
+  to = '''            squad->outcomes[squad->outcomes.size() - squad->remaining] = std::move(run->outcome);'''
+
+[[mutant]]
+name = "last-error-kept"
+file = "src/agents/army.cpp"
+expect = "Army.TheFirstFailureStopsTheSquad"
+  [[mutant.edit]]
+  from = '''            if (!squad->error.has_value()) {
+                squad->error = std::move(*error);'''
+  to = '''            if (true) {
+                squad->error = std::move(*error);'''
+
+[[mutant]]
+name = "no-fail-fast"
+file = "src/agents/army.cpp"
+expect = "Army.TheFirstFailureStopsTheSquad"
+  [[mutant.edit]]
+  from = '''        squad->stop.request_stop();  // the others stop too'''
+  to = '''        (void)0;  // the others stop too'''
+
+[[mutant]]
+name = "stopped-call-started"
+file = "src/agents/army.cpp"
+expect = "Army.TheFirstFailureStopsTheSquad"
+  [[mutant.edit]]
+  from = '''    if (stop.stop_requested()) {
+        return fail(Errc::cancelled, context());'''
+  to = '''    if (false) {
+        return fail(Errc::cancelled, context());'''
+
+[[mutant]]
+name = "caller-stop-ignored"
+file = "src/agents/army.cpp"
+expect = "Army.StoppingTheJobStopsItsMissions"
+  [[mutant.edit]]
+  from = '''[state] { state->stop.request_stop(); }'''
+  to = '''[state] { (void)state; }'''
+
+[[mutant]]
+name = "check-throws-out"
+file = "src/agents/army.cpp"
+expect = "Army.ACheckThatThrowsFailsItsMission"
+  [[mutant.edit]]
+  from = '''        } catch (const std::exception& error) {
+            return fail(Errc::internal, std::format("mission '{}' threw: {}", run->mission.id, error.what()));'''
+  to = '''        } catch (const std::bad_alloc& error) {
+            return fail(Errc::internal, std::format("mission '{}' threw: {}", run->mission.id, error.what()));'''
+
+[[mutant]]
+name = "ceiling-not-before-mission"
+file = "src/agents/army.cpp"
+expect = "Army.ATokenCeilingStopsNewCalls"
+  [[mutant.edit]]
+  from = '''    if (over_ceiling(run.mission.id)) {
+        outcome.verdict = Verdict::ceiling;
+        return false;
+    }
+    ++outcome.rungs;'''
+  to = '''    ++outcome.rungs;'''
+
+[[mutant]]
+name = "ceiling-not-between-samples"
+file = "src/agents/army.cpp"
+expect = "Army.ACeilingMidwayKeepsWhatWasAnswered"
+  [[mutant.edit]]
+  from = '''        if (first > 0 && over_ceiling(run.mission.id)) {'''
+  to = '''        if (false) {'''
+
+[[mutant]]
+name = "ceiling-not-before-repair"
+file = "src/agents/army.cpp"
+expect = "Army.ACeilingStopsARepair"
+  [[mutant.edit]]
+  from = '''        if (over_ceiling(run.mission.id)) {
+            battle.ceiling = true;
+            return ok();
+        }
+        RR_TRY_ASSIGN(llm::ChatResponse response, call(run, next, footprint, 1));'''
+  to = '''        RR_TRY_ASSIGN(llm::ChatResponse response, call(run, next, footprint, 1));'''
+
+[[mutant]]
+name = "ceiling-not-sticky"
+file = "src/agents/army.cpp"
+expect = "Army.ATokenCeilingStopsNewCalls"
+  [[mutant.edit]]
+  from = '''    if (hit.has_value()) {
+        return true;  // once reached'''
+  to = '''    if (false) {
+        return true;  // once reached'''
+
+[[mutant]]
+name = "wall-clock-forgets-before"
+file = "src/agents/army.cpp"
+expect = "Army.TheWallClockCeilingCountsTheJobsEarlierTime"
+  [[mutant.edit]]
+  from = '''    return options.elapsed_before +
+           std::chrono::duration_cast'''
+  to = '''    return std::chrono::milliseconds{0} +
+           std::chrono::duration_cast'''
+
+[[mutant]]
+name = "usage-not-counted"
+file = "src/agents/army.cpp"
+expect = "Army.ATokenCeilingStopsNewCalls"
+  [[mutant.edit]]
+  from = '''        add(spent.usage, response->usage);'''
+  to = '''        (void)response;'''
+
+[[mutant]]
+name = "record-step-without-rung"
+file = "src/agents/army.cpp"
+expect = "Army.ATokenCeilingStopsNewCalls"
+  [[mutant.edit]]
+  from = '''.step = outcome.rungs > 0 ? std::optional{outcome.step} : std::nullopt,'''
+  to = '''.step = std::optional{outcome.step},'''
+
+[[mutant]]
+name = "record-answered-by-missing"
+file = "src/agents/army.cpp"
+expect = "Army.TheBattleLogKeepsEveryMission"
+  [[mutant.edit]]
+  from = '''.answered_by = outcome.answers.empty() ? std::string{} : outcome.answers.front().model,'''
+  to = '''.answered_by = std::string{},'''
+
+[[mutant]]
+name = "record-failure-dropped"
+file = "src/agents/army.cpp"
+expect = "Army.TheFirstFailureStopsTheSquad"
+  [[mutant.edit]]
+  from = '''    if (battle_log == nullptr) {
+        return;
+    }'''
+  to = '''    if (battle_log == nullptr || error.has_value()) {
+        return;
+    }'''
+
+[[mutant]]
+name = "refusal-heuristic-long"
+file = "src/agents/mission.cpp"
+expect = "Mission.RefusalsAreShortAndOpenTheWayRefusalsDo"
+  [[mutant.edit]]
+  from = '''answer.empty() || answer.size() > kRefusalLength'''
+  to = '''answer.empty()'''
+
+[[mutant]]
+name = "refusal-heuristic-curly"
+file = "src/agents/mission.cpp"
+expect = "Mission.RefusalsAreShortAndOpenTheWayRefusalsDo"
+  [[mutant.edit]]
+  from = '''replace_all(answer.substr(0, 32), "\u2019", "'")'''
+  to = '''std::string{answer.substr(0, 32)}'''
+
+[[mutant]]
+name = "family-not-lowercased"
+file = "src/agents/mission.cpp"
+expect = "Mission.AFamilyIsTheModelsLeadingLetters"
+  [[mutant.edit]]
+  from = '''        family += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));'''
+  to = '''        family += c;'''

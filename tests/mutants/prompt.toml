@@ -1,0 +1,228 @@
+# Mutants of rr_prompt: the prompt library's rules: each removes one rule, and names the test
+# that must fail without it. Run: scripts/mutate.py tests/mutants/prompt.toml
+# What they found is in docs/design/prompts.md, "How the tests were validated".
+
+target = "rr_prompt_tests"
+binary = "build/dev/tests/unit/prompt/rr_prompt_tests"
+timeout = 120
+
+[[mutant]]
+name = "data-not-collected"
+file = "src/prompt/library.cpp"
+expect = "PromptLibrary.TheSystemPartMayUseOnlySharedVariables"
+  [[mutant.edit]]
+  from = '''used_.insert(node.name.substr(0, node.name.find('.')));'''
+  to = '''(void)node.name;'''
+
+[[mutant]]
+name = "loop-source-not-read"
+file = "src/prompt/library.cpp"
+expect = "PromptLibrary.TheSystemPartMayUseOnlySharedVariables"
+  [[mutant.edit]]
+  from = '''        local_.insert("loop");
+        node.condition.accept(*this);
+        node.body.accept(*this);
+    }
+    void visit(const inja::ForObjectStatementNode'''
+  to = '''        local_.insert("loop");
+        node.body.accept(*this);
+    }
+    void visit(const inja::ForObjectStatementNode'''
+
+[[mutant]]
+name = "if-branch-not-read"
+file = "src/prompt/library.cpp"
+expect = "PromptLibrary.TheSystemPartMayUseOnlySharedVariables"
+  [[mutant.edit]]
+  from = '''        node.true_statement.accept(*this);
+'''
+  to = ''''''
+
+[[mutant]]
+name = "else-branch-not-read"
+file = "src/prompt/library.cpp"
+expect = "PromptLibrary.TheSystemPartMayUseOnlySharedVariables"
+  [[mutant.edit]]
+  from = '''        node.false_statement.accept(*this);
+'''
+  to = ''''''
+
+[[mutant]]
+name = "loop-variable-not-local"
+file = "src/prompt/library.cpp"
+expect = "PromptLibrary.ReadsTheManifest"
+  [[mutant.edit]]
+  from = '''    void visit(const inja::ForArrayStatementNode& node) override {
+        local_.insert(node.value);
+'''
+  to = '''    void visit(const inja::ForArrayStatementNode& node) override {
+'''
+
+[[mutant]]
+name = "loop-builtin-not-local"
+file = "src/prompt/library.cpp"
+expect = "PromptLibrary.ReadsTheManifest"
+  [[mutant.edit]]
+  from = '''        local_.insert("loop");
+        node.condition.accept(*this);
+        node.body.accept(*this);
+    }
+    void visit(const inja::ForObjectStatementNode'''
+  to = '''        node.condition.accept(*this);
+        node.body.accept(*this);
+    }
+    void visit(const inja::ForObjectStatementNode'''
+
+[[mutant]]
+name = "shared-list-ignored"
+file = "src/prompt/library.cpp"
+expect = "PromptLibrary.TheSystemPartMayUseOnlySharedVariables"
+  [[mutant.edit]]
+  from = '''if (std::ranges::find(info.shared, variable) == info.shared.end()) {'''
+  to = '''if (false) {'''
+
+[[mutant]]
+name = "system-sees-the-order"
+file = "src/prompt/library.cpp"
+expect = "PromptLibrary.RenderingIsStrict"
+  [[mutant.edit]]
+  from = '''render_template(env, system->second, shared, system->first)'''
+  to = '''render_template(env, system->second, both, system->first)'''
+
+[[mutant]]
+name = "ambiguous-key-allowed"
+file = "src/prompt/library.cpp"
+expect = "PromptLibrary.RenderingIsStrict"
+  [[mutant.edit]]
+  from = '''if (both.contains(key)) {'''
+  to = '''if (false) {'''
+
+[[mutant]]
+name = "files-may-be-included"
+file = "src/prompt/library.cpp"
+expect = "PromptLibrary.TemplatesReadNothingFromTheFilesystem"
+  [[mutant.edit]]
+  from = '''env.set_search_included_templates_in_files(false);'''
+  to = '''env.set_search_included_templates_in_files(true);'''
+
+[[mutant]]
+name = "schema-not-hashed"
+file = "src/prompt/library.cpp"
+expect = "PromptLibrary.ASchemaIsPartOfThePrompt"
+  [[mutant.edit]]
+  from = '''        paths.push_back(*info->schema);
+'''
+  to = '''        (void)0;
+'''
+
+[[mutant]]
+name = "hash-unframed"
+file = "src/prompt/library.cpp"
+expect = "PromptLibrary.AChangedPromptNeedsANewVersion"
+  [[mutant.edit]]
+  from = '''hasher.update(std::format("{}\n{}\n", path, file->second.size()));'''
+  to = '''hasher.update(std::string_view{path}.substr(path.size()));'''
+
+[[mutant]]
+name = "versions-unnumbered"
+file = "src/prompt/library.cpp"
+expect = "PromptLibrary.VersionsCountFromOneAndNeverRepeatAHash"
+  [[mutant.edit]]
+  from = '''if (version.number != static_cast<int>(index) + 1) {'''
+  to = '''if (false) {'''
+
+[[mutant]]
+name = "hashes-may-repeat"
+file = "src/prompt/library.cpp"
+expect = "PromptLibrary.VersionsCountFromOneAndNeverRepeatAHash"
+  [[mutant.edit]]
+  from = '''if (!hashes.insert(version.hash).second) {'''
+  to = '''if (!hashes.insert(version.hash).second && false) {'''
+
+[[mutant]]
+name = "change-unnoticed"
+file = "src/prompt/library.cpp"
+expect = "PromptLibrary.AChangedPromptNeedsANewVersion"
+  [[mutant.edit]]
+  from = '''if (*hash != info.current().hash) {'''
+  to = '''if (false) {'''
+
+[[mutant]]
+name = "orphans-unnoticed"
+file = "src/prompt/library.cpp"
+expect = "PromptLibrary.EveryPromptHasItsFilesAndAnExampleThatRenders"
+  [[mutant.edit]]
+  from = '''if (library.find(directory) == nullptr) {'''
+  to = '''if (library.find(directory) == nullptr && false) {'''
+
+[[mutant]]
+name = "example-not-rendered"
+file = "src/prompt/library.cpp"
+expect = "PromptLibrary.EveryPromptHasItsFilesAndAnExampleThatRenders"
+  [[mutant.edit]]
+  from = '''!rendered.has_value()) {'''
+  to = '''!rendered.has_value() && false) {'''
+
+[[mutant]]
+name = "schema-not-compiled"
+file = "src/prompt/library.cpp"
+expect = "PromptLibrary.ASchemaIsPartOfThePrompt"
+  [[mutant.edit]]
+  from = '''!compiled.has_value()) {'''
+  to = '''!compiled.has_value() && false) {'''
+
+[[mutant]]
+name = "estimate-rounds-down"
+file = "src/prompt/tokens.cpp"
+expect = "TokenEstimator.CountsCharactersAndRoundsUp"
+  [[mutant.edit]]
+  from = '''std::ceil(static_cast<double>(text.size())'''
+  to = '''std::floor(static_cast<double>(text.size())'''
+
+[[mutant]]
+name = "markers-not-counted"
+file = "src/prompt/tokens.cpp"
+expect = "TokenEstimator.CountsCharactersAndRoundsUp"
+  [[mutant.edit]]
+  from = '''(2 * kTokensPerMessage);'''
+  to = '''(0 * kTokensPerMessage);'''
+
+[[mutant]]
+name = "fits-strictly"
+file = "src/prompt/tokens.cpp"
+expect = "TokenEstimator.APromptFitsWithItsAnswerOrNot"
+  [[mutant.edit]]
+  from = '''<= context;'''
+  to = '''< context;'''
+
+[[mutant]]
+name = "quantile-unbounded"
+file = "src/prompt/tokens.cpp"
+expect = "TokenEstimator.CalibrationNeedsSomethingToGoOn"
+  [[mutant.edit]]
+  from = '''quantile < 0.5 || quantile > 1.0'''
+  to = '''quantile < 0.0 || quantile > 1.0'''
+
+[[mutant]]
+name = "nan-quantile-accepted"
+file = "src/prompt/tokens.cpp"
+expect = "TokenEstimator.CalibrationNeedsSomethingToGoOn"
+  [[mutant.edit]]
+  from = '''std::isnan(quantile) || quantile < 0.5'''
+  to = '''quantile < 0.5'''
+
+[[mutant]]
+name = "zero-counts-kept"
+file = "src/prompt/tokens.cpp"
+expect = "TokenEstimator.CalibrationTakesAHighQuantileOfWhatWasSeen"
+  [[mutant.edit]]
+  from = '''observation.characters > 0 && observation.tokens > 0'''
+  to = '''observation.characters > 0'''
+
+[[mutant]]
+name = "rank-rounds-down"
+file = "src/prompt/tokens.cpp"
+expect = "TokenEstimator.CalibrationTakesAHighQuantileOfWhatWasSeen"
+  [[mutant.edit]]
+  from = '''std::ceil(quantile * static_cast<double>(ratios.size()))'''
+  to = '''std::floor(quantile * static_cast<double>(ratios.size()))'''

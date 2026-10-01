@@ -1,0 +1,82 @@
+# Testing: what is proven where
+
+rReport's promise is an article that is faithful to the video: every sentence accounted for, every number right, every quote verbatim. Most of that cannot be checked by looking at an article. So the system is built to be checked in layers, each proving what the one below cannot, and each test is itself tested: rules are removed on purpose, and a test must fail (mutation testing).
+
+## Layers
+
+| Layer | What it proves | Where | When |
+|---|---|---|---|
+| L0 static | The shipped prompts and tiers render, are versioned, and are the source tree's; mutation specs still find their code | `tests/unit/prompt`, `tests/unit/reason` (tiers), `scripts/test_mutate.py` | every push |
+| L1 unit | Each module's rules, one by one, with exact expectations | `tests/unit/<module>/`: one GoogleTest binary per module, under GCC and under Clang with ASan and UBSan | every push |
+| L2 component | The real executables together: the runtime with fake engines, the hub's CLI against it; and every threaded module under ThreadSanitizer | `tests/component/`, the `tsan` job | every push |
+| L3 pipeline | Whole jobs without a GPU: every stage, check, repair and escalation, on synthetic videos whose right answers are known, with faults injected | the oracle (below); stage by stage from plan P17, end to end with `kill -9` and resume from P22 | every push, as stages land |
+| L4 live | That the fake engine tells the truth: the runtime against a real llama-server, built for the CPU at the pinned commit, with a tiny model | `tests/live/`, `.github/workflows/nightly.yml` ([runtime.md](runtime.md#the-real-engine-nightly-l4)) | nightly, and when the suite changes |
+| L5 eval | Quality, on the pod, with real models and statistics (ADR-0019) | runbooks R3–R6 | before a change of model, prompt or tier is kept |
+
+## Stand-ins
+
+| Stand-in | Stands in for | Where | Used by |
+|---|---|---|---|
+| Fake engine | llama-server, as a process: streaming, slots and their context, `/props`, the prompt cache, failures on cue | `tests/fake_engine/` | the supervisor's and the hub's component tests |
+| `FakeRunpod` | RunPod's pod API, in process | `tests/fakes/` | the runtime's self-stop, `rreport pod` |
+| `ScriptedProvider` | A model that answers a script, in order | `tests/unit/llm/` | retries, accounting, record and replay, structured answers |
+| `KeyedProvider` | A model that answers by what a request asks; it can hold a model's calls, to count how many run at once | `tests/unit/agents/` | the army: squads arrive in any order |
+| `Oracle` | A model that answers every mission right | `tests/oracle/` | L3 |
+| `FaultyProvider` | The mistakes models make, where a test says | `tests/oracle/` | L3 |
+| `FakeClock` | Time | `rr/core/clock.hpp` | timeouts, ceilings, durations, without sleeping |
+| `TempDir` | A private scratch directory | `tests/testkit/` | databases, blobs, model files |
+
+**A stand-in is only as good as its faithfulness.** That is why L4 exists: each claim the fake engine makes is checked against a real llama-server every night. Examples are the context per slot, schema field order, per-choice usage, the thinking budget, the prompt cache, and the failures of an overflowing shared pool.
+
+## The oracle and fault injection
+
+**The rule every fault is tested against:** it ends repaired, or published as a finding; never silently in the article.
+
+- **`Oracle`** answers each mission kind with what a stage teaches it (`teach("atomize", …)`). It computes the right answer from the request alone: the sentences in the packet, the atoms, the plan. It is deterministic, so a pipeline run on it can be compared with goldens. A kind it was not taught is `Errc::unsupported`: it never guesses. Each stage teaches it as the stage lands (plan P17–P20).
+- **`FaultyProvider`** wraps any provider and makes the plan's faults on the calls a test picks:
+
+  | Fault | What it does | What must follow |
+  |---|---|---|
+  | `refusal` | "I'm sorry, but I can't help with that." | another family answers, or a finding |
+  | `truncation` | the first half, ended by the token limit (never inside a UTF-8 character) | a repair |
+  | `broken_json` | the last closing brace or bracket gone | a repair |
+  | `out_while_thinking` | no answer: the limit came while thinking | asked again without thinking |
+  | `wrong_number` | the first number, plus one | the check catches it; a repair |
+  | `bad_marker` | the first `[A#]` cites `A999` | the ledger catches it; a repair |
+  | `dropped_reference` | the first `"S#"` left out (a JSON list stays a list) | the closed world catches it; a repair |
+  | `server_error` | the call fails (`unavailable`, …) | an error, not a finding: the job stops, to resume |
+  | `edit` | a stage's own: softening a quote, misattributing | the stage's check |
+
+  `When` picks the calls: by mission, mission kind, model, thinking or not, and how many calls of each mission it hits. The default is the first call, so the repair succeeds; `calls = 0` hits every call, so the ladder's top is reached. Where two faults match a call, the first listed is made. `injected()` lists every fault made, and whether it found something to change.
+- **The test now (P10)** runs each fault through the army against the oracle, and checks its end: repaired, rescued by another family, retried without thinking, a finding, or an error.
+- **End to end, through the fake engine (`--fake-oracle`), arrives with P22.** A call on the wire does not carry its mission kind: the tag is never sent to a model. The fake engine will therefore know a mission by its answer schema's name, which the stages set. Both land together, when there are missions to route.
+
+## Mutation testing
+
+**Why.** A green suite proves the code passes its tests; it does not prove the tests can fail. So each rule is removed on purpose, a mutant: a check skipped, a bound moved, an order swapped. The test that claims the rule must then fail. Writing mutants also shows which rules no test checks at all, before anything runs, as each design note's "How the tests were validated" records.
+
+**How.** `scripts/mutate.py tests/mutants/<module>.toml [names…]` applies each mutant in turn, rebuilds the suite (preset `dev`), runs it, and restores the sources, checking them byte for byte at the end. The verdicts:
+- **KILLED**: the named test failed;
+- **KILLED (other tests)**: guarded, by another test than the one named;
+- **KILLED (timeout)**: the suite hung, which is guarded but not cleanly. Make the test fail instead: tests that hold calls release them on every path;
+- **SURVIVED**: no test guards the rule. Write the test;
+- **BUILD FAILED**: write the mutant another way;
+- **PATTERN NOT FOUND** or **AMBIGUOUS**: the edit's text must be in its file exactly once.
+
+**The specs follow the code.** `scripts/test_mutate.py` runs on every push, and checks that every spec still finds each edit's text exactly once. A refactor that moves a guarded line fails CI until its mutant is updated, so the record never silently drifts from the code it guards.
+
+**What has specs:** `prompt` (25 mutants), `agents` (64), `reason` (44) and `oracle` (21). The modules built before them were mutation-tested the same way. Their results are recorded in their design notes, and porting their specs into `tests/mutants/` is follow-up work.
+
+**When to run:** before committing a change to a module's rules, and before a milestone. Never with another build reading the same sources, such as clang-tidy or a sanitizer build: it would compile a mutant.
+
+## Running it yourself
+
+```bash
+ctest --preset dev                                   # L0–L2
+ctest --preset dev -L agents                         # one module
+build/dev/tests/unit/agents/rr_agents_tests --gtest_repeat=40 --gtest_shuffle   # flakiness
+python3 -m unittest discover -s scripts -p 'test_*.py'                          # the scripts, and the specs' drift
+scripts/mutate.py tests/mutants/agents.toml          # mutation testing (about 30 minutes)
+```
+
+The nightly L4 job runs by hand from GitHub (Actions → nightly → Run workflow), or locally ([runtime.md](runtime.md#the-real-engine-nightly-l4)).

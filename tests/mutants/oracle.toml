@@ -1,0 +1,192 @@
+# Mutants of the oracle and its fault injectors: each removes one rule, and names the test
+# that must fail without it. Run: scripts/mutate.py tests/mutants/oracle.toml
+# What they found is in docs/design/testing.md, "How the tests were validated".
+
+target = "rr_oracle_tests"
+binary = "build/dev/tests/unit/oracle/rr_oracle_tests"
+timeout = 60
+
+[[mutant]]
+name = "oracle-guesses"
+file = "tests/oracle/oracle.cpp"
+expect = "Oracle.AnswersTheKindsItWasTaught"
+  [[mutant.edit]]
+  from = '''    if (answerer == answerers_.end()) {
+        return fail(Errc::unsupported,'''
+  to = '''    if (answerer == answerers_.end()) {
+        return llm::ChatResponse{};
+        return fail(Errc::unsupported,'''
+
+[[mutant]]
+name = "oracle-one-choice"
+file = "tests/oracle/oracle.cpp"
+expect = "Oracle.AnswersTheKindsItWasTaught"
+  [[mutant.edit]]
+  from = '''    for (int choice = 0; choice < request.n.value_or(1); ++choice) {'''
+  to = '''    for (int choice = 0; choice < 1; ++choice) {'''
+
+[[mutant]]
+name = "oracle-ignores-stop"
+file = "tests/oracle/oracle.cpp"
+expect = "Oracle.AnswersTheKindsItWasTaught"
+  [[mutant.edit]]
+  from = '''    if (stop.stop_requested()) {
+        return fail(Errc::cancelled, "the oracle was stopped");'''
+  to = '''    if (stop.stop_requested() && false) {
+        return fail(Errc::cancelled, "the oracle was stopped");'''
+
+[[mutant]]
+name = "tokens-round-down"
+file = "tests/oracle/oracle.cpp"
+expect = "Oracle.AnswersTheKindsItWasTaught"
+  [[mutant.edit]]
+  from = '''(static_cast<std::int64_t>(text.size()) + kCharactersPerToken - 1) / kCharactersPerToken'''
+  to = '''static_cast<std::int64_t>(text.size()) / kCharactersPerToken'''
+
+[[mutant]]
+name = "truncation-splits-utf8"
+file = "tests/oracle/oracle.cpp"
+expect = "Faults.EachMakesItsMistake"
+  [[mutant.edit]]
+  from = '''(static_cast<unsigned char>(answer.content[half]) & 0xC0U) == 0x80U'''
+  to = '''(static_cast<unsigned char>(answer.content[half]) & 0xC0U) == 0x80U && false'''
+
+[[mutant]]
+name = "truncation-finishes-normally"
+file = "tests/oracle/oracle.cpp"
+expect = "Faults.EachMakesItsMistake"
+  [[mutant.edit]]
+  from = '''                     answer.content.resize(half);
+                     answer.finish = llm::FinishReason::length;'''
+  to = '''                     answer.content.resize(half);'''
+
+[[mutant]]
+name = "broken-json-intact"
+file = "tests/oracle/oracle.cpp"
+expect = "Faults.EachMakesItsMistake"
+  [[mutant.edit]]
+  from = '''                     answer.content.erase(closing, 1);
+'''
+  to = ''''''
+
+[[mutant]]
+name = "thinking-left-an-answer"
+file = "tests/oracle/oracle.cpp"
+expect = "Faults.EachMakesItsMistake"
+  [[mutant.edit]]
+  from = '''                     answer.content.clear();
+'''
+  to = ''''''
+
+[[mutant]]
+name = "number-unchanged"
+file = "tests/oracle/oracle.cpp"
+expect = "Faults.EachMakesItsMistake"
+  [[mutant.edit]]
+  from = '''    return std::to_string(value + 1);'''
+  to = '''    return std::to_string(value);'''
+
+[[mutant]]
+name = "number-overflow-unguarded"
+file = "tests/oracle/oracle.cpp"
+expect = "Faults.EachMakesItsMistake"
+  [[mutant.edit]]
+  from = '''    if (error != std::errc{} || end != digits.data() + digits.size() ||'''
+  to = '''    if ((error != std::errc{} && false) || (end != digits.data() + digits.size() && false) ||'''
+
+[[mutant]]
+name = "marker-every-one"
+file = "tests/oracle/oracle.cpp"
+expect = "Faults.EachMakesItsMistake"
+  [[mutant.edit]]
+  from = '''    text.replace(at, length, replacement(match));
+    return true;'''
+  to = '''    text = std::regex_replace(text, pattern, replacement(match));
+    (void)at;
+    (void)length;
+    return true;'''
+
+[[mutant]]
+name = "reference-drops-its-neighbour"
+file = "tests/oracle/oracle.cpp"
+expect = "Faults.EachMakesItsMistake"
+  [[mutant.edit]]
+  from = '''                     return replace_first(answer.content, after_another, nothing) ||
+'''
+  to = '''                     return (replace_first(answer.content, after_another, nothing) && false) ||
+'''
+
+[[mutant]]
+name = "reference-alone-kept"
+file = "tests/oracle/oracle.cpp"
+expect = "Faults.EachMakesItsMistake"
+  [[mutant.edit]]
+  from = '''                            replace_first(answer.content, alone, nothing);'''
+  to = '''                            (replace_first(answer.content, alone, nothing) && false);'''
+
+[[mutant]]
+name = "edit-always-changes"
+file = "tests/oracle/oracle.cpp"
+expect = "Faults.SayWhenThereWasNothingToChange"
+  [[mutant.edit]]
+  from = '''                     const bool different = changed != answer.content;'''
+  to = '''                     const bool different = true || changed != answer.content;'''
+
+[[mutant]]
+name = "every-call-means-none"
+file = "tests/oracle/oracle.cpp"
+expect = "Faults.HitTheCallsTheyAreAimedAt"
+  [[mutant.edit]]
+  from = '''            if (fault.when.calls == 0 || calls < fault.when.calls) {'''
+  to = '''            if (calls < fault.when.calls) {'''
+
+[[mutant]]
+name = "calls-counted-across-missions"
+file = "tests/oracle/oracle.cpp"
+expect = "Faults.HitTheCallsTheyAreAimedAt"
+  [[mutant.edit]]
+  from = '''            int& calls = hits_[{index, request.tag.mission_id}];'''
+  to = '''            int& calls = hits_[{index, std::string{}}];'''
+
+[[mutant]]
+name = "thinking-ignored"
+file = "tests/oracle/oracle.cpp"
+expect = "Faults.HitTheCallsTheyAreAimedAt"
+  [[mutant.edit]]
+  from = '''           (!when.thinking.has_value() || *when.thinking == request.thinking.value_or(false));'''
+  to = '''           (!when.thinking.has_value() || true);'''
+
+[[mutant]]
+name = "model-ignored"
+file = "tests/oracle/oracle.cpp"
+expect = "Faults.HitTheCallsTheyAreAimedAt"
+  [[mutant.edit]]
+  from = '''           (when.model.empty() || when.model == request.model) &&'''
+  to = '''           (when.model.empty() || true) &&'''
+
+[[mutant]]
+name = "last-fault-wins"
+file = "tests/oracle/oracle.cpp"
+expect = "Faults.HitTheCallsTheyAreAimedAt"
+  [[mutant.edit]]
+  from = '''        for (std::size_t index = 0; index < faults_.size() && !hit.has_value(); ++index) {'''
+  to = '''        for (std::size_t index = 0; index < faults_.size(); ++index) {'''
+
+[[mutant]]
+name = "error-without-record"
+file = "tests/oracle/oracle.cpp"
+expect = "Faults.HitTheCallsTheyAreAimedAt"
+  [[mutant.edit]]
+  from = '''    if (fault.error.has_value()) {
+        record(true);'''
+  to = '''    if (fault.error.has_value()) {'''
+
+[[mutant]]
+name = "changed-not-recorded"
+file = "tests/oracle/oracle.cpp"
+expect = "Faults.HitTheCallsTheyAreAimedAt"
+  [[mutant.edit]]
+  from = '''    record(changed);
+    return response;'''
+  to = '''    record(!changed);
+    return response;'''
