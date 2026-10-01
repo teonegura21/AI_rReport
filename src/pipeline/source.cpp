@@ -120,10 +120,11 @@ Result<StageOutput> from_file(const StageContext& context, const std::filesystem
     const bool saved = name.ends_with(kSavedSource);
     const std::optional<transcript::CaptionFormat> format = transcript::format_of(name);
     if (!saved && !format.has_value()) {
-        return fail(Errc::invalid_argument,
-                    std::format("cannot tell the captions' format from the name '{}': name the file .vtt, .srt, "
-                                ".json3 or .txt, or *.source.json for a source saved earlier",
-                                name));
+        return fail(
+            Errc::invalid_argument,
+            std::format("cannot tell the captions' format from the name '{}': name the file .vtt, .srt, "
+                        ".json3 or .txt, or *.source.json for a source saved earlier",
+                        name));
     }
     RR_TRY_ASSIGN(std::string content, read_file(path));
     if (blake3(content).hex() != context.fingerprint.at("content").get<std::string>()) {
