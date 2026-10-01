@@ -1,6 +1,6 @@
 # ADR-0007: Errors are values: `std::expected`
 
-- Status: Accepted
+- Status: Accepted; in part superseded by [ADR-0017](0017-local-models-only.md): `refused` goes to the other local model family, not to a fallback provider
 - Date: 2026-09-29
 
 ## Context

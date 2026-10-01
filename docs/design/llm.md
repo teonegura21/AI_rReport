@@ -8,7 +8,7 @@ Every model call in rReport goes through `rr_llm`: the infantry's missions, the 
 |---|---|
 | `src/llm/include/rr/llm/chat.hpp` | The vocabulary: messages (text and image parts), `ChatRequest`, `ChatResponse`, `StreamSink`, `request_key()` |
 | `src/llm/include/rr/llm/provider.hpp` | `LlmProvider` (one attempt at a call) and `RetryingProvider` |
-| `src/llm/include/rr/llm/openai_provider.hpp` | The OpenAI-compatible streaming provider: llama-server behind the runtime, hosted APIs |
+| `src/llm/include/rr/llm/openai_provider.hpp` | The OpenAI-compatible streaming provider: llama-server behind the runtime (every model call goes there, ADR-0017) |
 | `src/llm/include/rr/llm/accounting.hpp` | `AccountedProvider`: every attempt becomes a `CallRecord` |
 | `src/llm/include/rr/llm/replay.hpp` | `RecordingProvider` and `ReplayProvider`: answers recorded once, replayed without a model |
 | `src/llm/include/rr/llm/structured.hpp` | `structured<T>()`: answers that satisfy a JSON schema and the caller's checks |

@@ -1,6 +1,6 @@
 # ADR-0011: Commander and infantry: a native sub-agent environment
 
-- Status: Accepted
+- Status: Accepted; in part superseded by [ADR-0017](0017-local-models-only.md): no hosted commander, no cloud specialists; a refusal or softening goes to the other local model family
 - Date: 2026-09-29
 
 ## Context

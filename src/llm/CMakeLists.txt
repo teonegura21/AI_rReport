@@ -1,5 +1,5 @@
 # rr_llm — calling models: one vocabulary for chat calls; the OpenAI-compatible
-# streaming provider (llama-server, hosted APIs); retries; accounting;
+# streaming provider (llama-server behind the runtime); retries; accounting;
 # record/replay; answers validated against a schema. Hub only.
 rr_add_module(llm
     SOURCES

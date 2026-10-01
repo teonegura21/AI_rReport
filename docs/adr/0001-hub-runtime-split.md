@@ -1,6 +1,6 @@
 # ADR-0001: Hub/runtime split
 
-- Status: Accepted
+- Status: Accepted; in part superseded by [ADR-0017](0017-local-models-only.md): cloud APIs are no longer an optional provider path
 - Date: 2026-09-29
 
 ## Context

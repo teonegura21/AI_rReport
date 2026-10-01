@@ -1,8 +1,9 @@
 // rr/llm/openai_provider.hpp — chat over the OpenAI-compatible API, streamed.
 //
 // Why this exists
-//   llama-server (behind the runtime's relay), hosted Qwen and most model APIs
-//   speak OpenAI's chat completions API. This provider speaks it, always
+//   llama-server (behind the runtime's relay) and the other local inference
+//   servers (vLLM, SGLang) speak OpenAI's chat completions API. Every model
+//   call goes to the pod's runtime (ADR-0017). This provider speaks it, always
 //   streaming (plan §4.1), and reads the end of a stream as honestly as the
 //   relay writes it (ADR-0014):
 //     * a call succeeded only if "[DONE]" arrived. A stream that ends

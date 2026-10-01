@@ -1,10 +1,11 @@
 // rr/llm/chat.hpp — one vocabulary for chat calls, whatever serves the model.
 //
 // Why this exists
-//   The same mission may run on the pod's llama-server, a hosted
-//   OpenAI-compatible API, or (later) Claude. Code above rr_llm speaks only
-//   these types; each provider translates them to its wire format. They say
-//   *what* is asked, never *how* a server wants it spelled:
+//   Every model runs on the pod (ADR-0017), but not always under the same
+//   server: llama-server today, possibly vLLM or SGLang for the infantry on
+//   the largest pods (plan §4.5). Code above rr_llm speaks only these types;
+//   each provider translates them to its wire format. They say *what* is
+//   asked, never *how* a server wants it spelled:
 //     * `thinking` is a request, not a template flag: llama-server spells it
 //       chat_template_kwargs.enable_thinking, other servers otherwise;
 //     * `json_schema` is the model-facing schema (json::to_model_facing()):
