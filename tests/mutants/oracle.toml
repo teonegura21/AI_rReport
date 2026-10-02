@@ -585,3 +585,67 @@ expect = "OracleAnswers.WriteTellsEachParagraphsAtomsEachWithItsMarker"
   from = '''    oracle.teach("write", write());
 '''
   to = ''''''
+
+# --- The oracle's judge (answers.cpp) ----------------------------------------------------
+
+[[mutant]]
+name = "judge-quotes-nothing"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.JudgeReadsEverySentenceAsSayingWhatItsAtomsSay"
+  [[mutant.edit]]
+  from = '''                evidence += std::format("{}{}: \"{}\"", evidence.empty() ? "" : "; ", atom,'''
+  to = '''                evidence += std::format("{}{}: \"{}\"", evidence.empty() ? "" : ", ", atom,'''
+
+[[mutant]]
+name = "judge-reads-an-atom-without-its-number"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.JudgeReadsEverySentenceAsSayingWhatItsAtomsSay"
+  [[mutant.edit]]
+  from = '''            if (dot == std::string_view::npos || error != std::errc{} ||
+                end != digits.data() + digits.size()) {'''
+  to = '''            if (dot == std::string_view::npos || (error != std::errc{} && end == nullptr) ||
+                end == nullptr) {'''
+
+[[mutant]]
+name = "judge-takes-any-atom-line"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.JudgeReadsEverySentenceAsSayingWhatItsAtomsSay"
+  [[mutant.edit]]
+  from = '''            if (said == std::string_view::npos) {
+                return fail(Errc::invalid_argument, std::format("no atom in'''
+  to = '''            if (said == std::string_view::npos && said == 0) {
+                return fail(Errc::invalid_argument, std::format("no atom in'''
+
+[[mutant]]
+name = "flow-prefers-the-longer"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.FlowPrefersTheShorterDraftInEitherOrder"
+  [[mutant.edit]]
+  from = '''        if (first.size() < second.size()) {'''
+  to = '''        if (first.size() > second.size()) {'''
+
+[[mutant]]
+name = "flow-never-says-second"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.FlowPrefersTheShorterDraftInEitherOrder"
+  [[mutant.edit]]
+  from = '''        } else if (second.size() < first.size()) {'''
+  to = '''        } else if (second.size() < first.size() && first.empty()) {'''
+
+[[mutant]]
+name = "judge-is-not-taught"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.JudgeReadsEverySentenceAsSayingWhatItsAtomsSay"
+  [[mutant.edit]]
+  from = '''    oracle.teach("judge", judge());
+'''
+  to = ''''''
+
+[[mutant]]
+name = "flow-is-not-taught"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.FlowPrefersTheShorterDraftInEitherOrder"
+  [[mutant.edit]]
+  from = '''    oracle.teach("flow", flow());
+'''
+  to = ''''''

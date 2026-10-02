@@ -17,7 +17,8 @@
 # The prompts arrive with their stages: punctuate with the transcript (plan
 # P15); annotate and annotate_more with the eval's silver drafts (P16);
 # outline, describe and brief with the outline (P17); atomize with Ledger
-# A (P18); plan with the plan (P19); write with the article (P20).
+# A (P18); plan with the plan (P19); write with the article (P20); judge and
+# flow with the drafts' judging (P20b).
 
 [[prompt]]
 name = "punctuate"
@@ -159,4 +160,35 @@ failure_modes = [
   [[prompt.version]]
   number = 1
   hash = "d405e5064b4917e7641c8b35b664ed8326fb90c77c0577d9fa380d150aaab599"
+  note = "first version"
+
+[[prompt]]
+name = "judge"
+purpose = "Read each sentence of a draft against the atoms it cites, the evidence quoted before a verdict: whether it says only what they say, or adds, softens, intensifies, misattributes or contradicts; asked of another family than the writer's (rr/pipeline/judging.hpp)."
+schema = "schemas/missions/judge.json"
+shared = ["title", "channel"]
+failure_modes = [
+  "a verdict without evidence, or evidence the atoms do not hold",
+  "plain words for an atom's read as an issue: rewording is no issue",
+  "a sentence skipped, or judged twice",
+  "the judge's own knowledge of the subject taken as evidence",
+]
+  [[prompt.version]]
+  number = 1
+  hash = "dc2fb8ed580d9ca6021b3abc9e66c02624e48a45f9c532e0f6769dccf0e24db4"
+  note = "first version"
+
+[[prompt]]
+name = "flow"
+purpose = "Say which of two drafts of a section reads better, its reasons first; asked in both orders, a preference that flips being a tie (rr/reason/pairwise.hpp)."
+schema = "schemas/missions/flow.json"
+shared = ["title", "channel"]
+failure_modes = [
+  "the draft shown first preferred whatever it says: asked swapped, it ties",
+  "the longer draft preferred for being longer",
+  "a preference for what is said, which both drafts share, not for how",
+]
+  [[prompt.version]]
+  number = 1
+  hash = "1f7de5948fdfb2aa6cb8c9d016eb73206feac42db56058ddc0c2386e8a3a3659"
   note = "first version"

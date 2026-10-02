@@ -5,6 +5,7 @@ rr_add_test_suite(pipeline
         executor_test.cpp
         grouping_test.cpp
         job_run_test.cpp
+        judging_test.cpp
         outline_stage_test.cpp
         outline_test.cpp
         plan_stage_test.cpp

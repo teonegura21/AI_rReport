@@ -57,15 +57,30 @@ using testing::lecture_plan;
 using ::testing::Not;
 using testing::oracle_paragraph;
 using testing::OracleArmy;
+using testing::reworded;
 using testing::source;
+using ::testing::UnorderedElementsAre;
 using testing::without;
 using testkit::unwrap;
 
 // --- What the article should be -------------------------------------------------------------
 
-// The article the oracle writes of `plan` (rr/oracle/answers.hpp): each
-// section under its heading, each paragraph its atoms' words, each followed
-// by its marker.
+// The paragraphs the oracle writes of `section` (rr/oracle/answers.hpp):
+// each its atoms' words, each followed by its marker.
+std::vector<std::string> oracle_paragraphs(const SectionPlan& section, const AtomLedger& ledger) {
+    std::vector<std::string> paragraphs;
+    for (const Paragraph& paragraph : section.paragraphs) {
+        std::string told;
+        for (const AtomId id : paragraph.atoms) {
+            told +=
+                std::format("{}{} [{}]", told.empty() ? "" : " ", ledger.atoms.at(id.number() - 1).text, id);
+        }
+        paragraphs.push_back(std::move(told));
+    }
+    return paragraphs;
+}
+
+// The article the oracle writes of `plan`: each section under its heading.
 std::string oracle_article(const Plan& plan = lecture_plan(), const AtomLedger& ledger = lecture_ledger()) {
     std::string markdown;
     for (const SectionPlan& section : plan.sections) {
@@ -73,13 +88,8 @@ std::string oracle_article(const Plan& plan = lecture_plan(), const AtomLedger& 
             continue;
         }
         markdown += std::format("{}## {}\n", markdown.empty() ? "" : "\n", section.heading);
-        for (const Paragraph& paragraph : section.paragraphs) {
-            std::string told;
-            for (const AtomId id : paragraph.atoms) {
-                told += std::format("{}{} [{}]", told.empty() ? "" : " ",
-                                    ledger.atoms.at(id.number() - 1).text, id);
-            }
-            markdown += "\n" + told + "\n";
+        for (const std::string& paragraph : oracle_paragraphs(section, ledger)) {
+            markdown += "\n" + paragraph + "\n";
         }
     }
     return markdown;
@@ -88,9 +98,8 @@ std::string oracle_article(const Plan& plan = lecture_plan(), const AtomLedger& 
 // A sentence of 129 bytes whose "\u00e9" spans its 120th and 121st: one a
 // message shows cut, before that character.
 constexpr std::string_view kLongSentence =
-    "The lab was cold that winter, and the old scales creaked each time a sample was set on their pan by "
-    "Ada, "
-    "who sipped caf\u00e9 slowly.";
+    "The lab was cold that winter, and the old scales creaked each time a sample was set on their pan "
+    "by Ada, who sipped caf\u00e9 slowly.";
 
 // The lecture's sample sentence `number`, as said (lecture.hpp).
 std::string sample(int number) {
@@ -163,6 +172,33 @@ std::vector<std::string> sent_to(const OracleArmy& rig, std::string_view mission
     return messages;
 }
 
+// The missions of `kind` asked, each once, by id (the rig sorts them).
+std::vector<std::string> asked(const OracleArmy& rig, std::string_view kind) {
+    std::vector<std::string> ids;
+    for (const llm::ChatRequest& request : rig.requests(kind)) {
+        if (std::ranges::find(ids, request.tag.mission_id) == ids.end()) {
+            ids.push_back(request.tag.mission_id);
+        }
+    }
+    return ids;
+}
+
+// A judge's answer changed to read its `sentence`th sentence (from 1) as
+// `issue`, for `why`.
+std::function<void(json::Json&)> read_as(std::size_t sentence, std::string issue, std::string why) {
+    return [sentence, issue = std::move(issue), why = std::move(why)](json::Json& judged) {
+        json::Json& item = judged.at("sentences").at(sentence - 1);
+        item["issue"] = issue;
+        item["reading"] = why;
+    };
+}
+
+// The lecture's first paragraph with A1 said in other words: as faithful,
+// and longer by a word (the oracle's flow judge prefers the shorter).
+std::string in_other_words(const std::string& draft) {
+    return replace_all(draft, "I'm Ada, and", "I am Ada, and");
+}
+
 class WriteStageTest : public ::testing::Test {
 protected:
     Result<StageOutput> run(RaiseArmy army, const Plan& plan = lecture_plan(),
@@ -223,7 +259,8 @@ TEST_F(WriteStageTest, EverySectionIsWrittenByTheCommanderAndEveryAtomTold) {
         EXPECT_FALSE(request.thinking.value_or(false)) << "writing does not think at max";
         EXPECT_EQ(request.seed, llm::derived_seed(0, "write", request.tag.mission_id, 0)) << "each its own";
     }
-    EXPECT_THAT(progress(), ElementsAre("write: the commander writes 3 sections, 4 drafts each"));
+    EXPECT_THAT(progress(), ElementsAre("write: the commander writes 3 sections, 4 drafts each",
+                                        "write: the infantry judges the best 2 drafts of 3 sections"));
 }
 
 TEST_F(WriteStageTest, TheCommanderIsShownTheSectionsParagraphsAndTheirAtomsInFull) {
@@ -285,6 +322,7 @@ TEST_F(WriteStageTest, AFastTierWritesOneDraft) {
         EXPECT_FALSE(request.n.has_value()) << "one draft";
     }
     EXPECT_THAT(progress(), ElementsAre("write: the commander writes 3 sections, 1 draft"));
+    EXPECT_THAT(rig.requests("judge"), IsEmpty()) << "one draft: nothing to choose between";
 }
 
 TEST_F(WriteStageTest, ThePlansDuplicatesAreNotTold) {
@@ -331,9 +369,8 @@ TEST_F(WriteStageTest, EveryRuleADraftBreaksIsSentBackAndRepaired) {
         {"a sentence that tells no atom", replaced("for it. [A2]", "for it. [A2] It was a long day."),
          "the sentence \"It was a long day.\" tells no atom: cite the atoms it tells, or leave it out"},
         {"a long one", replaced("for it. [A2]", std::format("for it. [A2] {}", kLongSentence)),
-         "the sentence \"The lab was cold that winter, and the old scales creaked each time a sample was set "
-         "on "
-         "their pan by Ada, who sipped caf\u2026\" tells no atom"},
+         "the sentence \"The lab was cold that winter, and the old scales creaked each time a sample was "
+         "set on their pan by Ada, who sipped caf\u2026\" tells no atom"},
         {"an atom left out", replaced("Its half-life is long. [A4] ", ""),
          "A4 is not retold: tell it, and cite it [A4]"},
         {"a number changed", replaced("lent us 3 scales", "lent us 4 scales"),
@@ -358,8 +395,10 @@ TEST_F(WriteStageTest, EveryRuleADraftBreaksIsSentBackAndRepaired) {
 }
 
 TEST_F(WriteStageTest, OfTheDraftsThatPassTheFirstWithFewestWarningsIsKept) {
-    // The first and the last drafts tell A1 after A2, a warning; the second
-    // and the third do not, and the third says it in other words.
+    // At a tier without a judge: the first and the last drafts tell A1 after
+    // A2, a warning; the second and the third do not, and the third says it
+    // in other words.
+    use_variant("max-unjudged", [](reason::Tier& tier) { tier.write.judge_top = 0; });
     const auto drafted = [](int number, const std::string& draft) {
         if (number == 1 || number == 4) {
             return reordered(draft);
@@ -378,6 +417,257 @@ TEST_F(WriteStageTest, AWarningNoDraftAvoidsIsPublished) {
     const StageOutput output = unwrap(run(rig.raise()));
     EXPECT_THAT(output.findings, ElementsAre(kReorderedWarning)) << "kept, and said";
     EXPECT_EQ(article_of(output), reordered(oracle_article()));
+}
+
+// --- The judge --------------------------------------------------------------------------------
+
+TEST_F(WriteStageTest, TheBestDraftsAreReadByAnotherFamilyAndComparedInBothOrders) {
+    OracleArmy rig;
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(output.findings, IsEmpty());
+    EXPECT_EQ(article_of(output), oracle_article()) << "drafts alike: the first is kept";
+    EXPECT_THAT(asked(rig, "judge"), ElementsAre("judge-1-draft-1", "judge-1-draft-2", "judge-2-draft-1",
+                                                 "judge-2-draft-2", "judge-3-draft-1", "judge-3-draft-2"));
+    EXPECT_THAT(asked(rig, "flow"),
+                ElementsAre("flow-1-drafts-1-2", "flow-1-drafts-2-1", "flow-2-drafts-1-2",
+                            "flow-2-drafts-2-1", "flow-3-drafts-1-2", "flow-3-drafts-2-1"));
+    for (const std::string_view kind : {"judge", "flow"}) {
+        for (const llm::ChatRequest& request : rig.requests(kind)) {
+            EXPECT_EQ(request.model, "gemma-infantry") << "not the writer's family";
+            EXPECT_FALSE(request.thinking.value_or(false)) << request.tag.mission_id;
+            EXPECT_EQ(request.seed, llm::derived_seed(0, "write", request.tag.mission_id, 0));
+        }
+    }
+}
+
+TEST_F(WriteStageTest, TheJudgeIsShownTheAtomsAndEachSentenceAsWritten) {
+    OracleArmy rig;
+    unwrap(run(rig.raise()));
+    const std::vector<llm::ChatRequest> judges = rig.requests("judge");
+    ASSERT_FALSE(judges.empty());
+    EXPECT_THAT(judges.front().messages.at(0).text(),
+                HasSubstr("The video is \"Weighing radium\", by Science Hour."));
+    const std::string task = judges.front().messages.at(1).text();
+    EXPECT_THAT(task, HasSubstr("Check section 1, \"Weighing radium\", sentence by sentence.\n\n"
+                                "Its atoms:\n"
+                                "<atoms>\n"
+                                "A1 [0:30] claim: I'm Ada, and today we weigh radium. Names: Ada.\n"));
+    EXPECT_THAT(task, HasSubstr("<sentences>\n"
+                                "1. I'm Ada, and today we weigh radium. [A1]\n"
+                                "2. The NRC lent us 3 scales for it. [A2]\n"));
+    const std::vector<llm::ChatRequest> flows = rig.requests("flow");
+    ASSERT_FALSE(flows.empty());
+    EXPECT_THAT(flows.front().messages.at(1).text(),
+                HasSubstr("<first>\nI'm Ada, and today we weigh radium. The NRC lent us 3 scales for it."))
+        << "a draft as a reader reads it, without its markers";
+}
+
+TEST_F(WriteStageTest, AnIssueTheJudgeReadsInOneDraftKeepsTheOther) {
+    const auto drafted = [](int number, const std::string& draft) {
+        return number == 2 ? in_other_words(draft) : draft;
+    };
+    OracleArmy rig{{on_drafts("write-1", drafted),
+                    reworded("judge-1-draft-1", read_as(1, "adds", "It adds that the weighing is today."))},
+                   engines({.commander_slots = 1})};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(output.findings, IsEmpty()) << "the draft kept reads clean";
+    EXPECT_THAT(article_of(output),
+                HasSubstr("## Weighing radium\n\nI am Ada, and today we weigh radium. [A1]"));
+}
+
+TEST_F(WriteStageTest, WhatTheJudgeReadsInTheDraftKeptIsPublished) {
+    OracleArmy rig{
+        {reworded("judge-1-draft-1", read_as(2, "softens", "A2 says the NRC lent them, for sure.")),
+         reworded("judge-1-draft-2", read_as(2, "softens", "The same."))}};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(
+        output.findings,
+        ElementsAre("section 1, \"Weighing radium\": the judge reads \"The NRC lent us 3 scales for it. "
+                    "[A2]\" as softening what its atoms say: A2 says the NRC lent them, for sure."))
+        << "both read so, the first is kept, and its reading said";
+}
+
+TEST_F(WriteStageTest, HowTheDraftsReadDecidesBetweenDraftsTheJudgeReadsAlike) {
+    // One draft longer by a word than the other: the oracle's flow judge
+    // prefers the shorter, in both orders, whichever Ledger B ranks first.
+    for (const int longer : {1, 2}) {
+        SCOPED_TRACE(std::format("draft {} is the longer", longer));
+        const auto drafted = [longer](int number, const std::string& draft) {
+            return number == longer ? in_other_words(draft) : draft;
+        };
+        OracleArmy rig{{on_drafts("write-1", drafted)}, engines({.commander_slots = 1})};
+        const StageOutput output = unwrap(run(rig.raise()));
+        EXPECT_EQ(article_of(output), oracle_article()) << "the shorter draft, which reads better";
+    }
+}
+
+TEST_F(WriteStageTest, AJudgeThatFavoursAPositionDecidesNothing) {
+    // As above, but shown the longer draft first, the judge prefers the one
+    // it sees first, as it does shown them swapped: the orders disagree, a
+    // tie, and the first ranked is kept.
+    const auto drafted = [](int number, const std::string& draft) {
+        return number == 1 ? in_other_words(draft) : draft;
+    };
+    OracleArmy rig{{on_drafts("write-1", drafted),
+                    reworded("flow-1-drafts-1-2", [](json::Json& answer) { answer["better"] = "first"; })},
+                   engines({.commander_slots = 1})};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(article_of(output), HasSubstr("I am Ada, and today"));
+}
+
+TEST_F(WriteStageTest, AJudgeThatDeclinesLeavesThePickToLedgerBAndSaysSo) {
+    OracleArmy rig{{oracle::refusal(oracle::When{.mission = "judge-1-draft-2", .calls = 0}),
+                    oracle::refusal(oracle::When{.mission = "flow-2-drafts-2-1", .calls = 0})}};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(
+        output.findings,
+        ElementsAre("section 1, \"Weighing radium\": the judge could not read its drafts: the models "
+                    "declined to judge them",
+                    "section 2, \"The samples\": the judge could not compare how its drafts read: the "
+                    "models declined to compare them"));
+    EXPECT_EQ(article_of(output), oracle_article());
+    for (const std::string_view kind : {"judge", "flow"}) {
+        for (const llm::ChatRequest& request : rig.requests(kind)) {
+            EXPECT_EQ(request.model, "gemma-infantry") << "declined, never handed to the writer's family";
+        }
+    }
+}
+
+TEST_F(WriteStageTest, OnlyTheDraftsLedgerBRanksBestAreJudged) {
+    // The first two drafts tell A1 after A2, a warning; the last two do not,
+    // and only they are judged: the kept one has no warning.
+    const auto drafted = [](int number, const std::string& draft) {
+        return number <= 2 ? reordered(draft) : draft;
+    };
+    OracleArmy rig{{on_drafts("write-1", drafted)}, engines({.commander_slots = 1})};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(output.findings, IsEmpty());
+    EXPECT_EQ(article_of(output), oracle_article());
+}
+
+TEST_F(WriteStageTest, WhatADraftSaysOutranksTheTalksOrder) {
+    // Two drafts (thorough): the first tells A1 after A2, a warning, and the
+    // judge reads an issue in the second. What a draft says comes first: the
+    // first is kept, and its warning said.
+    use_tier("thorough");
+    const auto drafted = [](int number, const std::string& draft) {
+        return number == 1 ? reordered(draft) : draft;
+    };
+    OracleArmy rig{{on_drafts("write-1", drafted),
+                    reworded("judge-1-draft-1", read_as(1, "adds", "It adds that the weighing is today."))},
+                   engines({.commander_slots = 1})};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(output.findings, ElementsAre(kReorderedWarning)) << "no reading: the draft kept has none";
+    EXPECT_EQ(article_of(output), reordered(oracle_article()));
+}
+
+TEST_F(WriteStageTest, ThreeDraftsAreComparedPairByPairInBothOrders) {
+    // A tier that judges three, their first paragraphs of three lengths: the
+    // shortest wins its two comparisons, and is kept. Two orders of length,
+    // so that a comparison read for another pair would keep another draft.
+    use_variant("max-three-judged", [](reason::Tier& tier) { tier.write.judge_top = 3; });
+    const auto shortest = [](const std::string& draft) {
+        return replace_all(draft, "I'm Ada, and today", "I'm Ada; today");
+    };
+    struct Lengths {
+        std::string_view order;
+        std::function<std::string(int, const std::string&)> drafted;
+    };
+    const std::vector<Lengths> orders{
+        {"the third, the first, the second",
+         [&](int number, const std::string& draft) {
+             if (number == 3) {
+                 return shortest(draft);
+             }
+             return number == 2 ? in_other_words(draft) : draft;
+         }},
+        {"the second, the third, the first",
+         [&](int number, const std::string& draft) {
+             if (number == 2) {
+                 return shortest(draft);
+             }
+             return number == 1 ? in_other_words(draft) : draft;
+         }},
+    };
+    for (const Lengths& lengths : orders) {
+        SCOPED_TRACE(lengths.order);
+        OracleArmy each{{on_drafts("write-1", lengths.drafted)}, engines({.commander_slots = 1})};
+        EXPECT_THAT(article_of(unwrap(run(each.raise()))), HasSubstr("I'm Ada; today we weigh radium. [A1]"));
+    }
+    OracleArmy rig{{on_drafts("write-1", orders.front().drafted)}, engines({.commander_slots = 1})};
+    unwrap(run(rig.raise()));
+    std::vector<std::string> first_section;
+    for (const std::string& id : asked(rig, "flow")) {
+        if (id.starts_with("flow-1-")) {
+            first_section.push_back(id);
+        }
+    }
+    EXPECT_THAT(first_section,
+                UnorderedElementsAre("flow-1-drafts-1-2", "flow-1-drafts-2-1", "flow-1-drafts-1-3",
+                                     "flow-1-drafts-3-1", "flow-1-drafts-2-3", "flow-1-drafts-3-2"))
+        << "each pair, in both orders";
+}
+
+TEST_F(WriteStageTest, ASingleDraftIsNotJudged) {
+    // A tier that asks for a judge, and draws one draft: nothing to choose.
+    use_variant("max-one-draft", [](reason::Tier& tier) { tier.write.drafts = 1; });
+    OracleArmy rig;
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(rig.requests("judge"), IsEmpty());
+    EXPECT_THAT(output.findings, IsEmpty());
+}
+
+TEST_F(WriteStageTest, AJudgeWhoseReadingsFailItsChecksIsNotHandedToTheWriter) {
+    // The infantry's every reading of the first draft leaves its last
+    // sentence unjudged; the commander, of the writer's family, is never asked.
+    OracleArmy rig{{oracle::edit(
+        "skips a sentence", oracle::When{.mission = "judge-1-draft-1", .model = "gemma-infantry", .calls = 0},
+        [](const std::string& answer) {
+            json::Json judged = unwrap(json::parse(answer));
+            judged.at("sentences").erase(judged.at("sentences").size() - 1);
+            return json::dump(judged);
+        })}};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(output.findings,
+                ElementsAre("section 1, \"Weighing radium\": the judge could not read its drafts: no "
+                            "answer passed its checks (sentence 7 is not judged: judge every "
+                            "sentence)"));
+    for (const llm::ChatRequest& request : rig.requests("judge")) {
+        EXPECT_EQ(request.model, "gemma-infantry") << request.tag.mission_id;
+    }
+}
+
+TEST_F(WriteStageTest, AJudgeStoppedByACeilingMakesTheResultThisJobsAlone) {
+    // A token more than writing takes (the oracle counts four bytes a token,
+    // and each section has four drafts alike): the first reading spends past
+    // it, and the judge's missions after it, one at a time, stop.
+    std::int64_t writing = 0;
+    for (const SectionPlan& section : lecture_plan().sections) {
+        std::string draft;
+        for (const std::string& paragraph : oracle_paragraphs(section, lecture_ledger())) {
+            draft += (draft.empty() ? "" : "\n\n") + paragraph;
+        }
+        writing += 4 * ((static_cast<std::int64_t>(draft.size()) + 3) / 4);
+    }
+    OracleArmy rig{{}, engines({.infantry_slots = 1}), agents::Ceilings{.completion_tokens = writing + 1}};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_FALSE(output.reusable) << "a job allowed more would have judged more";
+    EXPECT_THAT(output.findings,
+                Contains("section 1, \"Weighing radium\": the judge could not read its drafts: the "
+                         "job reached its completion_tokens ceiling first"));
+    EXPECT_EQ(article_of(output), oracle_article()) << "Ledger B's pick";
+}
+
+TEST_F(WriteStageTest, APodWithoutAJudgeOfAnotherFamilyPicksByLedgerBAndSaysSoOnce) {
+    std::vector<agents::Engine> pod = engines();
+    pod.at(1).family = "qwen";  // the infantry, of the commander's family
+    OracleArmy rig{{}, pod};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(rig.requests("judge"), IsEmpty());
+    EXPECT_THAT(output.findings,
+                ElementsAre("the drafts are picked by Ledger B alone: the pod has no judge of "
+                            "another family than the writer's"));
+    EXPECT_EQ(article_of(output), oracle_article());
 }
 
 // --- What no draft passed ---------------------------------------------------------------------
@@ -408,7 +698,8 @@ TEST_F(WriteStageTest, ASectionWithoutParagraphsIsNotWritten) {
     const StageOutput output = unwrap(run(rig.raise(), plan, fillers));
     EXPECT_THAT(missions_of(rig), ElementsAre("write-1", "write-2"));
     EXPECT_THAT(article_of(output), Not(HasSubstr("What they mean"))) << "no heading over nothing";
-    EXPECT_THAT(progress(), ElementsAre("write: the commander writes 2 sections, 4 drafts each"));
+    EXPECT_THAT(progress(), ElementsAre("write: the commander writes 2 sections, 4 drafts each",
+                                        "write: the infantry judges the best 2 drafts of 2 sections"));
 }
 
 TEST_F(WriteStageTest, AVideoWithNothingToRetellHasAnEmptyArticleAndSaysSo) {
@@ -471,7 +762,8 @@ TEST_F(WriteStageTest, ASectionTooLongForTheCommanderIsWrittenInParts) {
                 HasSubstr("<paragraphs>\nParagraph 3: Tells A14 to A16."))
         << "numbered as in the section";
     EXPECT_EQ(article_of(output), oracle_article()) << "the parts' paragraphs joined in order";
-    EXPECT_THAT(progress(), ElementsAre("write: the commander writes 3 sections, 4 drafts each, in 4 parts"));
+    EXPECT_THAT(progress(), ElementsAre("write: the commander writes 3 sections, 4 drafts each, in 4 parts",
+                                        "write: the infantry judges the best 2 drafts of 3 sections"));
     EXPECT_THAT(sent_to(rig, "write-2-2"),
                 Contains(HasSubstr("A16 is told in paragraph 4: tell it in paragraph 3, as given")))
         << "numbered as in the section";
@@ -515,7 +807,9 @@ TEST_F(WriteStageTest, AParagraphTooLongForTheCommanderEvenAloneIsToldAsItsAtoms
                             "alone, it is more than qwen-commander holds at once"));
     EXPECT_EQ(article_of(none), oracle_article(alone, ledger));
     EXPECT_THAT(progress(), ElementsAre("write: the commander writes 3 sections, 4 drafts each",
-                                        "write: the commander writes 2 sections, 4 drafts each"))
+                                        "write: the infantry judges the best 2 drafts of 3 sections",
+                                        "write: the commander writes 2 sections, 4 drafts each",
+                                        "write: the infantry judges the best 2 drafts of 2 sections"))
         << "the sections it was asked for";
 }
 
@@ -616,9 +910,11 @@ TEST_F(WriteStageTest, TheKeyHoldsTheTierThePromptTheArmyAndWhatTheCommanderHold
     unwrap(run(rig.raise()));
     const json::Json max = fingerprint();
     EXPECT_EQ(max.at("tier"), unwrap(reason::builtin_tier("max")).canonical(reason::Stage::write));
-    EXPECT_EQ(max.at("prompts").at("write").at("label"), "write@1");
-    EXPECT_EQ(max.at("prompts").at("write").at("hash"),
-              unwrap(unwrap(prompt::Library::embedded()).content_hash("write")));
+    const prompt::Library shipped = unwrap(prompt::Library::embedded());
+    for (const std::string_view name : {"write", "judge", "flow"}) {
+        EXPECT_EQ(max.at("prompts").at(std::string{name}).at("label"), std::format("{}@1", name));
+        EXPECT_EQ(max.at("prompts").at(std::string{name}).at("hash"), unwrap(shipped.content_hash(name)));
+    }
     EXPECT_EQ(max.at("holds"), 32'768);
     EXPECT_EQ(max.at("army").size(), 2U);
 

@@ -25,9 +25,15 @@
 //      an atom told in another paragraph than its own; a sentence that
 //      cites no atom; and every error of Ledger B, held to the section's
 //      atoms (a marker of another section's atom is one).
-//   3. Of the drafts that pass, the one with fewest warnings is kept (Ledger
-//      B's one warning: the talk's order); the first, on a tie. A judge
-//      arrives with P20b.
+//   3. Of the drafts that pass, Ledger B ranks them (its one warning: the
+//      talk's order), and where the tier asks for a judge (`judge_top`), the
+//      best are read by a model of another family than the writer's: each
+//      sentence against its atoms, the evidence quoted before a verdict
+//      (prompts/judge), and each pair for how it reads, in both orders
+//      (prompts/flow). The draft kept has the fewest issues read, then the
+//      fewest warnings, then the fewest comparisons lost
+//      (reason::select_lexicographic()); what the judge reads in it is
+//      published as its reading. Without a judge, the first ranked is kept.
 //   4. A section the commander does not hold is written in parts, each the
 //      most paragraphs it holds, in order.
 //   5. What no draft passed is told as its atoms say it, a paragraph at a
@@ -40,8 +46,9 @@
 // Without a pod there is no article: Errc::needs_user, and the job stops, to
 // be resumed once one is set up.
 //
-// Its key holds the tier's write settings; the prompt; the army and what the
-// commander holds. It samples: the job's salt is in its key.
+// Its key holds the tier's write settings; the prompts (the writer's and the
+// judge's); the army and what the commander holds. It samples: the job's
+// salt is in its key.
 //
 // Thread-safety: immutable.
 #pragma once
@@ -59,7 +66,7 @@ public:
     static constexpr std::string_view kName = "write";
 
     [[nodiscard]] std::string_view name() const override { return kName; }
-    [[nodiscard]] int version() const override { return 1; }
+    [[nodiscard]] int version() const override { return 2; }
     [[nodiscard]] std::vector<std::string> inputs() const override {
         return {"source", "transcript", "outline", "atomize", "plan"};
     }

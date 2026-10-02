@@ -1,0 +1,11 @@
+Check section {{ number }}, "{{ heading }}", sentence by sentence.
+
+Its atoms:
+<atoms>
+{{ atoms }}
+</atoms>
+
+Its sentences:
+<sentences>
+{{ sentences }}
+</sentences>

@@ -24,10 +24,13 @@
 #include <rr/llm/memo.hpp>
 #include <rr/pipeline/asking.hpp>
 #include <rr/pipeline/atomize_stage.hpp>
+#include <rr/pipeline/judging.hpp>
 #include <rr/pipeline/outline_stage.hpp>
 #include <rr/pipeline/plan_stage.hpp>
 #include <rr/pipeline/source.hpp>
 #include <rr/pipeline/transcript_stage.hpp>
+#include <rr/reason/pairwise.hpp>
+#include <rr/reason/select.hpp>
 #include <rr/reason/tier.hpp>
 #include <rr/text/align.hpp>
 #include <rr/text/span.hpp>
@@ -50,6 +53,18 @@ constexpr int kSpareTokens = 128;
 constexpr int kLeastAnswer = 512;
 constexpr int kMostAnswer = 8'192;
 constexpr std::size_t kShownBytes = 120;  // of a sentence a message quotes
+
+constexpr std::string_view kJudgePrompt = "judge";
+constexpr std::string_view kFlowPrompt = "flow";
+// A reading's size: a sentence's evidence and what it says beyond it, and
+// room besides; a comparison's: its reasons, and a word.
+constexpr int kTokensPerJudgedSentence = 96;
+constexpr int kFlowTokens = 512;
+
+// A judge stays of another family than the writer it judges: no rung of the
+// ladder hands its mission to the commander, nor to another family
+// (rr/agents/mission.hpp).
+constexpr agents::Escalation kJudgeEscalation{.thinking = true, .commander = false, .other_family = false};
 
 // A paragraph to write: its purpose, and its atoms in the order told.
 struct ToWrite {
@@ -291,26 +306,85 @@ std::string told_plainly(const Stretch& stretch, std::size_t count) {
     return std::format("paragraphs {} to {} are told as their atoms say it", stretch.begin + 1, stretch.end);
 }
 
+// --- The judge's part ------------------------------------------------------------------
+
+// `draft` as a reader sees it: its paragraphs without their markers.
+std::string plain(std::string_view draft) {
+    const knowledge::ParsedArticle parsed = knowledge::parse_article(draft);
+    std::string text;
+    for (const knowledge::Block& block : parsed.blocks) {
+        text += (text.empty() ? "" : "\n\n") + knowledge::without_markers(draft, parsed, block.span);
+    }
+    return text;
+}
+
+int judgment_tokens(std::size_t sentences) {
+    const std::int64_t tokens =
+        (static_cast<std::int64_t>(sentences) * kTokensPerJudgedSentence) + kSpareTokens;
+    return static_cast<int>(std::clamp<std::int64_t>(tokens, kLeastAnswer, kMostAnswer));
+}
+
+// The drafts of a mission that passed, best first by Ledger B (fewest
+// warnings; the first drawn, on a tie), and where the judge's missions about
+// the first `judged` of them begin in the judges' squad: a reading of each,
+// then each pair compared in both orders.
+struct Drafts {
+    std::vector<const agents::Answer*> ranked{};
+    std::vector<std::size_t> warnings{};  // of each, ranked
+    std::size_t judged = 0;               // none: picked by Ledger B alone
+    std::size_t first = 0;
+};
+
+// Where, in a judges' squad, the comparisons of drafts `a` and `b` (a < b)
+// are: (a, b) shown in that order, then (b, a) right after.
+std::size_t flow_index(const Drafts& drafts, std::size_t a, std::size_t b) {
+    std::size_t pairs = 0;  // before (a, b), in order: (0, 1), (0, 2), …, (1, 2), …
+    for (std::size_t first = 0; first < a; ++first) {
+        pairs += drafts.judged - first - 1;
+    }
+    pairs += b - a - 1;
+    return drafts.first + drafts.judged + (2 * pairs);
+}
+
+// Paragraphs [begin, end) of `section`.
+std::span<const ToWrite> paragraphs_in(const SectionToWrite& section, const Stretch& stretch) {
+    return std::span{section.paragraphs}.subspan(stretch.begin, stretch.end - stretch.begin);
+}
+
 // What the commander makes of the sections: each written, in parts where it
 // does not hold one whole, or told as its atoms say it where no draft
 // passed. What it could not do is noted in output(), as findings.
 class Writer {
 public:
+    // The prompts a writer asks with: its own, and the judge's two.
+    struct Prompts {
+        StagePrompt write{};
+        StagePrompt judge{};
+        StagePrompt flow{};
+    };
+
     Writer(const StageContext& context, const Transcript& transcript, const knowledge::AtomLedger& ledger,
-           const reason::WriteCompute& compute, agents::Army& army, StagePrompt prompt, json::Json shared)
+           const reason::WriteCompute& compute, agents::Army& army, Prompts prompts, json::Json shared)
         : context_(&context)
         , transcript_(&transcript)
         , ledger_(&ledger)
         , compute_(compute)
         , army_(&army)
-        , prompt_(std::move(prompt))
-        , shared_(std::move(shared)) {
+        , prompts_(std::move(prompts))
+        , shared_(std::move(shared))
+        , judge_shared_(json::Json{{"title", shared_.at("title")}, {"channel", shared_.at("channel")}}) {
         // A tier that writes thinking thinks with the commander's own budget,
         // within half of what it holds (the outline's rule).
         const agents::Engine* commander = engine_serving(army, "commander");
         if (commander != nullptr && commander->thinking.thinking_budget.has_value()) {
             budget_ = commander->thinking.thinking_budget;
             budget_->tokens = std::min(budget_->tokens, commander->ctx_per_slot / 2);
+        }
+        // The judge is the infantry, when it is of another family than the
+        // commander that writes.
+        const agents::Engine* judge = engine_serving(army, "infantry");
+        if (commander != nullptr && judge != nullptr && judge->family != commander->family) {
+            judge_family_ = judge->family;
         }
     }
 
@@ -334,10 +408,35 @@ public:
         }
         RR_TRY_ASSIGN(const std::vector<agents::Outcome> outcomes,
                       army_->squad(std::move(missions), context_->stop));
+        // The drafts that passed, ranked; the best of them judged, where a
+        // judge of another family can read them.
+        std::vector<std::vector<Drafts>> drafts(sections.size());
+        std::vector<agents::Mission> judges;
+        std::size_t judged = 0;  // sections whose drafts are judged
+        for (std::size_t index = 0; index < sections.size(); ++index) {
+            drafts[index].reserve(stretches[index].size());
+            bool any = false;
+            for (const Stretch& stretch : stretches[index]) {
+                RR_TRY_ASSIGN(Drafts ranked,
+                              ranked_of(sections[index], index + 1, stretch, outcomes, judges));
+                any = any || ranked.judged > 0;
+                drafts[index].push_back(std::move(ranked));
+            }
+            if (any) {
+                ++judged;
+            }
+        }
+        if (!judges.empty()) {
+            progress(std::format("write: the infantry judges the best {} drafts of {} {}", compute_.judge_top,
+                                 judged, judged == 1 ? "section" : "sections"));
+        }
+        RR_TRY_ASSIGN(const std::vector<agents::Outcome> verdicts,
+                      army_->squad(std::move(judges), context_->stop));
         std::vector<std::vector<std::string>> paragraphs(sections.size());
         for (std::size_t index = 0; index < sections.size(); ++index) {
-            for (const Stretch& stretch : stretches[index]) {
-                std::ranges::move(assembled(sections[index], index + 1, stretch, outcomes),
+            for (std::size_t part = 0; part < stretches[index].size(); ++part) {
+                std::ranges::move(assembled(sections[index], index + 1, stretches[index][part], outcomes,
+                                            drafts[index][part], verdicts),
                                   std::back_inserter(paragraphs[index]));
             }
         }
@@ -456,7 +555,7 @@ private:
         agents::Mission mission{
             .id = std::move(id),
             .kind = std::string{kPrompt},
-            .prompt = prompt_.info->label(),
+            .prompt = prompts_.write.info->label(),
             .role = "commander",
             .request = llm::ChatRequest{.messages = {llm::Message::system(rendered.system),
                                                      llm::Message::user(rendered.user)},
@@ -482,12 +581,12 @@ private:
         return *found;
     }
 
-    // The paragraphs of `stretch`: the draft kept, or, where no draft passed,
-    // told as said, and said.
+    // The paragraphs of `stretch`: the draft kept of `drafts`, or, where no
+    // draft passed, told as said, and said.
     std::vector<std::string> assembled(const SectionToWrite& section, std::size_t number,
-                                       const Stretch& stretch, std::span<const agents::Outcome> outcomes) {
-        const std::span<const ToWrite> paragraphs =
-            std::span{section.paragraphs}.subspan(stretch.begin, stretch.end - stretch.begin);
+                                       const Stretch& stretch, std::span<const agents::Outcome> outcomes,
+                                       const Drafts& drafts, std::span<const agents::Outcome> verdicts) {
+        const std::span<const ToWrite> paragraphs = paragraphs_in(section, stretch);
         const agents::Outcome* const outcome =
             stretch.mission.has_value() ? &outcomes[*stretch.mission] : nullptr;
         if (outcome != nullptr && outcome->verdict == agents::Verdict::ceiling) {
@@ -509,24 +608,255 @@ private:
             }
             return told;
         }
-        // The draft with fewest warnings; the first, on a tie.
+        const std::size_t kept = picked(section, number, drafts, verdicts);
+        return paragraphs_of(drafts.ranked[kept]->value.get<std::string>());
+    }
+
+    // `outcome`'s drafts that passed, ranked by Ledger B; the first
+    // `judge_top` of them judged where a judge of another family can read
+    // them, its missions added to `judges`. Drafts to judge, two or more, are
+    // the commander's: an escalation draws one answer (rr/agents/army.hpp).
+    // So a judge of another family than the commander's is of another
+    // family than every draft it reads.
+    [[nodiscard]] Result<Drafts> ranked_of(const SectionToWrite& section, std::size_t number,
+                                           const Stretch& stretch, std::span<const agents::Outcome> outcomes,
+                                           std::vector<agents::Mission>& judges) {
+        Drafts drafts;
+        if (!stretch.mission.has_value() || outcomes[*stretch.mission].answers.empty()) {
+            return drafts;
+        }
+        const agents::Outcome& outcome = outcomes[*stretch.mission];
         Asked asked;
-        for (const ToWrite& paragraph : paragraphs) {
+        for (const ToWrite& paragraph : paragraphs_in(section, stretch)) {
             for (const Atom* const atom : paragraph.atoms) {
                 asked.atoms.push_back(atom->id);
             }
         }
-        const agents::Answer* kept = nullptr;
-        std::size_t fewest = 0;
-        for (const agents::Answer& answer : outcome->answers) {
-            const std::size_t warnings =
-                warnings_of(answer.value.get<std::string>(), *transcript_, *ledger_, asked);
-            if (kept == nullptr || warnings < fewest) {
-                kept = &answer;
-                fewest = warnings;
+        std::vector<std::pair<std::size_t, const agents::Answer*>> scored;
+        scored.reserve(outcome.answers.size());
+        for (const agents::Answer& answer : outcome.answers) {
+            scored.emplace_back(warnings_of(answer.value.get<std::string>(), *transcript_, *ledger_, asked),
+                                &answer);
+        }
+        std::ranges::stable_sort(scored, {}, &std::pair<std::size_t, const agents::Answer*>::first);
+        drafts.ranked.reserve(scored.size());
+        drafts.warnings.reserve(scored.size());
+        for (const auto& [warnings, answer] : scored) {
+            drafts.ranked.push_back(answer);
+            drafts.warnings.push_back(warnings);
+        }
+        const std::size_t judged =
+            std::min(static_cast<std::size_t>(std::max(compute_.judge_top, 0)), drafts.ranked.size());
+        if (judged < 2) {
+            return drafts;  // nothing to choose between
+        }
+        if (!judge_family_.has_value()) {
+            if (!unjudged_said_) {
+                output_.findings.emplace_back(
+                    "the drafts are picked by Ledger B alone: "
+                    "the pod has no judge of another family than the writer's");
+                unjudged_said_ = true;
+            }
+            return drafts;
+        }
+        drafts.judged = judged;
+        drafts.first = judges.size();
+        RR_TRY(judge_missions(section, number, stretch, outcome.mission, drafts, judges));
+        return drafts;
+    }
+
+    // The judge's missions about the first `drafts.judged` of `drafts`: a
+    // reading of each, then each pair compared in both orders; their ids
+    // after the writing mission's (`write-2-1` gives `judge-2-1-draft-1`).
+    [[nodiscard]] Result<void> judge_missions(const SectionToWrite& section, std::size_t number,
+                                              const Stretch& stretch, std::string_view written,
+                                              const Drafts& drafts,
+                                              std::vector<agents::Mission>& judges) const {
+        const std::string_view id = written.substr(std::string_view{"write-"}.size());
+        for (std::size_t draft = 0; draft < drafts.judged; ++draft) {
+            RR_TRY_ASSIGN(agents::Mission judge,
+                          judge_mission(std::format("judge-{}-draft-{}", id, draft + 1), section, number,
+                                        stretch, drafts.ranked[draft]->value.get<std::string>()));
+            judges.push_back(std::move(judge));
+        }
+        for (std::size_t a = 0; a < drafts.judged; ++a) {
+            for (std::size_t b = a + 1; b < drafts.judged; ++b) {
+                for (const auto& [one, other] : {std::pair{a, b}, std::pair{b, a}}) {
+                    RR_TRY_ASSIGN(agents::Mission flow,
+                                  flow_mission(std::format("flow-{}-drafts-{}-{}", id, one + 1, other + 1),
+                                               section, number, drafts.ranked[one]->value.get<std::string>(),
+                                               drafts.ranked[other]->value.get<std::string>()));
+                    judges.push_back(std::move(flow));
+                }
             }
         }
-        return paragraphs_of(kept->value.get<std::string>());
+        return {};
+    }
+
+    // A mission reading `draft`'s sentences against the atoms of `stretch`.
+    [[nodiscard]] Result<agents::Mission> judge_mission(std::string id, const SectionToWrite& section,
+                                                        std::size_t number, const Stretch& stretch,
+                                                        std::string_view draft) const {
+        std::string atoms;
+        for (const ToWrite& paragraph : paragraphs_in(section, stretch)) {
+            for (const Atom* const atom : paragraph.atoms) {
+                atoms += (atoms.empty() ? "" : "\n") + atom_entry(*atom, *transcript_);
+            }
+        }
+        const std::vector<std::string> sentences = sentences_of(draft);
+        std::string lines;
+        for (std::size_t index = 0; index < sentences.size(); ++index) {
+            lines += std::format("{}{}. {}", lines.empty() ? "" : "\n", index + 1, sentences[index]);
+        }
+        const json::Json order{{"number", number},
+                               {"heading", section.plan->heading},
+                               {"atoms", std::move(atoms)},
+                               {"sentences", std::move(lines)}};
+        RR_TRY_ASSIGN(const prompt::Rendered rendered,
+                      context_->prompts->render(kJudgePrompt, judge_shared_, order));
+        const std::int64_t seed = llm::derived_seed(context_->job->salt, WriteStage::kName, id, 0);
+        return agents::Mission{
+            .id = std::move(id),
+            .kind = std::string{kJudgePrompt},
+            .prompt = prompts_.judge.info->label(),
+            .role = "infantry",
+            .request = llm::ChatRequest{.messages = {llm::Message::system(rendered.system),
+                                                     llm::Message::user(rendered.user)},
+                                        .seed = seed,
+                                        .thinking = false},
+            .answer_tokens = judgment_tokens(sentences.size()),
+            .schema = prompts_.judge.schema,
+            .check = [count = sentences.size()](
+                         const json::Json& answer) { return judgment_problems(answer, count); },
+            .escalation = kJudgeEscalation};
+    }
+
+    // A mission comparing how `first` and `second`, shown in that order, read.
+    [[nodiscard]] Result<agents::Mission> flow_mission(std::string id, const SectionToWrite& section,
+                                                       std::size_t number, std::string_view first,
+                                                       std::string_view second) const {
+        const json::Json order{{"number", number},
+                               {"heading", section.plan->heading},
+                               {"first", plain(first)},
+                               {"second", plain(second)}};
+        RR_TRY_ASSIGN(const prompt::Rendered rendered,
+                      context_->prompts->render(kFlowPrompt, judge_shared_, order));
+        const std::int64_t seed = llm::derived_seed(context_->job->salt, WriteStage::kName, id, 0);
+        return agents::Mission{.id = std::move(id),
+                               .kind = std::string{kFlowPrompt},
+                               .prompt = prompts_.flow.info->label(),
+                               .role = "infantry",
+                               .request = llm::ChatRequest{.messages = {llm::Message::system(rendered.system),
+                                                                        llm::Message::user(rendered.user)},
+                                                           .seed = seed,
+                                                           .thinking = false},
+                               .answer_tokens = kFlowTokens,
+                               .schema = prompts_.flow.schema,
+                               .escalation = kJudgeEscalation};
+    }
+
+    // What the judge read in each of the first `drafts.judged`; none when a
+    // reading is missing, which is said.
+    std::optional<std::vector<std::vector<Judged>>> readings_of(const Drafts& drafts,
+                                                                std::span<const agents::Outcome> verdicts,
+                                                                std::string_view where) {
+        std::vector<std::vector<Judged>> readings;
+        readings.reserve(drafts.judged);
+        for (std::size_t draft = 0; draft < drafts.judged; ++draft) {
+            const agents::Outcome& outcome = verdicts[drafts.first + draft];
+            noted(outcome);
+            if (outcome.answers.empty()) {
+                output_.findings.push_back(std::format("{}: the judge could not read its drafts: {}", where,
+                                                       why_unanswered(outcome, *army_, "judge them")));
+                return std::nullopt;
+            }
+            readings.push_back(judgment_of(outcome.answers.front().value));
+        }
+        return readings;
+    }
+
+    // How many comparisons each of the first `drafts.judged` lost, both
+    // orders agreeing; none when a comparison is missing, which is said.
+    std::optional<std::vector<std::size_t>> losses_of(const Drafts& drafts,
+                                                      std::span<const agents::Outcome> verdicts,
+                                                      std::string_view where) {
+        std::vector<std::size_t> lost(drafts.judged, 0);
+        for (std::size_t a = 0; a < drafts.judged; ++a) {
+            for (std::size_t b = a + 1; b < drafts.judged; ++b) {
+                const std::size_t index = flow_index(drafts, a, b);
+                for (const agents::Outcome& outcome : verdicts.subspan(index, 2)) {
+                    noted(outcome);
+                    if (outcome.answers.empty()) {
+                        output_.findings.push_back(
+                            std::format("{}: the judge could not compare how its drafts read: {}", where,
+                                        why_unanswered(outcome, *army_, "compare them")));
+                        return std::nullopt;
+                    }
+                }
+                const reason::Winner winner =
+                    reason::swapped(preference_of(verdicts[index].answers.front().value),
+                                    preference_of(verdicts[index + 1].answers.front().value));
+                if (winner == reason::Winner::a) {
+                    ++lost[b];
+                } else if (winner == reason::Winner::b) {
+                    ++lost[a];
+                }
+            }
+        }
+        return lost;
+    }
+
+    // Of `drafts`, the one kept: where the judge read them, the fewest issues
+    // it read, then the fewest warnings, then the fewest comparisons lost
+    // (reason::select_lexicographic()); else the first, Ledger B's best. What
+    // the judge reads in the draft kept is said, as its reading.
+    std::size_t picked(const SectionToWrite& section, std::size_t number, const Drafts& drafts,
+                       std::span<const agents::Outcome> verdicts) {
+        if (drafts.judged == 0) {
+            return 0;
+        }
+        const std::string where = std::format("section {}, \"{}\"", number, section.plan->heading);
+        const std::optional<std::vector<std::vector<Judged>>> readings = readings_of(drafts, verdicts, where);
+        const std::optional<std::vector<std::size_t>> lost = losses_of(drafts, verdicts, where);
+        std::vector<std::vector<double>> keys;
+        keys.reserve(drafts.judged);
+        for (std::size_t draft = 0; draft < drafts.judged; ++draft) {
+            const auto issues = readings.has_value()
+                                    ? std::ranges::count_if((*readings)[draft],
+                                                            [](const Judged& sentence) {
+                                                                return sentence.issue != Issue::none;
+                                                            })
+                                    : 0;
+            keys.push_back({static_cast<double>(issues), static_cast<double>(drafts.warnings[draft]),
+                            lost.has_value() ? static_cast<double>((*lost)[draft]) : 0.0});
+        }
+        const std::size_t kept = reason::select_lexicographic(keys).value_or(0);
+        if (readings.has_value()) {
+            published(where, drafts.ranked[kept]->value.get<std::string>(), (*readings)[kept]);
+        }
+        return kept;
+    }
+
+    // What the judge read in `draft`, the one kept, said as its readings.
+    void published(std::string_view where, std::string_view draft, std::span<const Judged> reading) {
+        const std::vector<std::string> sentences = sentences_of(draft);
+        for (const Judged& sentence : reading) {
+            if (sentence.issue != Issue::none) {
+                RR_ASSERT(sentence.sentence >= 1, "a reading numbers sentences from 1 (judgment_problems())");
+                RR_ASSERT(sentence.sentence <= sentences.size(),
+                          "a reading's sentences are its draft's (judgment_problems())");
+                output_.findings.push_back(std::format(
+                    "{}: the judge reads \"{}\" as {}: {}", where, shown(sentences[sentence.sentence - 1]),
+                    reading_of(sentence.issue), sentence.reading.value_or("it gives no reading")));
+            }
+        }
+    }
+
+    // A judge's ceiling makes the result this job's alone, as a writer's does.
+    void noted(const agents::Outcome& outcome) {
+        if (outcome.verdict == agents::Verdict::ceiling) {
+            output_.reusable = false;
+        }
     }
 
     const StageContext* context_;
@@ -534,9 +864,12 @@ private:
     const knowledge::AtomLedger* ledger_;
     reason::WriteCompute compute_;
     agents::Army* army_;
-    StagePrompt prompt_;
+    Prompts prompts_;
     json::Json shared_;
+    json::Json judge_shared_;                    // the video, as the judge's prompts show it
     std::optional<llm::ThinkingBudget> budget_;  // a tier that writes thinking: the commander's
+    std::optional<std::string> judge_family_;    // none: no judge apart from the writer
+    bool unjudged_said_ = false;
     StageOutput output_;
 };
 
@@ -658,7 +991,8 @@ Result<json::Json> WriteStage::fingerprint(const StageContext& context) const {
                     "set one up");
     }
     RR_ASSERT(context.prompts != nullptr, "a stage that asks models is given the prompts");
-    RR_TRY_ASSIGN(json::Json prompts, prompts_fingerprint(*context.prompts, {kPrompt}));
+    RR_TRY_ASSIGN(json::Json prompts,
+                  prompts_fingerprint(*context.prompts, {kPrompt, kJudgePrompt, kFlowPrompt}));
     RR_TRY_ASSIGN(agents::Army* const army, context.army());
     const agents::Engine* commander = engine_serving(*army, "commander");
     return json::Json{{"tier", tier.canonical(reason::Stage::write)},
@@ -670,14 +1004,17 @@ Result<json::Json> WriteStage::fingerprint(const StageContext& context) const {
 Result<StageOutput> WriteStage::run(const StageContext& context) const {
     RR_TRY_ASSIGN(const Input read, read_input(context));
     RR_TRY_ASSIGN(agents::Army* const army, context.army());
-    RR_TRY_ASSIGN(StagePrompt prompt, stage_prompt(*context.prompts, kPrompt));
+    Writer::Prompts prompts;
+    RR_TRY_ASSIGN(prompts.write, stage_prompt(*context.prompts, kPrompt));
+    RR_TRY_ASSIGN(prompts.judge, stage_prompt(*context.prompts, kJudgePrompt));
+    RR_TRY_ASSIGN(prompts.flow, stage_prompt(*context.prompts, kFlowPrompt));
     const std::vector<SectionToWrite> sections = sections_of(read);
     Writer writer{context,
                   read.transcript,
                   read.ledger,
                   read.tier.write,
                   *army,
-                  std::move(prompt),
+                  std::move(prompts),
                   shared_of(read.source, read.transcript, read.outline, read.plan)};
     RR_TRY_ASSIGN(const std::vector<std::vector<std::string>> paragraphs, writer.write(sections));
     const std::string markdown = article_of(sections, paragraphs);

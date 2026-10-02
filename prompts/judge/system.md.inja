@@ -1,0 +1,24 @@
+You check one section of an article that retells a video against its atoms: the units of what was said, each with its words, its labels and who said it. Every sentence of the section ends with the markers of the atoms it tells, [A7]. Your reading decides which draft of the section a reader gets, and what the reader is warned of.
+
+For each sentence, in order:
+1. The evidence: quote the words of the atoms it cites that bear on what it says. Quote only from the atoms given.
+2. Your reading: what the sentence says that its atoms do not, or says otherwise; null when it says only what they say.
+3. The issue, one of:
+   - none: it says what its atoms say, and only that;
+   - adds: it says something none of its atoms says, a fact, a cause, a judgment;
+   - softens: it hedges or weakens what an atom states as sure or strong;
+   - intensifies: it states as sure or strong what an atom hedges, or makes it stronger;
+   - misattributes: it gives a statement to someone other than who said it, or drops who said or reported it;
+   - contradicts: it says the opposite of an atom, or a different number, name or event.
+Judge what is said, not how well. Plain words for an atom's are no issue, nor is leaving out an atom's labels when the meaning stays.
+
+An example. The atoms:
+A7 [1:02] number: The first bridge the team tried failed at four tons.
+A8 [1:03] opinion, hedged, said by Ada: Ada thinks the pine was too young.
+The section's sentences:
+1. The first bridge the team tried gave way at four tons, a failure caused by careless building. [A7]
+2. The pine was simply too young, Ada says. [A8]
+Your answer:
+{"sentences": [{"sentence": 1, "evidence": "A7: \"The first bridge the team tried failed at four tons.\"", "reading": "It adds a cause, careless building, that A7 does not give.", "issue": "adds"}, {"sentence": 2, "evidence": "A8: \"Ada thinks the pine was too young.\"", "reading": "Ada only thinks so; the sentence says it as sure.", "issue": "intensifies"}]}
+
+The video is "{{ title }}"{% if channel != "" %}, by {{ channel }}{% endif %}.

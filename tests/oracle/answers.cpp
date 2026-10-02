@@ -7,6 +7,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <ranges>
@@ -363,6 +365,20 @@ std::optional<std::string> to_quote(std::string_view shown) {
     return std::string{shown.substr(begin, end - begin)};
 }
 
+// The atoms a sentence cites, as written: "A7" for "[A7]".
+std::vector<std::string> cited_in(std::string_view sentence) {
+    std::vector<std::string> atoms;
+    for (std::size_t at = sentence.find("[A"); at != std::string_view::npos;
+         at = sentence.find("[A", at + 1)) {
+        const std::size_t end = sentence.find(']', at);
+        if (end == std::string_view::npos) {
+            break;
+        }
+        atoms.emplace_back(sentence.substr(at + 1, end - at - 1));
+    }
+    return atoms;
+}
+
 // "Tells A12.", "Tells A12 and A13.", "Tells A12 to A14.".
 std::string purpose_of(const std::vector<std::string>& atoms) {
     if (atoms.size() == 1) {
@@ -577,6 +593,58 @@ Answerer write() {
     };
 }
 
+Answerer judge() {
+    return [](const llm::ChatRequest& request) -> Result<std::string> {
+        RR_TRY_ASSIGN(const std::string atoms, block_in(request, "atoms"));
+        RR_TRY_ASSIGN(const std::string sentences, block_in(request, "sentences"));
+        std::map<std::string, std::string, std::less<>> words;  // "A7": its words
+        for (const auto part : std::views::split(atoms, '\n')) {
+            const std::string_view line{part.begin(), part.end()};
+            const std::size_t time = line.find("] ");
+            const std::size_t said = time == std::string_view::npos ? time : line.find(": ", time);
+            if (said == std::string_view::npos) {
+                return fail(Errc::invalid_argument, std::format("no atom in \"{}\"", line));
+            }
+            words.emplace(line.substr(0, line.find(' ')), atom_words(line.substr(said + 2)));
+        }
+        json::Json judged = json::Json::array();
+        for (const auto part : std::views::split(sentences, '\n')) {
+            const std::string_view line{part.begin(), part.end()};
+            const std::size_t dot = line.find(". ");
+            const std::string_view digits = line.substr(0, dot);  // the whole line, without a dot
+            std::size_t number = 0;
+            const auto [end, error] = std::from_chars(digits.data(), digits.data() + digits.size(), number);
+            if (dot == std::string_view::npos || error != std::errc{} ||
+                end != digits.data() + digits.size()) {
+                return fail(Errc::invalid_argument, std::format("no numbered sentence in \"{}\"", line));
+            }
+            std::string evidence;
+            for (const std::string& atom : cited_in(line.substr(dot + 2))) {
+                const auto found = words.find(atom);
+                evidence += std::format("{}{}: \"{}\"", evidence.empty() ? "" : "; ", atom,
+                                        found == words.end() ? std::string{"?"} : found->second);
+            }
+            judged.push_back(json::Json{
+                {"sentence", number}, {"evidence", evidence}, {"reading", nullptr}, {"issue", "none"}});
+        }
+        return json::dump(json::Json{{"sentences", std::move(judged)}});
+    };
+}
+
+Answerer flow() {
+    return [](const llm::ChatRequest& request) -> Result<std::string> {
+        RR_TRY_ASSIGN(const std::string first, block_in(request, "first"));
+        RR_TRY_ASSIGN(const std::string second, block_in(request, "second"));
+        std::string_view better = "tie";
+        if (first.size() < second.size()) {
+            better = "first";
+        } else if (second.size() < first.size()) {
+            better = "second";
+        }
+        return json::dump(json::Json{{"reasons", "The shorter says it in fewer words."}, {"better", better}});
+    };
+}
+
 Result<std::string> excerpt_in(const llm::ChatRequest& request) {
     // A repair's conversation ends with its instruction: the excerpt is in
     // the order's message, before it.
@@ -612,6 +680,8 @@ void teach_stages(Oracle& oracle, std::optional<std::string> script) {
     oracle.teach("atomize", atomize());
     oracle.teach("plan", plan());
     oracle.teach("write", write());
+    oracle.teach("judge", judge());
+    oracle.teach("flow", flow());
 }
 
 }  // namespace rr::oracle

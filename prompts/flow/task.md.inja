@@ -1,0 +1,11 @@
+Compare two drafts of section {{ number }}, "{{ heading }}".
+
+The first draft:
+<first>
+{{ first }}
+</first>
+
+The second draft:
+<second>
+{{ second }}
+</second>

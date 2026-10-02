@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Sentence judgment",
+  "description": "A section's sentences checked against their atoms, one by one: for each, the atoms' words it rests on, then a reading of what it says beyond or against them, then the issue (prompts/judge).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sentences"],
+  "properties": {
+    "sentences": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sentence", "evidence", "reading", "issue"],
+        "properties": {
+          "sentence": {"type": "integer", "minimum": 1},
+          "evidence": {"type": "string"},
+          "reading": {"type": ["string", "null"]},
+          "issue": {"enum": ["none", "adds", "softens", "intensifies", "misattributes", "contradicts"]}
+        }
+      }
+    }
+  }
+}

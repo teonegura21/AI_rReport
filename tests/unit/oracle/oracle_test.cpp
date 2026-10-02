@@ -358,6 +358,65 @@ TEST(OracleAnswers, WriteTellsEachParagraphsAtomsEachWithItsMarker) {
     EXPECT_ERRC(oracle.chat(asked("write"), {}, {}), Errc::invalid_argument) << "no paragraphs block";
 }
 
+// A request whose last message holds two blocks: `first` and `second`.
+llm::ChatRequest holding_both(std::string kind, std::string_view first_tag, std::string_view first,
+                              std::string_view second_tag, std::string_view second) {
+    llm::ChatRequest request = asked(std::move(kind));
+    request.messages = {llm::Message::system("You judge a draft."),
+                        llm::Message::user(std::format("<{0}>\n{1}\n</{0}>\n\n<{2}>\n{3}\n</{2}>\n",
+                                                       first_tag, first, second_tag, second))};
+    return request;
+}
+
+TEST(OracleAnswers, JudgeReadsEverySentenceAsSayingWhatItsAtomsSay) {
+    Oracle oracle;
+    teach_stages(oracle);
+    const std::string_view atoms =
+        "A7 [1:02] number: The bridge failed at four tons. Terms: tons.\n"
+        "A8 [1:03] opinion, hedged, said by Ada: Ada thinks it was young pine. Names: Ada.";
+    const std::string_view sentences =
+        "1. The bridge failed at four tons. [A7]\n"
+        "2. Ada thinks it was young pine, an aside. [A8][A7]";
+    const llm::ChatResponse response =
+        unwrap(oracle.chat(holding_both("judge", "atoms", atoms, "sentences", sentences), {}, {}));
+    const json::Json judged = unwrap(json::parse(response.first().content));
+    EXPECT_EQ(judged, (json::Json{{"sentences",
+                                   {{{"sentence", 1},
+                                     {"evidence", "A7: \"The bridge failed at four tons.\""},
+                                     {"reading", nullptr},
+                                     {"issue", "none"}},
+                                    {{"sentence", 2},
+                                     {"evidence",
+                                      "A8: \"Ada thinks it was young pine.\"; A7: \"The bridge failed at "
+                                      "four tons.\""},
+                                     {"reading", nullptr},
+                                     {"issue", "none"}}}}}));
+    EXPECT_ERRC(oracle.chat(holding_both("judge", "atoms", "no atom here", "sentences", sentences), {}, {}),
+                Errc::invalid_argument);
+    EXPECT_ERRC(
+        oracle.chat(holding_both("judge", "atoms", atoms, "sentences", "a sentence unnumbered"), {}, {}),
+        Errc::invalid_argument);
+    EXPECT_ERRC(
+        oracle.chat(holding_both("judge", "atoms", atoms, "sentences", "First. The bridge failed. [A7]"), {},
+                    {}),
+        Errc::invalid_argument)
+        << "a sentence that does not open with its number";
+}
+
+TEST(OracleAnswers, FlowPrefersTheShorterDraftInEitherOrder) {
+    Oracle oracle;
+    teach_stages(oracle);
+    const auto better = [&](std::string_view first, std::string_view second) {
+        const llm::ChatResponse response =
+            unwrap(oracle.chat(holding_both("flow", "first", first, "second", second), {}, {}));
+        const json::Json answer = unwrap(json::parse(response.first().content));
+        return answer.at("better").get<std::string>();
+    };
+    EXPECT_EQ(better("Short.", "Longer one."), "first");
+    EXPECT_EQ(better("Longer one.", "Short."), "second");
+    EXPECT_EQ(better("Same.", "Also."), "tie");
+}
+
 TEST(RequestLog, KeepsEveryRequestItPassesOn) {
     Oracle oracle;
     oracle.teach("label",

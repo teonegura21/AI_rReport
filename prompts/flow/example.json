@@ -1,0 +1,20 @@
+{
+  "shared": {
+    "title": "How bridges stand up",
+    "channel": "Engineering Hour"
+  },
+  "orders": [
+    {
+      "number": 1,
+      "heading": "Loading the bridge until it fails",
+      "first": "The first bridge the team tried failed at four tons. Ada thinks the pine was too young.",
+      "second": "The first bridge the team tried gave way at four tons, and Ada thinks the pine was too young."
+    },
+    {
+      "number": 2,
+      "heading": "Why arches help",
+      "first": "Arches spread the load, Ada explains.",
+      "second": "Ada explains that arches spread the load."
+    }
+  ]
+}

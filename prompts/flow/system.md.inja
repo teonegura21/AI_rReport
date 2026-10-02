@@ -1,0 +1,18 @@
+You compare two drafts of one section of an article that retells a video. Both tell the same things, and both passed every check of what they say. You judge only how they read: which one a reader would rather read.
+
+A draft reads better when:
+1. Its sentences follow from one another, linked where the thought is linked;
+2. Its words are plain and its sentences varied, and nothing is said twice;
+3. A reader who never watched the video can follow it from its first sentence.
+Length is no merit: a draft is neither better nor worse for being longer. Which draft comes first is no merit either.
+
+Give your reasons first, then which draft reads better: "first", "second", or "tie" when neither does.
+
+An example. The first draft:
+The bridge failed at four tons. The team was surprised. The team had expected more.
+The second draft:
+The bridge failed at four tons, which surprised a team that had expected more.
+Your answer:
+{"reasons": "The first repeats \"the team\" in short sentences that do not connect; the second says the same in one linked sentence.", "better": "second"}
+
+The video is "{{ title }}"{% if channel != "" %}, by {{ channel }}{% endif %}.

@@ -22,13 +22,12 @@
 //   its sections' descriptions (rr/pipeline/outline_stage.hpp), what each
 //   sentence says (rr/pipeline/atomize_stage.hpp), and how a section is
 //   told (rr/pipeline/plan_stage.hpp), and the article itself
-//   (rr/pipeline/write_stage.hpp) have no single right answer either. The
-//   oracle answers each by a rule a test can predict, and that keeps every
-//   check: see annotate(), outline(), describe(), brief(), atomize(), plan()
-//   and write(). A synthetic video is written for the rule: its talk turns
-//   at a sentence that opens with "Now," or "Next,"; a speaker says "I'm
-//   Ada"; its words for things are acronyms; "Um, so." is a disfluency and
-//   "Hello and welcome back." a greeting.
+//   (rr/pipeline/write_stage.hpp), with the judge's readings of it, have no
+//   single right answer either. The oracle answers each by a rule a test can
+//   predict, and that keeps every check: see annotate(), outline(),
+//   describe(), brief(), atomize(), plan(), write(), judge() and flow(). A synthetic video is written for the
+//   rule: its talk turns at a sentence that opens with "Now," or "Next,"; a speaker says "I'm Ada"; its words
+//   for things are acronyms; "Um, so." is a disfluency and "Hello and welcome back." a greeting.
 //
 // Thread-safety: answerers are immutable and safe to call from many threads.
 #pragma once
@@ -109,6 +108,16 @@ namespace rr::oracle {
 // that an atom's words do not hold, added in parentheses. A draft Ledger B
 // passes, by construction.
 [[nodiscard]] Answerer write();
+
+// Answers judge missions (prompts/judge): every sentence says what its atoms
+// say ("none"), its evidence the words of the atoms it cites, quoted. A test
+// that wants an issue read changes the answer (a fault).
+[[nodiscard]] Answerer judge();
+
+// Answers flow missions (prompts/flow): the shorter draft reads better, and
+// two of a length tie; a rule that holds in either order, so swapping the
+// drafts never turns its preference into a tie.
+[[nodiscard]] Answerer flow();
 
 // Teaches `oracle` every mission kind the pipeline's stages send, punctuating
 // from `script` when there is one.

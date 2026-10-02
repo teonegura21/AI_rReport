@@ -2381,16 +2381,20 @@ name = "an-answer-has-a-lower-floor"
 file = "src/pipeline/write_stage.cpp"
 expect = "WriteStageTest.AnAnswersRoomIsNoLessThan512TokensNorMoreThan8192"
   [[mutant.edit]]
-  from = '''std::clamp<std::int64_t>(tokens, kLeastAnswer, kMostAnswer)'''
-  to = '''std::clamp<std::int64_t>(tokens, kLeastAnswer / 2, kMostAnswer)'''
+  from = '''                                kSpareTokens;
+    return static_cast<int>(std::clamp<std::int64_t>(tokens, kLeastAnswer, kMostAnswer));'''
+  to = '''                                kSpareTokens;
+    return static_cast<int>(std::clamp<std::int64_t>(tokens, kLeastAnswer / 2, kMostAnswer));'''
 
 [[mutant]]
 name = "an-answer-has-a-higher-ceiling"
 file = "src/pipeline/write_stage.cpp"
 expect = "WriteStageTest.AnAnswersRoomIsNoLessThan512TokensNorMoreThan8192"
   [[mutant.edit]]
-  from = '''std::clamp<std::int64_t>(tokens, kLeastAnswer, kMostAnswer)'''
-  to = '''std::clamp<std::int64_t>(tokens, kLeastAnswer, kMostAnswer * 2)'''
+  from = '''                                kSpareTokens;
+    return static_cast<int>(std::clamp<std::int64_t>(tokens, kLeastAnswer, kMostAnswer));'''
+  to = '''                                kSpareTokens;
+    return static_cast<int>(std::clamp<std::int64_t>(tokens, kLeastAnswer, kMostAnswer * 2));'''
 
 [[mutant]]
 name = "a-long-sentence-is-shown-whole"
@@ -2598,20 +2602,12 @@ expect = "WriteStageTest.OfTheDraftsThatPassTheFirstWithFewestWarningsIsKept"
   to = '''    return fidelity::check_article(transcript, ledger, draft, {.told = asked.atoms}).errors();'''
 
 [[mutant]]
-name = "the-last-of-the-fewest-is-kept"
+name = "drafts-are-ranked-worst-first"
 file = "src/pipeline/write_stage.cpp"
 expect = "WriteStageTest.OfTheDraftsThatPassTheFirstWithFewestWarningsIsKept"
   [[mutant.edit]]
-  from = '''            if (kept == nullptr || warnings < fewest) {'''
-  to = '''            if (kept == nullptr || warnings <= fewest) {'''
-
-[[mutant]]
-name = "the-first-draft-is-kept"
-file = "src/pipeline/write_stage.cpp"
-expect = "WriteStageTest.OfTheDraftsThatPassTheFirstWithFewestWarningsIsKept"
-  [[mutant.edit]]
-  from = '''            if (kept == nullptr || warnings < fewest) {'''
-  to = '''            if (kept == nullptr || (warnings < fewest && kept == nullptr)) {'''
+  from = '''        std::ranges::stable_sort(scored, {}, &std::pair<std::size_t, const agents::Answer*>::first);'''
+  to = '''        std::ranges::stable_sort(scored, std::ranges::greater{}, &std::pair<std::size_t, const agents::Answer*>::first);'''
 
 [[mutant]]
 name = "a-ceiling-leaves-the-article-reusable"
@@ -2768,8 +2764,10 @@ name = "every-mission-has-one-seed"
 file = "src/pipeline/write_stage.cpp"
 expect = "WriteStageTest.EverySectionIsWrittenByTheCommanderAndEveryAtomTold"
   [[mutant.edit]]
-  from = '''llm::derived_seed(context_->job->salt, WriteStage::kName, id, 0);'''
-  to = '''llm::derived_seed(context_->job->salt, WriteStage::kName, id.substr(0, 5), 0);'''
+  from = '''render(kPrompt, shared_, order));
+        const std::int64_t seed = llm::derived_seed(context_->job->salt, WriteStage::kName, id, 0);'''
+  to = '''render(kPrompt, shared_, order));
+        const std::int64_t seed = llm::derived_seed(context_->job->salt, WriteStage::kName, id.substr(0, 5), 0);'''
 
 [[mutant]]
 name = "the-infantry-writes"
@@ -2992,3 +2990,374 @@ expect = "WriteStageTest.TheKeyHoldsTheTierThePromptTheArmyAndWhatTheCommanderHo
   [[mutant.edit]]
   from = '''{"holds", commander == nullptr ? 0 : commander->ctx_per_slot}'''
   to = '''{"holds", commander == nullptr ? 0 : 32'768}'''
+
+# --- The judge's readings (judging.cpp) --------------------------------------------------
+
+[[mutant]]
+name = "an-issue-is-named-as-another"
+file = "src/pipeline/judging.cpp"
+expect = "Judging.IssuesHaveStableNamesAndReadings"
+  [[mutant.edit]]
+  from = '''{.issue = Issue::softens, .name = "softens",'''
+  to = '''{.issue = Issue::softens, .name = "adds",'''
+
+[[mutant]]
+name = "an-unknown-issue-is-none"
+file = "src/pipeline/judging.cpp"
+expect = "Judging.IssuesHaveStableNamesAndReadings"
+  [[mutant.edit]]
+  from = '''    return std::nullopt;
+}
+
+std::string_view reading_of'''
+  to = '''    return Issue::none;
+}
+
+std::string_view reading_of'''
+
+[[mutant]]
+name = "a-heading-is-a-sentence-to-judge"
+file = "src/pipeline/judging.cpp"
+expect = "Judging.AJudgeIsShownEachSentenceOfTheParagraphsAsWritten"
+  [[mutant.edit]]
+  from = '''        if (block.kind != knowledge::BlockKind::paragraph) {'''
+  to = '''        if (block.kind == knowledge::BlockKind::code) {'''
+
+[[mutant]]
+name = "a-sentence-past-the-last-is-misplaced"
+file = "src/pipeline/judging.cpp"
+expect = "Judging.EverySentenceIsJudgedOnceInOrder"
+  [[mutant.edit]]
+  from = '''        if (number > count) {'''
+  to = '''        if (number > count + 1) {'''
+
+[[mutant]]
+name = "misordered-sentences-pass"
+file = "src/pipeline/judging.cpp"
+expect = "Judging.EverySentenceIsJudgedOnceInOrder"
+  [[mutant.edit]]
+  from = '''        } else if (number != position) {'''
+  to = '''        } else if (number > position) {'''
+
+[[mutant]]
+name = "unjudged-sentences-pass"
+file = "src/pipeline/judging.cpp"
+expect = "Judging.EverySentenceIsJudgedOnceInOrder"
+  [[mutant.edit]]
+  from = '''    if (judged.size() < count) {'''
+  to = '''    if (judged.size() + 1 < count) {'''
+
+[[mutant]]
+name = "one-unjudged-is-said-a-range"
+file = "src/pipeline/judging.cpp"
+expect = "Judging.EverySentenceIsJudgedOnceInOrder"
+  [[mutant.edit]]
+  from = '''        problems.note(judged.size() + 1 == count'''
+  to = '''        problems.note(judged.size() + 2 == count'''
+
+[[mutant]]
+name = "a-reading-is-dropped"
+file = "src/pipeline/judging.cpp"
+expect = "Judging.AJudgmentIsReadAsItWasGiven"
+  [[mutant.edit]]
+  from = '''.reading = reading.is_null() ? std::nullopt : std::optional{reading.get<std::string>()},'''
+  to = '''.reading = reading.is_null() ? std::nullopt : std::optional<std::string>{},'''
+
+[[mutant]]
+name = "every-issue-is-none"
+file = "src/pipeline/judging.cpp"
+expect = "Judging.AJudgmentIsReadAsItWasGiven"
+  [[mutant.edit]]
+  from = '''.issue = issue_from_string(item.at("issue").get<std::string>()).value_or(Issue::none)});'''
+  to = '''.issue = issue_from_string(item.at("evidence").get<std::string>()).value_or(Issue::none)});'''
+
+[[mutant]]
+name = "first-is-read-as-second"
+file = "src/pipeline/judging.cpp"
+expect = "Judging.AFlowJudgesPreferenceIsRead"
+  [[mutant.edit]]
+  from = '''        return reason::Preference::first;'''
+  to = '''        return reason::Preference::second;'''
+
+[[mutant]]
+name = "second-is-read-as-a-tie"
+file = "src/pipeline/judging.cpp"
+expect = "Judging.AFlowJudgesPreferenceIsRead"
+  [[mutant.edit]]
+  from = '''    return better == "second" ? reason::Preference::second : reason::Preference::tie;'''
+  to = '''    return better == "first" ? reason::Preference::second : reason::Preference::tie;'''
+
+# --- The write stage's judge (write_stage.cpp) -------------------------------------------
+
+[[mutant]]
+name = "no-draft-is-judged"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheBestDraftsAreReadByAnotherFamilyAndComparedInBothOrders"
+  [[mutant.edit]]
+  from = '''        if (judged < 2) {
+            return drafts;  // nothing to choose between'''
+  to = '''        if (judged < 5) {
+            return drafts;  // nothing to choose between'''
+
+[[mutant]]
+name = "one-draft-is-judged"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ASingleDraftIsNotJudged"
+  [[mutant.edit]]
+  from = '''        if (judged < 2) {
+            return drafts;  // nothing to choose between'''
+  to = '''        if (judged < 1) {
+            return drafts;  // nothing to choose between'''
+
+[[mutant]]
+name = "judge-top-is-ignored"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheBestDraftsAreReadByAnotherFamilyAndComparedInBothOrders"
+  [[mutant.edit]]
+  from = '''std::min(static_cast<std::size_t>(std::max(compute_.judge_top, 0)), drafts.ranked.size());'''
+  to = '''std::max(static_cast<std::size_t>(std::max(compute_.judge_top, 0)), drafts.ranked.size());'''
+
+[[mutant]]
+name = "drafts-are-not-ranked"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.OnlyTheDraftsLedgerBRanksBestAreJudged"
+  [[mutant.edit]]
+  from = '''        std::ranges::stable_sort(scored, {}, &std::pair<std::size_t, const agents::Answer*>::first);
+'''
+  to = ''''''
+
+[[mutant]]
+name = "a-judge-of-the-writers-family-judges"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.APodWithoutAJudgeOfAnotherFamilyPicksByLedgerBAndSaysSoOnce"
+  [[mutant.edit]]
+  from = '''judge != nullptr && judge->family != commander->family) {'''
+  to = '''judge != nullptr) {'''
+
+[[mutant]]
+name = "no-judge-is-not-said"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.APodWithoutAJudgeOfAnotherFamilyPicksByLedgerBAndSaysSoOnce"
+  [[mutant.edit]]
+  from = '''            if (!unjudged_said_) {'''
+  to = '''            if (unjudged_said_) {'''
+
+[[mutant]]
+name = "no-judge-is-said-each-time"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.APodWithoutAJudgeOfAnotherFamilyPicksByLedgerBAndSaysSoOnce"
+  [[mutant.edit]]
+  from = '''                unjudged_said_ = true;'''
+  to = '''                unjudged_said_ = false;'''
+
+[[mutant]]
+name = "the-judge-thinks"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheBestDraftsAreReadByAnotherFamilyAndComparedInBothOrders"
+  [[mutant.edit]]
+  from = '''                                        .thinking = false},
+            .answer_tokens = judgment_tokens('''
+  to = '''                                        .thinking = true},
+            .answer_tokens = judgment_tokens('''
+
+[[mutant]]
+name = "the-flow-judge-thinks"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheBestDraftsAreReadByAnotherFamilyAndComparedInBothOrders"
+  [[mutant.edit]]
+  from = '''                                                           .thinking = false},
+                               .answer_tokens = kFlowTokens,'''
+  to = '''                                                           .thinking = true},
+                               .answer_tokens = kFlowTokens,'''
+
+[[mutant]]
+name = "the-commander-judges"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheBestDraftsAreReadByAnotherFamilyAndComparedInBothOrders"
+  [[mutant.edit]]
+  from = '''            .prompt = prompts_.judge.info->label(),
+            .role = "infantry",'''
+  to = '''            .prompt = prompts_.judge.info->label(),
+            .role = "commander",'''
+
+[[mutant]]
+name = "the-commander-compares"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheBestDraftsAreReadByAnotherFamilyAndComparedInBothOrders"
+  [[mutant.edit]]
+  from = '''                               .prompt = prompts_.flow.info->label(),
+                               .role = "infantry",'''
+  to = '''                               .prompt = prompts_.flow.info->label(),
+                               .role = "commander",'''
+
+[[mutant]]
+name = "a-judge-climbs-to-the-commander"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AJudgeWhoseReadingsFailItsChecksIsNotHandedToTheWriter"
+  [[mutant.edit]]
+  from = '''constexpr agents::Escalation kJudgeEscalation{.thinking = true, .commander = false, .other_family = false};'''
+  to = '''constexpr agents::Escalation kJudgeEscalation{.thinking = true, .commander = true, .other_family = false};'''
+
+[[mutant]]
+name = "a-refused-judge-goes-to-another-family"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AJudgeThatDeclinesLeavesThePickToLedgerBAndSaysSo"
+  [[mutant.edit]]
+  from = '''constexpr agents::Escalation kJudgeEscalation{.thinking = true, .commander = false, .other_family = false};'''
+  to = '''constexpr agents::Escalation kJudgeEscalation{.thinking = true, .commander = false, .other_family = true};'''
+
+[[mutant]]
+name = "the-judge-sees-no-sentence"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheJudgeIsShownTheAtomsAndEachSentenceAsWritten"
+  [[mutant.edit]]
+  from = '''lines += std::format("{}{}. {}", lines.empty() ? "" : "\n", index + 1, sentences[index]);'''
+  to = '''lines += std::format("{}{}. {}", lines.empty() ? "" : "\n", index, sentences[index]);'''
+
+[[mutant]]
+name = "a-flow-judge-sees-markers"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheJudgeIsShownTheAtomsAndEachSentenceAsWritten"
+  [[mutant.edit]]
+  from = '''                               {"first", plain(first)},'''
+  to = '''                               {"first", std::string{first}},'''
+
+[[mutant]]
+name = "issues-are-not-counted"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AnIssueTheJudgeReadsInOneDraftKeepsTheOther"
+  [[mutant.edit]]
+  from = '''keys.push_back({static_cast<double>(issues), static_cast<double>(drafts.warnings[draft]),'''
+  to = '''keys.push_back({static_cast<double>(issues * 0), static_cast<double>(drafts.warnings[draft]),'''
+
+[[mutant]]
+name = "warnings-outrank-issues"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.WhatADraftSaysOutranksTheTalksOrder"
+  [[mutant.edit]]
+  from = '''keys.push_back({static_cast<double>(issues), static_cast<double>(drafts.warnings[draft]),'''
+  to = '''keys.push_back({static_cast<double>(drafts.warnings[draft]), static_cast<double>(issues),'''
+
+[[mutant]]
+name = "flow-is-not-counted"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.HowTheDraftsReadDecidesBetweenDraftsTheJudgeReadsAlike"
+  [[mutant.edit]]
+  from = '''lost.has_value() ? static_cast<double>((*lost)[draft]) : 0.0});'''
+  to = '''lost.has_value() ? static_cast<double>((*lost)[draft] * 0) : 0.0});'''
+
+[[mutant]]
+name = "the-winner-loses"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.HowTheDraftsReadDecidesBetweenDraftsTheJudgeReadsAlike"
+  [[mutant.edit]]
+  from = '''                if (winner == reason::Winner::a) {
+                    ++lost[b];'''
+  to = '''                if (winner == reason::Winner::a) {
+                    ++lost[a];'''
+
+[[mutant]]
+name = "the-second-never-wins"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.HowTheDraftsReadDecidesBetweenDraftsTheJudgeReadsAlike"
+  [[mutant.edit]]
+  from = '''                } else if (winner == reason::Winner::b) {'''
+  to = '''                } else if (winner == reason::Winner::tie) {'''
+
+[[mutant]]
+name = "a-pair-is-asked-once"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheBestDraftsAreReadByAnotherFamilyAndComparedInBothOrders"
+  [[mutant.edit]]
+  from = '''for (const auto& [one, other] : {std::pair{a, b}, std::pair{b, a}}) {'''
+  to = '''for (const auto& [one, other] : {std::pair{a, b}, std::pair{a, b}}) {'''
+
+[[mutant]]
+name = "pairs-are-counted-wrong"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ThreeDraftsAreComparedPairByPairInBothOrders"
+  [[mutant.edit]]
+  from = '''        pairs += drafts.judged - first - 1;'''
+  to = '''        pairs += drafts.judged - first - 2;'''
+
+[[mutant]]
+name = "a-pairs-offset-is-forgotten"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ThreeDraftsAreComparedPairByPairInBothOrders"
+  [[mutant.edit]]
+  from = '''    pairs += b - a - 1;'''
+  to = '''    pairs += b - a - 1 - (b - a - 1);'''
+
+[[mutant]]
+name = "the-kept-drafts-reading-is-not-said"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.WhatTheJudgeReadsInTheDraftKeptIsPublished"
+  [[mutant.edit]]
+  from = '''            published(where, drafts.ranked[kept]->value.get<std::string>(), (*readings)[kept]);'''
+  to = '''            published(where, drafts.ranked[kept]->value.get<std::string>(), {});'''
+
+[[mutant]]
+name = "anothers-reading-is-said"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.WhatADraftSaysOutranksTheTalksOrder"
+  [[mutant.edit]]
+  from = '''            published(where, drafts.ranked[kept]->value.get<std::string>(), (*readings)[kept]);'''
+  to = '''            published(where, drafts.ranked[kept]->value.get<std::string>(), (*readings)[0]);'''
+
+[[mutant]]
+name = "a-clean-sentence-is-said"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheBestDraftsAreReadByAnotherFamilyAndComparedInBothOrders"
+  [[mutant.edit]]
+  from = '''            if (sentence.issue != Issue::none) {
+                RR_ASSERT('''
+  to = '''            if (sentence.issue == Issue::none) {
+                RR_ASSERT('''
+
+[[mutant]]
+name = "a-missing-reading-is-not-said"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AJudgeThatDeclinesLeavesThePickToLedgerBAndSaysSo"
+  [[mutant.edit]]
+  from = '''                output_.findings.push_back(std::format("{}: the judge could not read its drafts: {}", where,'''
+  to = '''                output_.findings.push_back(std::format("{}: the judge read its drafts: {}", where,'''
+
+[[mutant]]
+name = "a-judges-ceiling-is-reusable"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AJudgeStoppedByACeilingMakesTheResultThisJobsAlone"
+  [[mutant.edit]]
+  from = '''        if (outcome.verdict == agents::Verdict::ceiling) {
+            output_.reusable = false;
+        }
+    }'''
+  to = '''        if (outcome.verdict == agents::Verdict::refused) {
+            output_.reusable = false;
+        }
+    }'''
+
+[[mutant]]
+name = "the-judge-is-not-said-to-work"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.EverySectionIsWrittenByTheCommanderAndEveryAtomTold"
+  [[mutant.edit]]
+  from = '''        if (!judges.empty()) {'''
+  to = '''        if (judges.empty()) {'''
+
+[[mutant]]
+name = "every-section-is-said-judged"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ASectionWithoutParagraphsIsNotWritten"
+  [[mutant.edit]]
+  from = '''            if (any) {
+                ++judged;'''
+  to = '''            if (any || index < sections.size()) {
+                ++judged;'''
+
+[[mutant]]
+name = "the-key-forgets-the-judge"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheKeyHoldsTheTierThePromptTheArmyAndWhatTheCommanderHolds"
+  [[mutant.edit]]
+  from = '''prompts_fingerprint(*context.prompts, {kPrompt, kJudgePrompt, kFlowPrompt})'''
+  to = '''prompts_fingerprint(*context.prompts, {kPrompt, kFlowPrompt})'''
