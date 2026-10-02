@@ -18,7 +18,10 @@
 # P15); annotate and annotate_more with the eval's silver drafts (P16);
 # outline, describe and brief with the outline (P17); atomize with Ledger
 # A (P18); plan with the plan (P19); write with the article (P20); judge and
-# flow with the drafts' judging (P20b).
+# flow with the drafts' judging (P20b); seam with the seams (P20c);
+# eval_fact, eval_support and eval_flow with the eval's frozen judges (P24),
+# never the pipeline's own: a panel names them by version and hash
+# (eval/judges/*.toml), so a change to one of them makes a new panel.
 
 [[prompt]]
 name = "punctuate"
@@ -210,4 +213,51 @@ failure_modes = [
   [[prompt.version]]
   number = 1
   hash = "fc92f6ec48ab7137591a8304502498806eaf8b6f1592a712978ba79479a28160"
+  note = "first version"
+
+[[prompt]]
+name = "eval_fact"
+purpose = "Say whether an article tells one fact of its video, given the fact as a person noted it and the article's sentences most likely to tell it, their words quoted before the verdict: the eval's key-fact recall (rr/eval/judgement.hpp)."
+schema = "schemas/missions/eval_fact.json"
+shared = ["title", "channel"]
+failure_modes = [
+  "a fact told in other words read as not told: rewording is told",
+  "a fact told with another number or name read as told",
+  "told read where only part is: a number, who or a condition left out is partly",
+  "evidence in the judge's own words instead of the sentences': the check sends it back",
+]
+  [[prompt.version]]
+  number = 1
+  hash = "ef66ea0578b0abca1bbd4222f2f59e61ce91b588ce616e691d1e4e16a35713bc"
+  note = "first version"
+
+[[prompt]]
+name = "eval_support"
+purpose = "Read each sentence of an article's paragraph against the video's own sentences it rests on (the transcript's, not the pipeline's atoms), the evidence quoted before a verdict: the eval's supported-sentence precision and issue flags (rr/eval/judgement.hpp)."
+schema = "schemas/missions/eval_support.json"
+shared = ["title", "channel"]
+failure_modes = [
+  "plain words for the video's read as an issue: rewording is no issue",
+  "a sentence that leads into the next, saying nothing of its own, read as adding",
+  "who says it taken from the article instead of the video's sentences",
+  "a sentence skipped, or judged twice",
+]
+  [[prompt.version]]
+  number = 1
+  hash = "c1a76fb7ac4841665128d32c751bc99a597ac9e801d966c24b623ed7d5007e18"
+  note = "first version"
+
+[[prompt]]
+name = "eval_flow"
+purpose = "Say which of two versions of a section a reader who has not seen the video would rather read, the reasons first: the eval's pairwise flow, asked in both orders (rr/eval/judgement.hpp)."
+schema = "schemas/missions/eval_flow.json"
+shared = ["title", "channel"]
+failure_modes = [
+  "the longer version preferred for its length, or the first for coming first",
+  "a preference for the version whose words are the judge's own family's",
+  "reasons that praise both, then a preference they do not support",
+]
+  [[prompt.version]]
+  number = 1
+  hash = "6f8414ff5fca70fe2c4fa69785a4a4592e6ae8142243f7e34a1ed8975423d686"
   note = "first version"

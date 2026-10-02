@@ -30,6 +30,7 @@
 | `eval sheet ID [--out FILE]` | The sheet a person corrects a gold file with: each fact beside its moment, and what to correct | 0; 1 when the snapshot or gold file is missing or broken |
 | `eval run --label L [ID…] [--tier] [--replicates] [--split]` | The set's videos through the article stages, once a replicate; the same label again takes the run up ([eval.md](eval.md#runs-and-scores)) | 0 every job done; 1 a job not done or a video not fetched; 2 a label of another run |
 | `eval score --label L`, `eval export --label L [--format] [--out]` | Each job done scored by code; the scores, a row per video and replicate, as CSV or JSON | 0; 1 a job not done yet (score), no such run |
+| `eval judge --label L [--panel P]` | Each job done read by the eval's frozen judges, a judgement job each ([eval.md](eval.md#the-judges)) | 0; 1 a job not done or not judged; 2 a panel that is not this rreport's |
 | `doctor` | Checks the data directory, the library, the capture tools, RunPod and the runtime, says where model calls go (`models`), and what to do about each problem | 0 no failures (warnings allowed); 1 a failure |
 | `bench [options]` | Starts the pod if it is stopped, waits for its engines, and measures them (see below) | 0; 1 on failure |
 | `pod status` | The pod as RunPod reports it; then, from the runtime, its profile, its GPUs (VRAM total and used) and each engine's state | 0; 1 on failure |

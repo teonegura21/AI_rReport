@@ -121,6 +121,22 @@ inline std::vector<agents::Engine> engines(int commander_holds = 8192, int infan
                            .thinking = thinking}};
 }
 
+// The files eval/judges/eval-v1.toml pins: the commander's and the infantry's.
+inline constexpr std::string_view kQwenFile =
+    "c600de0300ae8a0eb3a6c0b8b5561b8b96f16bd2c863c2a66c42de29d391a747";
+inline constexpr std::string_view kGemmaFile =
+    "88f4a13b0bb95f031a7fad973e10854122fb67ebc34d214d39a2f65053046abc";
+
+// engines(), serving the files `qwen` and `gemma`.
+inline std::vector<agents::Engine> engines_serving(std::string_view qwen = kQwenFile,
+                                                   std::string_view gemma = kGemmaFile,
+                                                   int commander_holds = 8192, int infantry_holds = 4096) {
+    std::vector<agents::Engine> pod = engines(commander_holds, infantry_holds);
+    pod.at(0).checksum = std::string{qwen};
+    pod.at(1).checksum = std::string{gemma};
+    return pod;
+}
+
 // An army whose models are the oracle (rr/oracle/answers.hpp), with
 // `faults` made where they say, and every request kept.
 struct Rig {

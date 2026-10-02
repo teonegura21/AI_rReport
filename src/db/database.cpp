@@ -653,24 +653,79 @@ Result<int> Database::migrate(std::span<const Migration> migrations) {
                                 impl_->path.string(), current, latest));
     }
     for (const Migration& migration : migrations.subspan(static_cast<std::size_t>(current))) {
-        auto applied = write([&](WriteTx& tx) -> Result<void> {
-            // Checked again under the write lock: another process may have
-            // applied this migration since we read the version.
-            RR_TRY_ASSIGN(const std::int64_t version, tx.query_int("PRAGMA user_version"));
-            if (version >= migration.version) {
-                return ok();
-            }
-            RR_TRY(tx.execute_script(migration.sql));
-            // user_version lives in the database header, which is transactional:
-            // it commits (or rolls back) together with the migration.
-            return tx.execute_script(std::format("PRAGMA user_version = {}", migration.version));
-        });
-        if (!applied.has_value()) {
+        if (auto applied = apply(migration); !applied.has_value()) {
             return fail(std::move(applied).error().with_context(
                 std::format("while applying migration {} ({})", migration.version, migration.name)));
         }
     }
     return latest;
+}
+
+namespace {
+
+// Every reference the open transaction's rows break, by table and the
+// table it refers to: "tags → items (1)"; empty when none is.
+Result<std::string> broken_references(WriteTx& tx) {
+    std::string broken;
+    RR_TRY(
+        tx.query("SELECT \"table\", parent, COUNT(*) FROM pragma_foreign_key_check "
+                 "GROUP BY 1, 2 ORDER BY 1, 2",
+                 {}, [&](const Row& row) -> Result<void> {
+                     broken += std::format("{}{} \u2192 {} ({})", broken.empty() ? "" : ", ", row.get_text(0),
+                                           row.get_text(1), row.get_int(2));
+                     return ok();
+                 }));
+    return broken;
+}
+
+// `migration`, in the transaction `tx` holds: checked again under the
+// write lock, since another process may have applied it since the version
+// was read; refused when it leaves a reference broken.
+Result<void> migrate_in(WriteTx& tx, const Migration& migration) {
+    RR_TRY_ASSIGN(const std::int64_t version, tx.query_int("PRAGMA user_version"));
+    if (version >= migration.version) {
+        return ok();
+    }
+    RR_TRY(tx.execute_script(migration.sql));
+    RR_TRY_ASSIGN(const std::string broken, broken_references(tx));
+    if (!broken.empty()) {
+        return fail(Errc::integrity,
+                    std::format("it leaves rows referring to rows that do not exist: {}", broken));
+    }
+    // user_version lives in the database header, which is transactional:
+    // it commits (or rolls back) together with the migration.
+    return tx.execute_script(std::format("PRAGMA user_version = {}", migration.version));
+}
+
+}  // namespace
+
+// A migration may rebuild a table others refer to: a new table, the rows
+// copied, the old one dropped, the new one renamed. With foreign keys on,
+// that fails, deferred or not: dropping the old table breaks every reference
+// to it, SQLite counts them, and renaming the new one does not count them
+// back. So, as SQLite's procedure for the changes ALTER TABLE cannot make
+// has it (https://www.sqlite.org/lang_altertable.html#otheralter), they are
+// turned off around the transaction (the pragma does nothing inside one),
+// and every reference is checked before it commits. They are on again before
+// the writer is used for anything else: after the commit, or after the
+// rollback, never before it, since inside the transaction turning them on
+// would do nothing at all.
+Result<void> Database::apply(const Migration& migration) {
+    RR_TRY(ensure_no_transaction_on_this_thread());
+    const Lease lease = lease_writer();
+    Connection& connection = lease.connection();
+    RR_TRY(run(connection, "PRAGMA foreign_keys = OFF"));
+    const Result<void> applied = [&]() -> Result<void> {
+        RR_TRY(run(connection, "BEGIN IMMEDIATE"));
+        WriteTx tx{connection};
+        RR_TRY(migrate_in(tx, migration));
+        return run(connection, "COMMIT");
+    }();
+    if (sqlite3_get_autocommit(connection.get()) == 0) {
+        RR_TRY(run(connection, "ROLLBACK"));  // a failure left it open
+    }
+    RR_TRY(run(connection, "PRAGMA foreign_keys = ON"));
+    return applied;
 }
 
 const std::filesystem::path& Database::path() const noexcept {

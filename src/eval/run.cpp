@@ -2,6 +2,7 @@
 #include <rr/eval/run.hpp>
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <format>
@@ -150,16 +151,31 @@ Result<void> Runs::add(std::string_view run_id, const RunEntry& entry) {
     });
 }
 
-Result<void> Runs::keep(std::string_view run_id, const RunEntry& entry, std::string_view scorer,
-                        std::span<const Score> scores) {
+std::optional<std::string_view> scorer_family(std::string_view scorer) noexcept {
+    const std::size_t at = scorer.find('@');
+    if (at == 0 || at == std::string_view::npos || at + 1 == scorer.size()) {
+        return std::nullopt;
+    }
+    return scorer.substr(0, at);
+}
+
+Result<void> Runs::keep(std::string_view run_id, const RunEntry& entry, const Scoring& scoring) {
+    const std::optional<std::string_view> family = scorer_family(scoring.scorer);
+    if (!family.has_value()) {
+        return fail(Errc::invalid_argument,
+                    std::format("a scorer is named family@version, as code@1 is: not '{}'", scoring.scorer));
+    }
+    const std::string prefix = std::format("{}@", *family);
     return database_->write([&](db::WriteTx& tx) -> Result<void> {
-        RR_TRY(tx.execute("DELETE FROM eval_scores WHERE run_id = ?1 AND video = ?2 AND replicate = ?3",
-                          {run_id, entry.video, entry.replicate}));
-        for (const Score& score : scores) {
-            RR_TRY(
-                tx.execute("INSERT INTO eval_scores (run_id, video, replicate, metric, value, scorer) "
-                           "VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                           {run_id, entry.video, entry.replicate, score.metric, score.value, scorer}));
+        RR_TRY(
+            tx.execute("DELETE FROM eval_scores WHERE run_id = ?1 AND video = ?2 AND replicate = ?3 "
+                       "AND substr(scorer, 1, length(?4)) = ?4",
+                       {run_id, entry.video, entry.replicate, prefix}));
+        for (const Score& score : scoring.scores) {
+            RR_TRY(tx.execute(
+                "INSERT INTO eval_scores (run_id, video, replicate, metric, value, scorer) "
+                "VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                {run_id, entry.video, entry.replicate, score.metric, score.value, scoring.scorer}));
         }
         return ok();
     });
@@ -173,15 +189,20 @@ Result<std::vector<ScoredEntry>> Runs::scores(std::string_view run_id) const {
     }
     RR_TRY(database_->read([&](db::ReadTx& tx) {
         return tx.query(
-            "SELECT video, replicate, metric, value, scorer FROM eval_scores WHERE run_id = ?1 "
-            "ORDER BY video, replicate, metric",
+            "SELECT video, replicate, scorer, metric, value FROM eval_scores WHERE run_id = ?1 "
+            "ORDER BY video, replicate, scorer, metric",
             {run_id}, [&](const db::Row& row) -> Result<void> {
                 const auto found = scored.find(std::pair{row.get_text(0), static_cast<int>(row.get_int(1))});
                 if (found == scored.end()) {
                     return fail(Errc::integrity, "a score of no entry of its run");
                 }
-                found->second.scores.push_back(Score{.metric = row.get_text(2), .value = row.get_double(3)});
-                found->second.scorer = row.get_text(4);
+                std::vector<Scoring>& scorings = found->second.scorings;
+                if (std::string scorer = row.get_text(2);
+                    scorings.empty() || scorings.back().scorer != scorer) {
+                    scorings.push_back(Scoring{.scorer = std::move(scorer)});
+                }
+                scorings.back().scores.push_back(
+                    Score{.metric = row.get_text(3), .value = row.get_double(4)});
                 return ok();
             });
     }));

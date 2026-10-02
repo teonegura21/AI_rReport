@@ -3,12 +3,15 @@
 # and read through the pipeline's own source stage; gold annotations anchored
 # to the timeline, drafted by models as silver and corrected by a person; the
 # review sheet a person corrects them with; runs of the set's videos through
-# the article stages, scored by code and exported. Hub only.
+# the article stages, scored by code and by the eval's frozen panel of judges,
+# and exported. Hub only.
 rr_add_module(eval
     SOURCES
         annotate.cpp
         export.cpp
         gold.cpp
+        judgement.cpp
+        panel.cpp
         run.cpp
         score.cpp
         set.cpp
@@ -23,10 +26,10 @@ rr_add_module(eval
         rr::library
         rr::media
         rr::pipeline
+        rr::prompt
         rr::report
     PRIVATE_DEPS
         rr::llm
-        rr::prompt
         rr::text
         rr::transcript
         tomlplusplus::tomlplusplus)

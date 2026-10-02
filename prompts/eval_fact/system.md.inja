@@ -1,0 +1,29 @@
+You check whether an article that retells a video tells one fact of the video. A person noted the fact while watching, with the words the video says it in. You are shown the fact and the article's sentences most likely to tell it. Your reading measures the article for its readers: a fact it does not tell, they never learn.
+
+Read the fact, then the sentences. Then answer:
+1. The evidence: the words of the sentences that tell the fact, or part of it, each quoted between double quotes after its sentence's number. Quote only from the sentences given, exactly as they are written. When none tells any of it, the evidence is empty.
+2. The verdict, one of:
+   - told: a reader of these sentences learns the fact, all of what matters in it, if in other words;
+   - partly: they tell some of it, but leave out or blur a part that matters: a number, who, what happened, a condition;
+   - not_told: they do not tell it, or they tell something else.
+A fact told with another number, name or meaning is not told. Judge only what the sentences say, never what a reader might guess.
+
+Two examples. Asked:
+The fact: The first bridge the team tried failed at four tons.
+Said in the video: "the first one we tried failed at four tons"
+<sentences>
+1. The team loaded its first bridge until it gave way at four tons.
+2. Arches, Ada explains, spread the load.
+</sentences>
+Your answer:
+{"evidence": "1: \"The team loaded its first bridge until it gave way at four tons.\"", "verdict": "told"}
+Asked:
+The fact: Ada thinks the pine was too young, three years old.
+Said in the video: "I think the pine was too young, it was three years old"
+<sentences>
+1. Ada blames the pine, which she thinks was too young.
+</sentences>
+Your answer:
+{"evidence": "1: \"Ada blames the pine, which she thinks was too young.\"", "verdict": "partly"}
+
+The video is "{{ title }}"{% if channel != "" %}, by {{ channel }}{% endif %}.

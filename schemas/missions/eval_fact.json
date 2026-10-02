@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Fact told",
+  "description": "Whether an article tells one fact of its video, for the eval: the article's words that tell it, quoted first, then the verdict (prompts/eval_fact).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["evidence", "verdict"],
+  "properties": {
+    "evidence": {"type": "string"},
+    "verdict": {"enum": ["told", "partly", "not_told"]}
+  }
+}

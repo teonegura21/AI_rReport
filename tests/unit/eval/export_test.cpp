@@ -29,21 +29,23 @@ EvalSet set() {
 
 std::vector<ScoredEntry> entries() {
     return {ScoredEntry{.entry = RunEntry{.video = "radium-talk", .replicate = 0, .job = "01JA"},
-                        .scorer = "code@1",
-                        .scores = {Score{.metric = "minutes", .value = 12.5},
-                                   Score{.metric = "atoms_told", .value = 0.96}}},
+                        .scorings = {Scoring{.scorer = "code@1",
+                                             .scores = {Score{.metric = "minutes", .value = 12.5},
+                                                        Score{.metric = "atoms_told", .value = 0.96}}},
+                                     Scoring{.scorer = "judges@eval-v1",
+                                             .scores = {Score{.metric = "facts_told", .value = 0.9}}}}},
             ScoredEntry{.entry = RunEntry{.video = "radium-talk", .replicate = 1, .job = "01JB"},
-                        .scorer = "code@1",
-                        .scores = {Score{.metric = "minutes", .value = 13}}},
+                        .scorings = {Scoring{.scorer = "code@1",
+                                             .scores = {Score{.metric = "minutes", .value = 13}}}}},
             ScoredEntry{.entry = RunEntry{.video = "gone-talk", .replicate = 0, .job = "01JC"}}};
 }
 
-TEST(Export, ACsvRowAnEntryItsMetricsInColumnsSortedByName) {
+TEST(Export, ACsvRowAnEntryItsScorersThenItsMetricsInColumnsSortedByName) {
     EXPECT_EQ(to_csv(run(), set(), entries()),
-              "run,tier,video,type,captions,replicate,job,scorer,atoms_told,minutes\r\n"
-              "baseline,max,radium-talk,talk,manual,0,01JA,code@1,0.96,12.5\r\n"
-              "baseline,max,radium-talk,talk,manual,1,01JB,code@1,,13\r\n"
-              "baseline,max,gone-talk,,,0,01JC,,,\r\n");
+              "run,tier,video,type,captions,replicate,job,scorers,atoms_told,facts_told,minutes\r\n"
+              "baseline,max,radium-talk,talk,manual,0,01JA,code@1+judges@eval-v1,0.96,0.9,12.5\r\n"
+              "baseline,max,radium-talk,talk,manual,1,01JB,code@1,,,13\r\n"
+              "baseline,max,gone-talk,,,0,01JC,,,,\r\n");
 }
 
 TEST(Export, CsvQuotesWhatWouldBreakAField) {
@@ -52,7 +54,7 @@ TEST(Export, CsvQuotesWhatWouldBreakAField) {
     EXPECT_THAT(csv, ::testing::HasSubstr("\r\n\"thinking, \"\"on\"\"\",max,radium-talk,"));
 }
 
-TEST(Export, JsonHoldsTheRunAndEachEntrysScores) {
+TEST(Export, JsonHoldsTheRunAndEachEntrysScoresByScorer) {
     const json::Json exported = to_json(run(), set(), entries());
     EXPECT_EQ(
         exported.at("run"),
@@ -64,8 +66,9 @@ TEST(Export, JsonHoldsTheRunAndEachEntrysScores) {
                                                      {"job", "01JA"},
                                                      {"type", "talk"},
                                                      {"captions", "manual"},
-                                                     {"scorer", "code@1"},
-                                                     {"scores", {{"atoms_told", 0.96}, {"minutes", 12.5}}}}));
+                                                     {"scores",
+                                                      {{"code@1", {{"atoms_told", 0.96}, {"minutes", 12.5}}},
+                                                       {"judges@eval-v1", {{"facts_told", 0.9}}}}}}));
     EXPECT_EQ(exported.at("entries")[2].at("type"), "") << "a video no longer in the set";
 }
 

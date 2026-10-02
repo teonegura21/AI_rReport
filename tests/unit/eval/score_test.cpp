@@ -369,10 +369,12 @@ TEST_F(Scoring, ARunIsScoredWhereItsJobsAreDoneAgainstReviewedGoldOfTheirSnapsho
     EXPECT_THAT(scoring.notes, IsEmpty());
     const std::vector<ScoredEntry> kept = unwrap(runs().scores(run.id));
     ASSERT_EQ(kept.size(), 2U);
-    EXPECT_EQ(kept[0].scorer, kCodeScorer);
-    EXPECT_THAT(score(kept[0].scores, "facts_cited"), Optional(DoubleEq(1.0))) << "scored against its gold";
-    EXPECT_THAT(score(kept[0].scores, "minutes"), Optional(DoubleEq(30.0)));
-    EXPECT_THAT(kept[1].scores, IsEmpty()) << "not done: not scored";
+    ASSERT_EQ(kept[0].scorings.size(), 1U);
+    EXPECT_EQ(kept[0].scorings[0].scorer, kCodeScorer);
+    EXPECT_THAT(score(kept[0].scorings[0].scores, "facts_cited"), Optional(DoubleEq(1.0)))
+        << "scored against its gold";
+    EXPECT_THAT(score(kept[0].scorings[0].scores, "minutes"), Optional(DoubleEq(30.0)));
+    EXPECT_THAT(kept[1].scorings, IsEmpty()) << "not done: not scored";
 }
 
 TEST_F(Scoring, GoldNotReviewedOrOfAnotherSnapshotIsNotScoredAgainst) {
@@ -384,7 +386,7 @@ TEST_F(Scoring, GoldNotReviewedOrOfAnotherSnapshotIsNotScoredAgainst) {
     const auto scored_with = [&]() {
         const RunScoring scoring = unwrap(score_run(root(), set, run, runs(), database(), clock()));
         const std::vector<ScoredEntry> kept = unwrap(runs().scores(run.id));
-        return std::pair{scoring.notes, score(kept.at(0).scores, "facts_cited").has_value()};
+        return std::pair{scoring.notes, score(kept.at(0).scorings.at(0).scores, "facts_cited").has_value()};
     };
     EXPECT_EQ(scored_with(),
               (std::pair{std::vector<std::string>{"radium-talk: no gold yet: scored without it"}, false}));

@@ -1,0 +1,8 @@
+Which version of {{ what }} would you rather hand to a reader?
+
+<first>
+{{ first }}
+</first>
+<second>
+{{ second }}
+</second>

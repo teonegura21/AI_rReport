@@ -389,6 +389,74 @@ TEST(Migrations, AScriptMustNotEndTheTransaction) {
     EXPECT_EQ(unwrap(db.schema_version()), 0);
 }
 
+// kMigrations applied, with an item and a tag of it.
+Database tagged_items() {
+    Database db = open_memory();
+    unwrap(db.migrate(kMigrations));
+    unwrap(db.write([](WriteTx& tx) -> Result<void> {
+        RR_TRY(tx.execute("INSERT INTO items(id, name) VALUES (1, 'radium')"));
+        RR_TRY(tx.execute("INSERT INTO tags(item_id, tag) VALUES (1, 'element')"));
+        return ok();
+    }));
+    return db;
+}
+
+// Whether `db` refuses a tag of no item: whether its foreign keys are on.
+bool refuses_a_tag_of_no_item(Database& db) {
+    const Result<void> wrote = db.write([](WriteTx& tx) -> Result<void> {
+        RR_TRY(tx.execute("INSERT INTO tags(item_id, tag) VALUES (99, 'orphan')"));
+        return fail(Errc::cancelled, "kept by no test");  // rolled back, whatever it did
+    });
+    return wrote.error().code() == Errc::conflict;
+}
+
+TEST(Migrations, MayRebuildATableOthersReferToKeepingItsRowsAndTheirReferences) {
+    Database db = tagged_items();
+    ASSERT_TRUE(refuses_a_tag_of_no_item(db)) << "foreign keys are on to begin with";
+    // SQLite cannot change a CHECK in place: the table is made anew.
+    const std::array rebuilt{
+        kMigrations[0], kMigrations[1],
+        Migration{.version = 3,
+                  .name = "0003_item_kinds",
+                  .sql = "CREATE TABLE items_new(id INTEGER PRIMARY KEY, name TEXT NOT NULL, "
+                         "kind TEXT NOT NULL DEFAULT 'plain' CHECK (kind IN ('plain', 'rare'))) STRICT;"
+                         "INSERT INTO items_new(id, name) SELECT id, name FROM items;"
+                         "DROP TABLE items;"
+                         "ALTER TABLE items_new RENAME TO items;"}};
+    EXPECT_EQ(unwrap(db.migrate(rebuilt)), 3);
+    EXPECT_EQ(unwrap(db.read([](ReadTx& tx) {
+                  return tx.query_text(
+                      "SELECT name || ' ' || kind || ' ' || tag FROM items JOIN tags "
+                      "ON tags.item_id = items.id");
+              })),
+              "radium plain element")
+        << "the item kept, and its tag still its";
+    EXPECT_TRUE(refuses_a_tag_of_no_item(db)) << "foreign keys are on again";
+}
+
+TEST(Migrations, AMigrationThatBreaksAReferenceIsRefusedAndRolledBack) {
+    Database db = tagged_items();
+    const std::array breaking{
+        kMigrations[0], kMigrations[1],
+        Migration{.version = 3, .name = "0003_forget", .sql = "DELETE FROM items WHERE id = 1;"}};
+    const Result<int> refused = db.migrate(breaking);
+    EXPECT_ERRC(refused, Errc::integrity);
+    EXPECT_THAT(refused.error().describe(),
+                HasSubstr("it leaves rows referring to rows that do not exist: tags → items (1)"));
+    EXPECT_EQ(unwrap(db.schema_version()), 2);
+    EXPECT_EQ(count_items(db), 1) << "rolled back: the item is still there";
+    EXPECT_TRUE(refuses_a_tag_of_no_item(db))
+        << "foreign keys on again, the transaction ended first: inside it, the pragma does nothing";
+}
+
+TEST(Migrations, ForeignKeysAreOnAgainAfterAMigrationThatFails) {
+    Database db = tagged_items();
+    const std::array broken{kMigrations[0], kMigrations[1],
+                            Migration{.version = 3, .name = "0003_broken", .sql = "THIS IS NOT SQL;"}};
+    EXPECT_FALSE(db.migrate(broken).has_value());
+    EXPECT_TRUE(refuses_a_tag_of_no_item(db));
+}
+
 // ---------------------------------------------------------------------------
 // File databases: WAL, persistence, concurrency
 // ---------------------------------------------------------------------------

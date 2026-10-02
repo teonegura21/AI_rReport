@@ -44,6 +44,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -76,6 +77,14 @@ struct Costs {
 
     friend bool operator==(const Costs&, const Costs&) = default;
 };
+
+// The gold of `video` to score against: one a person reviewed, for the
+// snapshot the eval keeps (the one its run read). Otherwise none, and
+// `notes` says why: no gold yet, silver only, or gold of another snapshot.
+// Errors: the gold file's, when it is there and cannot be read.
+[[nodiscard]] Result<std::optional<Gold>> reviewed_gold(const std::filesystem::path& eval_root,
+                                                        const EvalVideo& video,
+                                                        std::vector<std::string>& notes);
 
 // What `job` cost: its running time, its call log (library::CallLog) and its
 // battle log (library::MissionLog).

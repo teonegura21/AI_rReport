@@ -43,8 +43,11 @@
 
 #include <rr/core/clock.hpp>
 #include <rr/core/file_io.hpp>
+#include <rr/core/hash.hpp>
 #include <rr/core/result.hpp>
 #include <rr/db/database.hpp>
+#include <rr/eval/gold.hpp>
+#include <rr/eval/panel.hpp>
 #include <rr/eval/set.hpp>
 #include <rr/eval/snapshot.hpp>
 #include <rr/json/json.hpp>
@@ -52,6 +55,7 @@
 #include <rr/library/stage_store.hpp>
 #include <rr/net/http_client.hpp>
 #include <rr/proc/process.hpp>
+#include <rr/prompt/library.hpp>
 #include <rr/testkit/result.hpp>
 #include <rr/testkit/temp_dir.hpp>
 
@@ -408,6 +412,23 @@ std::string cell(const std::string& row, std::size_t index) {
     return row.substr(at, row.find_first_of(",\r", at) - at);
 }
 
+// A panel file freezing this rreport's prompts and judges serving `sha256`.
+std::string panel_for(std::string_view sha256) {
+    const prompt::Library prompts = unwrap(prompt::Library::embedded());
+    std::string text =
+        std::format("name = \"e2e-v1\"\nprocedure = {}\ncalibrated = false\n", eval::kJudgingProcedure);
+    for (const std::string_view name : eval::kJudgePrompts) {
+        const prompt::Version& current = prompts.find(name)->current();
+        text += std::format("[[prompt]]\nname = \"{}\"\nversion = {}\nhash = \"{}\"\n", name, current.number,
+                            current.hash);
+    }
+    for (const std::string_view role : {"commander", "infantry"}) {
+        text +=
+            std::format("[[judge]]\nrole = \"{}\"\nmodel = \"{}\"\nsha256 = \"{}\"\n", role, role, sha256);
+    }
+    return text;
+}
+
 TEST_F(EndToEnd, AnEvalRunTakesEachReplicateThroughThenScoresAndExportsIt) {
     // The eval's directory: its set, and the lecture's snapshot, as `rreport
     // eval fetch` keeps it.
@@ -424,8 +445,8 @@ TEST_F(EndToEnd, AnEvalRunTakesEachReplicateThroughThenScoresAndExportsIt) {
                                              .kind = media::CaptionKind::manual,
                                              .format = transcript::CaptionFormat::vtt,
                                              .content = lecture_captions()}};
-    (void)unwrap(eval::keep_snapshot(eval_dir, set.videos.front(), pipeline::to_json(lecture),
-                                     std::chrono::system_clock::now()));
+    const eval::Snapshot snapshot = unwrap(eval::keep_snapshot(
+        eval_dir, set.videos.front(), pipeline::to_json(lecture), std::chrono::system_clock::now()));
 
     const OracleRuntime runtime;
     const Library library = this->library("eval");
@@ -457,7 +478,7 @@ TEST_F(EndToEnd, AnEvalRunTakesEachReplicateThroughThenScoresAndExportsIt) {
     ASSERT_EQ(exported.status.code, 0) << exported.stderr_text;
     const std::string& csv = exported.stdout_text;
     const std::string header = csv.substr(0, csv.find('\r'));
-    EXPECT_THAT(header, ::testing::StartsWith("run,tier,video,type,captions,replicate,job,scorer,"));
+    EXPECT_THAT(header, ::testing::StartsWith("run,tier,video,type,captions,replicate,job,scorers,"));
     const std::size_t atoms_told = column(header, "atoms_told");
     ASSERT_NE(atoms_told, std::string::npos) << header;
     const std::string first = csv.substr(csv.find('\n') + 1);
@@ -473,7 +494,44 @@ TEST_F(EndToEnd, AnEvalRunTakesEachReplicateThroughThenScoresAndExportsIt) {
         0);
     const json::Json read = unwrap(json::parse(unwrap(read_file(exported_json))));
     ASSERT_EQ(read.at("entries").size(), 2U);
-    EXPECT_EQ(read.at("entries")[1].at("scores").at("sentences_accounted"), 1.0);
+    EXPECT_EQ(read.at("entries")[1].at("scores").at("code@1").at("sentences_accounted"), 1.0) << "by scorer";
+
+    // A person's gold for the video, reviewed for the snapshot kept; and a
+    // panel frozen for this rreport's prompts and the files this runtime
+    // serves, both engines the same pretend weights.
+    const eval::Gold gold{.video = "weighing-radium",
+                          .snapshot = snapshot.hash,
+                          .status = eval::GoldStatus::gold,
+                          .reviewer = "Ada",
+                          .facts = {eval::Fact{.id = "F1",
+                                               .start = 90s,
+                                               .end = 115s,
+                                               .importance = eval::Importance::core,
+                                               .quote = "The NRC lent us 3 scales",
+                                               .claim = "The NRC lent them three scales."}}};
+    (void)home().write_file("eval/gold/weighing-radium.toml", eval::to_toml(gold));
+    (void)home().write_file("eval/judges/e2e-v1.toml", panel_for(sha256(component::kModelWeights).hex()));
+    const std::int64_t before = runtime.commander().completions + runtime.infantry().completions;
+
+    const proc::RunResult judged = eval({"judge", "--label", "base", "--panel", "e2e-v1"});
+    ASSERT_EQ(judged.status.code, 0) << judged.stdout_text << judged.stderr_text;
+    EXPECT_THAT(judged.stdout_text,
+                HasSubstr("run base: 2 of 2 jobs judged, by judges@e2e-v1 (reported only: no person has "
+                          "calibrated the panel yet)"));
+    const std::int64_t judging = runtime.commander().completions + runtime.infantry().completions;
+    EXPECT_GT(judging, before) << "both judges asked";
+    EXPECT_EQ(eval({"judge", "--label", "base", "--panel", "e2e-v1"}).status.code, 0);
+    EXPECT_EQ(runtime.commander().completions + runtime.infantry().completions, judging)
+        << "its judgements done: nothing asked again";
+
+    const std::string both = eval({"export", "--label", "base"}).stdout_text;
+    const std::string both_header = both.substr(0, both.find('\r'));
+    const std::string both_first = both.substr(both.find('\n') + 1);
+    EXPECT_THAT(both_first, HasSubstr(",code@1+judges@e2e-v1,"))
+        << "the code's scores and the judges', side by side";
+    EXPECT_EQ(cell(both_first, column(both_header, "facts_told")), "1");
+    EXPECT_EQ(cell(both_first, column(both_header, "sentences_supported")), "1");
+    EXPECT_EQ(cell(both_first, column(both_header, "atoms_told")), "1") << "the code's, kept";
 }
 
 }  // namespace

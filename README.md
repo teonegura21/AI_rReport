@@ -109,11 +109,12 @@ rreport report <job>                                  # its article as a web pag
 
 Automatic captions come without punctuation: the pod's infantry punctuates them, without changing a word. Without a pod, they are cut where the speaker paused, and the job says so.
 
-**Measuring it** ([docs/design/eval.md](docs/design/eval.md)): the eval's videos, read once and kept, are taken through the stages a number of times each, and every article is scored by code against what a person wrote down the video says.
+**Measuring it** ([docs/design/eval.md](docs/design/eval.md)): the eval's videos, read once and kept, are taken through the stages a number of times each, and every article is scored by code against what a person wrote down the video says, and read by frozen judges: two families of models, never the pipeline's own judges, asked the same way every time.
 
 ```bash
 rreport eval run --label baseline      # the dev videos, three times each, at max; again: taken up
 rreport eval score --label baseline    # each article scored: what it kept, against the gold, and its cost
+rreport eval judge --label baseline    # read by the frozen judges: facts told, sentences the video supports
 rreport eval export --label baseline   # a row per video and replicate (CSV; --format json)
 ```
 

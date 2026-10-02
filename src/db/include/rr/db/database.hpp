@@ -23,7 +23,10 @@
 //
 //   * Migrations: numbered SQL scripts applied in order, each in its own
 //     transaction, tracked with PRAGMA user_version. A database newer than the
-//     program is refused rather than silently misread.
+//     program is refused rather than silently misread. Foreign keys are off
+//     while a migration runs, so that it may rebuild a table others refer to
+//     (SQLite's way to change what ALTER TABLE cannot, such as a CHECK), and
+//     every reference is checked before it commits.
 //
 // Invariants
 //   * A connection is returned to its pool in autocommit mode (no transaction
@@ -193,6 +196,10 @@ public:
     auto write(F&& fn) -> std::invoke_result_t<F, WriteTx&>;
 
     // Applies the pending migrations and returns the resulting schema version.
+    // Each runs with foreign keys off, and commits only when every reference
+    // still holds: one that breaks a reference fails with Errc::integrity
+    // and is rolled back. Foreign keys are on again after each, whatever
+    // happened.
     [[nodiscard]] Result<int> migrate(std::span<const Migration> migrations);
 
     [[nodiscard]] Result<int> schema_version();
@@ -231,6 +238,8 @@ private:
     explicit Database(std::unique_ptr<Impl> impl) noexcept;
 
     [[nodiscard]] Result<void> ensure_no_transaction_on_this_thread() const;
+    // Applies one migration (see migrate()) when the database is older.
+    [[nodiscard]] Result<void> apply(const Migration& migration);
     [[nodiscard]] Lease lease_reader();
     [[nodiscard]] Lease lease_writer();
     [[nodiscard]] static Result<void> run(Connection& connection, std::string_view sql);

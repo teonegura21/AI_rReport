@@ -1,0 +1,18 @@
+{
+  "shared": {
+    "title": "How bridges stand up",
+    "channel": "Engineering Hour"
+  },
+  "orders": [
+    {
+      "claim": "Arches spread the load of a bridge.",
+      "quote": "arches spread the load",
+      "sentences": "1. Arches, Ada explains, spread the load.\n2. The team's second bridge held eleven tons."
+    },
+    {
+      "claim": "The second bridge held eleven tons.",
+      "quote": "the second one held eleven tons",
+      "sentences": "1. The team's second bridge held eleven tons."
+    }
+  ]
+}

@@ -75,13 +75,16 @@ TEST_F(JobsTest, AJobSaysWhatItMakes) {
     EXPECT_EQ(unwrap(jobs().find(annotation.id)).kind, JobKind::annotation);
     EXPECT_EQ(unwrap(jobs().recent(1)).front().kind, JobKind::annotation);
     EXPECT_EQ(unwrap(jobs().find(article.id)).kind, JobKind::article);
+    const Job judgement = unwrap(jobs().create(article.id, "eval-v1", 0, JobKind::judgement));
+    EXPECT_EQ(unwrap(jobs().find(judgement.id)).kind, JobKind::judgement) << "the table takes it (0007)";
 }
 
 TEST(JobKind, NamesItsKinds) {
-    for (const JobKind kind : {JobKind::article, JobKind::annotation}) {
+    for (const JobKind kind : {JobKind::article, JobKind::annotation, JobKind::judgement}) {
         EXPECT_EQ(job_kind_from_string(to_string(kind)), kind);
     }
     EXPECT_EQ(to_string(JobKind::annotation), "annotation");
+    EXPECT_EQ(to_string(JobKind::judgement), "judgement");
     EXPECT_EQ(job_kind_from_string("report"), std::nullopt);
 }
 

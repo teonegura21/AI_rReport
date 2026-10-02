@@ -11,11 +11,13 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <rr/core/clock.hpp>
 #include <rr/core/file_io.hpp>
 #include <rr/core/hash.hpp>
 #include <rr/fakes/fake_runpod.hpp>
 #include <rr/json/json.hpp>
 #include <rr/library/call_log.hpp>
+#include <rr/library/jobs.hpp>
 #include <rr/library/library.hpp>
 #include <rr/proc/process.hpp>
 #include <rr/testkit/result.hpp>
@@ -486,6 +488,26 @@ TEST_F(Hub, TheEvalKeepsItsVideosAndDraftsTheirGold) {
         rreport({"eval", "--eval-dir", eval.string(), "sheet", "radium-talk", "--out", out.string()});
     ASSERT_EQ(saved.status.code, 0);
     EXPECT_EQ(unwrap(read_file(out)), sheet.stdout_text);
+}
+
+TEST_F(Hub, AJudgementIsTakenUpByEvalJudgeAndPagedByTheArticleItJudges) {
+    std::string article;
+    std::string judgement;
+    {
+        db::Database database =
+            unwrap(library::open_database(data_dir() / "libraries" / "default" / "library.db"));
+        library::Jobs jobs{database, SystemClock::instance()};
+        article = unwrap(jobs.create("talk.vtt", "max", 0)).id;
+        judgement = unwrap(jobs.create(article, "eval-v1", 0, library::JobKind::judgement)).id;
+    }
+    const proc::RunResult resumed = rreport({"resume", judgement});
+    EXPECT_EQ(resumed.status.code, 2) << "a judgement runs other stages than an article";
+    EXPECT_THAT(resumed.stderr_text,
+                HasSubstr("`rreport eval judge` takes it up again, with its run's label"));
+    const proc::RunResult paged = rreport({"report", judgement});
+    EXPECT_EQ(paged.status.code, 2) << "a judgement has no article of its own";
+    EXPECT_THAT(paged.stderr_text, HasSubstr(std::format("`rreport report {}` pages that one", article)));
+    EXPECT_THAT(rreport({"jobs"}).stdout_text, HasSubstr("judgement"));
 }
 
 TEST_F(Hub, TheEvalSaysWhatIsMissing) {

@@ -440,7 +440,7 @@ Each stage says how it is doing on stderr. At the end, the command says what the
 
 ## What waits
 
-- **How a seam reads.** A rewrite is kept for what it says, never for how it reads: the judge reads its fidelity, not its flow. Whether a flow comparison, as the write stage makes between drafts, would keep better seams is the eval's to say (P24, P26).
+- **How a seam reads.** A rewrite is kept for what it says, never for how it reads: the judge reads its fidelity, not its flow. Whether a flow comparison, as the write stage makes between drafts, would keep better seams is the eval's to say (its pairwise flow, P25; the sweep, P26).
 - **Repairs aimed at the sentences that fail.** A draft that fails is written again whole, with what failed; rewriting only its failing sentences, with their evidence, waits for the eval to say it pays (P26).
 - **An article-wide plan.** Each section is planned alone, so an atom that repeats one of another section (a closing summary of the whole talk) is told again where it was said, and the writer may refer back. A pass over the whole article that finds such duplicates, and the article's title and lead, wait for the write stage and the eval (P20, P26).
 - **Plans compared.** One plan is drawn a section, checked by code; whether drawing several and keeping the best pays is the eval's to say (P26).

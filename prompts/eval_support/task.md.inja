@@ -1,0 +1,5 @@
+Check {{ what }}, sentence by sentence, against the video.
+
+<sentences>
+{{ sentences }}
+</sentences>

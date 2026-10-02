@@ -1,0 +1,21 @@
+You read two versions of one section of an article that retells a video, and say which you would rather hand to a reader who has not seen the video. Both tell the same things, and both were checked against the video: judge only how they read.
+
+A version reads better when:
+1. a newcomer can follow it from its first sentence, each name and term explained, or clear from what comes before;
+2. every sentence earns its place: nothing padded, nothing said twice;
+3. its ideas come in a natural order, and its links say how they relate: because, but, so, then.
+A version is neither better nor worse for being longer, nor for coming first.
+
+Give your reasons first, comparing the two on these points, then which reads better: "first", "second", or "tie" when neither does.
+
+An example. Asked:
+<first>
+The probe reached Jupiter in five years. It used a gravity assist.
+</first>
+<second>
+The probe used a gravity assist, borrowing speed from a planet's pull as it flew past, and so reached Jupiter in five years.
+</second>
+Your answer:
+{"reasons": "The first names the gravity assist only after the result, never says what it is, and leaves the reader to guess that it explains the five years. The second explains the term and ties it to the result; it is longer, but no word of it is wasted.", "better": "second"}
+
+The video is "{{ title }}"{% if channel != "" %}, by {{ channel }}{% endif %}.

@@ -31,3 +31,29 @@ expect = "JobKind.NamesItsKinds"
   [[mutant.edit]]
   from = '''    {JobKind::annotation, "annotation"},'''
   to = '''    {JobKind::annotation, "article"},'''
+
+# --- Migration 0007: jobs made anew, the judgement kind (P24) ----------------------
+
+[[mutant]]
+name = "migration-7-forgets-the-judgement-kind"
+file = "migrations/0007_judgement.sql"
+expect = "JobsTest.AJobSaysWhatItMakes"
+  [[mutant.edit]]
+  from = '''                  CHECK (kind IN ('article', 'annotation', 'judgement'))'''
+  to = '''                  CHECK (kind IN ('article', 'annotation'))'''
+
+[[mutant]]
+name = "migration-7-loses-a-column"
+file = "migrations/0007_judgement.sql"
+expect = "Library.JobsMadeAnewByMigration7KeepEveryJobAndWhatRefersToThem"
+  [[mutant.edit]]
+  from = '''SELECT id, source, tier, salt, status, error, title, elapsed_ms, created_at_ms, updated_at_ms, kind'''
+  to = '''SELECT id, source, tier, salt, status, NULL, title, elapsed_ms, created_at_ms, updated_at_ms, kind'''
+
+[[mutant]]
+name = "the-judgement-kind-has-no-name"
+file = "src/library/jobs.cpp"
+expect = "JobKind.NamesItsKinds"
+  [[mutant.edit]]
+  from = '''    {JobKind::judgement, "judgement"},'''
+  to = ''''''

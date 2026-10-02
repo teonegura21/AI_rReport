@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Version preferred",
+  "description": "Which of two versions of a section a reader would rather read, for the eval: the reasons first, then the preference (prompts/eval_flow).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["reasons", "better"],
+  "properties": {
+    "reasons": {"type": "string", "minLength": 1},
+    "better": {"enum": ["first", "second", "tie"]}
+  }
+}

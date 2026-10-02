@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Sentences supported",
+  "description": "An article's sentences read against the video's own words, one by one, for the eval: for each, the video's words quoted, then a reading of what it says beyond or against them, then the issue (prompts/eval_support).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sentences"],
+  "properties": {
+    "sentences": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sentence", "evidence", "reading", "issue"],
+        "properties": {
+          "sentence": {"type": "integer", "minimum": 1},
+          "evidence": {"type": "string"},
+          "reading": {"type": ["string", "null"]},
+          "issue": {"enum": ["none", "adds", "softens", "intensifies", "misattributes", "contradicts"]}
+        }
+      }
+    }
+  }
+}

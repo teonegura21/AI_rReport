@@ -27,6 +27,7 @@
 #include <chrono>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -77,11 +78,25 @@ struct Score {
     friend bool operator==(const Score&, const Score&) = default;
 };
 
-// An entry and its scores, as kept.
+// What one scorer computed for an entry. A scorer is named with its version,
+// "family@version": "code@1" (rr/eval/score.hpp), "judges@eval-v1"
+// (rr/eval/judgement.hpp). A family's newer version replaces what an older
+// one computed, whole; families stand side by side.
+struct Scoring {
+    std::string scorer{};
+    std::vector<Score> scores{};
+
+    friend bool operator==(const Scoring&, const Scoring&) = default;
+};
+
+// The family of `scorer`: what comes before its '@' ("judges" of
+// "judges@eval-v1"); none for a name that is not "family@version".
+[[nodiscard]] std::optional<std::string_view> scorer_family(std::string_view scorer) noexcept;
+
+// An entry and what each scorer computed for it, as kept.
 struct ScoredEntry {
     RunEntry entry{};
-    std::string scorer{};  // what computed them: "code@1"
-    std::vector<Score> scores{};
+    std::vector<Scoring> scorings{};  // by scorer, each's scores by metric; none: not scored yet
 
     friend bool operator==(const ScoredEntry&, const ScoredEntry&) = default;
 };
@@ -108,13 +123,15 @@ public:
     // Errc::conflict when that replicate has a job already.
     [[nodiscard]] Result<void> add(std::string_view run_id, const RunEntry& entry);
 
-    // Keeps `scores` as `entry`'s, computed by `scorer`, replacing every
-    // score it had: a job scored again is scored whole.
-    [[nodiscard]] Result<void> keep(std::string_view run_id, const RunEntry& entry, std::string_view scorer,
-                                    std::span<const Score> scores);
+    // Keeps `scoring` as `entry`'s, replacing every score its scorer's family
+    // kept for it: an entry scored again by a family is scored whole by it,
+    // and other families' scores stay. Errc::invalid_argument for a scorer
+    // not named "family@version"; Errc::conflict for a metric another
+    // family scored.
+    [[nodiscard]] Result<void> keep(std::string_view run_id, const RunEntry& entry, const Scoring& scoring);
 
-    // Every entry of the run with its scores, by video then replicate; an
-    // entry not scored yet has none.
+    // Every entry of the run with what each scorer computed, by video then
+    // replicate; an entry not scored yet has no scoring.
     [[nodiscard]] Result<std::vector<ScoredEntry>> scores(std::string_view run_id) const;
 
 private:

@@ -27,6 +27,10 @@
 //                     it cost
 //   eval export --label L
 //                     a run's scores, a row per video and replicate (CSV, JSON)
+//   eval judge --label L [--panel P]
+//                     each done job of a run read by the eval's frozen judges:
+//                     which facts its article tells, which of its sentences
+//                     the video supports (P24)
 //   doctor            check the data directory, the library, the capture tools,
 //                     RunPod and the runtime, and say what to do about problems
 //   bench             measure the pod: its engines, the commander's and the
@@ -54,6 +58,7 @@
 #include <filesystem>
 #include <format>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -72,6 +77,8 @@
 #include <rr/eval/annotate.hpp>
 #include <rr/eval/export.hpp>
 #include <rr/eval/gold.hpp>
+#include <rr/eval/judgement.hpp>
+#include <rr/eval/panel.hpp>
 #include <rr/eval/run.hpp>
 #include <rr/eval/score.hpp>
 #include <rr/eval/set.hpp>
@@ -625,13 +632,22 @@ int resume(const Global& global, const std::string& id, const proc::TerminationS
                           job->title.value_or(job->source).c_str());
         return kOk;
     }
-    if (job->kind != library::JobKind::article) {
-        return failed(
-            kBadConfiguration,
-            Error{Errc::invalid_argument,
-                  std::format("job {} drafts an eval annotation: `rreport eval annotate` takes it up "
-                              "again, with the video's id",
-                              job->id)});
+    switch (job->kind) {
+        case library::JobKind::article:
+            break;
+        case library::JobKind::annotation:
+            return failed(kBadConfiguration,
+                          Error{Errc::invalid_argument,
+                                std::format("job {} drafts an eval annotation: `rreport eval annotate` takes "
+                                            "it up again, with the video's id",
+                                            job->id)});
+        case library::JobKind::judgement:
+            return failed(
+                kBadConfiguration,
+                Error{Errc::invalid_argument,
+                      std::format("job {} judges an article for the eval: `rreport eval judge` takes "
+                                  "it up again, with its run's label",
+                                  job->id)});
     }
     return run_job(*hub, *database, *std::move(job), signals);
 }
@@ -769,6 +785,7 @@ struct EvalFlags {
     int replicates = 3;                        // run: three at least, to see the noise (ADR-0019)
     std::string split{"dev"};                  // run: dev, or test for a gate
     std::string format{"csv"};                 // export: csv or json
+    std::string panel{"eval-v1"};              // judge: the frozen panel (eval/judges/<panel>.toml)
 };
 
 // The command that does `verb` to `video`, with the flags that differ from
@@ -1175,6 +1192,182 @@ int eval_export(const Global& global, const EvalFlags& flags) {
     return kOk;
 }
 
+// The facts of `video`'s gold where a person reviewed it for the snapshot
+// kept; none otherwise, and `notes` says why.
+Result<std::vector<eval::Fact>> reviewed_facts(const EvalFlags& flags, const eval::EvalSet& set,
+                                               std::string_view video, std::vector<std::string>& notes) {
+    const eval::EvalVideo* found = set.find(video);
+    if (found == nullptr) {
+        notes.push_back(std::format("{}: the set has it no more: judged without gold", video));
+        return std::vector<eval::Fact>{};
+    }
+    RR_TRY_ASSIGN(const std::optional<eval::Gold> gold, eval::reviewed_gold(flags.root, *found, notes));
+    return gold.has_value() ? gold->facts : std::vector<eval::Fact>{};
+}
+
+// What judging a run's entries needs, read once (`rreport eval judge`).
+struct RunJudging {
+    const EvalFlags* flags = nullptr;
+    const eval::EvalSet* set = nullptr;
+    const Hub* hub = nullptr;
+    db::Database* database = nullptr;
+    const prompt::Library* prompts = nullptr;
+    const eval::Panel* panel = nullptr;
+    eval::Runs* runs = nullptr;
+    const eval::EvalRun* run = nullptr;
+    const proc::TerminationSignals* signals = nullptr;
+    std::string again{};                                                  // takes the run up again
+    std::map<std::string, std::vector<eval::Fact>, std::less<>> facts{};  // a video's, read once
+    std::vector<std::string> notes{};
+};
+
+// How judging one entry went: report()'s exit code, or kFailure for an
+// article job not done; and whether its scores were kept.
+struct EntryJudged {
+    int code = kOk;
+    bool scored = false;
+};
+
+// Takes `job`, the judgement of `article`, through its stage, raising the
+// army only if the stage asks for it (as run_job() does an article job).
+//
+// clang-analyzer follows the std::function that video_length_of() makes as
+// far as its allocation, but not to its release, which libstdc++ makes
+// through a function pointer when the army is destroyed: it reports a leak
+// that is none. ASan's leak checker, on every test that judges, finds none.
+// NOLINTBEGIN(clang-analyzer-cplusplus.NewDeleteLeaks)
+Result<eval::JudgementRun> judge_job(const RunJudging& judging, const library::Job& article, library::Job job,
+                                     eval::ArticleToJudge to_judge) {
+    const HubSettings& settings = judging.hub->settings;
+    db::Database& database = *judging.database;
+    const net::HttpClient http = make_http();
+    JobArmy forces{JobArmy::Inputs{.settings = &settings,
+                                   .http = &http,
+                                   .database = &database,
+                                   .clock = &SystemClock::instance(),
+                                   .job_id = job.id,
+                                   .elapsed_before = job.elapsed,
+                                   .video_length = video_length_of(database, article.id),
+                                   .stop = judging.signals->stop_token(),
+                                   .progress = say}};
+    pipeline::StageContext context{.prompts = judging.prompts,
+                                   .work_directory = settings.library_database().parent_path() / "jobs",
+                                   .stop = judging.signals->stop_token(),
+                                   .progress = say};
+    if (settings.llm_mode == LlmMode::replay || settings.runtime.has_value()) {
+        context.army = [&forces] { return forces.raise(); };
+    }
+    return eval::run_judgement(std::move(job), *judging.panel, std::move(to_judge), database,
+                               SystemClock::instance(), std::move(context));
+}
+// NOLINTEND(clang-analyzer-cplusplus.NewDeleteLeaks)
+
+// One entry of the run: its article job's judgement started, or taken up,
+// run, and its scores kept once it is done.
+Result<EntryJudged> judge_entry(RunJudging& judging, const eval::RunEntry& entry) {
+    db::Database& database = *judging.database;
+    const library::Jobs jobs{database, SystemClock::instance()};
+    RR_TRY_ASSIGN(const library::Job article, jobs.find(entry.job));
+    if (article.status != library::JobStatus::done) {
+        (void)std::printf("not judged: %s, replicate %d: job %s is %s\n", entry.video.c_str(),
+                          entry.replicate, article.id.c_str(),
+                          std::string{library::to_string(article.status)}.c_str());
+        return EntryJudged{.code = kFailure};
+    }
+    auto known = judging.facts.find(entry.video);
+    if (known == judging.facts.end()) {
+        RR_TRY_ASSIGN(std::vector<eval::Fact> read,
+                      reviewed_facts(*judging.flags, *judging.set, entry.video, judging.notes));
+        known = judging.facts.emplace(entry.video, std::move(read)).first;
+    }
+    const library::StageStore store{database, SystemClock::instance()};
+    RR_TRY_ASSIGN(eval::ArticleToJudge to_judge, eval::article_to_judge(article, store, known->second));
+    RR_TRY_ASSIGN(library::Job job,
+                  eval::start_judgement(database, SystemClock::instance(), article, *judging.panel));
+    (void)std::fprintf(stderr, "judge %s: %s, replicate %d\n", judging.run->spec.label.c_str(),
+                       entry.video.c_str(), entry.replicate + 1);
+    RR_TRY_ASSIGN(eval::JudgementRun done, judge_job(judging, article, std::move(job), std::move(to_judge)));
+    const int code = report(done.run, judging.again, *judging.signals);
+    if (!done.scoring.has_value()) {
+        return EntryJudged{.code = code};
+    }
+    RR_TRY(judging.runs->keep(judging.run->id, entry, *done.scoring));
+    return EntryJudged{.code = code, .scored = true};
+}
+
+int eval_judge(const Global& global, const EvalFlags& flags, const proc::TerminationSignals& signals) {
+    auto hub = load(global);
+    if (!hub.has_value()) {
+        return failed(kBadConfiguration, hub.error());
+    }
+    auto set = eval_set(flags);
+    if (!set.has_value()) {
+        return failed(kBadConfiguration, set.error());
+    }
+    auto panel = eval::read_panel(flags.root, flags.panel);
+    if (!panel.has_value()) {
+        return failed(kBadConfiguration, panel.error());
+    }
+    auto prompts = prompt::Library::embedded();
+    if (!prompts.has_value()) {
+        return failed(kFailure, prompts.error());
+    }
+    if (auto frozen = eval::check_panel(*panel, *prompts); !frozen.has_value()) {
+        return failed(kBadConfiguration, frozen.error());
+    }
+    auto database = library::open_database(hub->settings.library_database());
+    if (!database.has_value()) {
+        return failed(kFailure, database.error());
+    }
+    eval::Runs runs{*database, SystemClock::instance()};
+    auto run = runs.find(flags.label);
+    if (!run.has_value()) {
+        return failed(kFailure, run.error());
+    }
+    auto entries = runs.entries(run->id);
+    if (!entries.has_value()) {
+        return failed(kFailure, entries.error());
+    }
+    RunJudging judging{.flags = &flags,
+                       .set = &*set,
+                       .hub = &*hub,
+                       .database = &*database,
+                       .prompts = &*prompts,
+                       .panel = &*panel,
+                       .runs = &runs,
+                       .run = &*run,
+                       .signals = &signals,
+                       .again = eval_command(flags, "judge",
+                                             std::format("--label {} --panel {}", flags.label, flags.panel))};
+    std::size_t judged = 0;
+    int code = kOk;
+    for (const eval::RunEntry& entry : *entries) {
+        auto one = judge_entry(judging, entry);
+        if (!one.has_value()) {
+            return failed(kFailure, one.error());
+        }
+        if (one->scored) {
+            ++judged;
+        }
+        if (one->code != kOk) {
+            code = one->code;
+            if (signals.received() != 0) {
+                break;  // interrupted: the same command takes the run up
+            }
+        }
+    }
+    for (const std::string& note : judging.notes) {
+        (void)std::printf("%s\n", note.c_str());
+    }
+    (void)std::printf("run %s: %zu of %zu jobs judged, by %s%s\n", run->spec.label.c_str(), judged,
+                      entries->size(), panel->scorer().c_str(),
+                      panel->calibrated ? "" : " (reported only: no person has calibrated the panel yet)");
+    if (judged < entries->size()) {
+        (void)std::printf("  take it up again with: %s\n", judging.again.c_str());
+    }
+    return code;
+}
+
 int show_config(const Global& global, bool origin) {
     const auto config = load_config(global);
     if (!config.has_value()) {
@@ -1282,6 +1475,12 @@ int run(int argc, char** argv) {
     eval_export_command->add_option("--label", eval_flags.label, "The run")->required();
     eval_export_command->add_option("--format", eval_flags.format, "csv or json (default: csv)");
     eval_export_command->add_option("--out", eval_flags.out, "Write it to this file (default: print it)");
+    auto* eval_judge_command = eval_group->add_subcommand(
+        "judge",
+        "Read each done job of a run with the eval's frozen judges: facts told, sentences supported");
+    eval_judge_command->add_option("--label", eval_flags.label, "The run")->required();
+    eval_judge_command->add_option("--panel", eval_flags.panel,
+                                   "The frozen panel, eval/judges/<panel>.toml (default: eval-v1)");
 
     auto* doctor_command = app.add_subcommand("doctor", "Check what the hub needs, and say what to do");
 
@@ -1374,6 +1573,9 @@ int run(int argc, char** argv) {
     }
     if (*eval_export_command) {
         return eval_export(global, eval_flags);
+    }
+    if (*eval_judge_command) {
+        return eval_judge(global, eval_flags, signals);
     }
     if (*doctor_command) {
         return doctor(global, signals);

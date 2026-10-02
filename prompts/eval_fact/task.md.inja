@@ -1,0 +1,7 @@
+Does the article tell this fact?
+
+The fact: {{ claim }}
+Said in the video: "{{ quote }}"
+<sentences>
+{{ sentences }}
+</sentences>

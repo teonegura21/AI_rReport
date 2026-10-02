@@ -50,7 +50,8 @@ if(RR_BUILD_HUB AND RR_BUILD_RUNTIME)
             rr::net
             rr::oracle
             rr::pipeline
-            rr::proc)
+            rr::proc
+            rr::prompt)
     target_compile_definitions(rr_end_to_end_tests PRIVATE
         RR_HUB_BINARY="$<TARGET_FILE:rreport>"
         RR_RUNTIME_BINARY="$<TARGET_FILE:rreport-runtime>"

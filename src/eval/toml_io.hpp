@@ -89,6 +89,16 @@ public:
         return std::optional<std::int64_t>{value};
     }
 
+    // A true or false, which must be there.
+    [[nodiscard]] Result<bool> boolean(std::string_view key) {
+        const toml::node* value = node(key);
+        const auto* flag = value == nullptr ? nullptr : value->as_boolean();
+        if (flag == nullptr) {
+            return wrong(key, "true or false");
+        }
+        return flag->get();
+    }
+
     // Marks `key` as read elsewhere (an array of tables, read table by table).
     void allow(std::string_view key) { read_.emplace(key); }
 

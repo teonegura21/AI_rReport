@@ -133,8 +133,23 @@ name = "an-annotation-is-a-page"
 file = "src/report/contents.cpp"
 expect = "ContentsTest.AnEvalAnnotationHasNoArticleToShow"
   [[mutant.edit]]
-  from = '''    if (job.kind != library::JobKind::article) {'''
-  to = '''    if (false) {'''
+  from = '''        case library::JobKind::article:
+            break;
+        case library::JobKind::annotation:'''
+  to = '''        case library::JobKind::annotation:
+            break;
+        case library::JobKind::article:'''
+
+[[mutant]]
+name = "a-judgement-is-a-page"
+file = "src/report/contents.cpp"
+expect = "ContentsTest.AnEvalJudgementHasNoArticleOfItsOwnButTheOneItJudges"
+  [[mutant.edit]]
+  from = '''        case library::JobKind::judgement:
+            return fail('''
+  to = '''        case library::JobKind::judgement:
+            break;
+            return fail('''
 
 [[mutant]]
 name = "a-failed-stage-is-listed"

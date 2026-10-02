@@ -417,6 +417,80 @@ TEST(OracleAnswers, FlowPrefersTheShorterDraftInEitherOrder) {
     EXPECT_EQ(better("Same.", "Also."), "tie");
 }
 
+// An eval_fact mission: its fact, as prompts/eval_fact/task.md.inja lays it
+// out, and `sentences` in its block.
+llm::ChatRequest fact_asked(std::string_view quote, std::string_view sentences) {
+    llm::ChatRequest request = asked("eval_fact");
+    request.messages = {
+        llm::Message::system("You check whether an article tells one fact."),
+        llm::Message::user(std::format("Does the article tell this fact?\n\nThe fact: It failed.\n"
+                                       "Said in the video: \"{}\"\n<sentences>\n{}\n</sentences>\n",
+                                       quote, sentences))};
+    return request;
+}
+
+TEST(OracleAnswers, EvalFactIsToldWhereASentenceHoldsTheQuotesWordsInARow) {
+    Oracle oracle;
+    teach_stages(oracle);
+    const auto read = [&](std::string_view quote, std::string_view sentences) {
+        return unwrap(json::parse(unwrap(oracle.chat(fact_asked(quote, sentences), {}, {})).first().content));
+    };
+    const std::string_view sentences =
+        "1. Arches spread the load.\n"
+        "2. The First Bridge failed, at four tons, said Ada.";
+    EXPECT_EQ(read("the first bridge failed at four tons", sentences),
+              (json::Json{{"evidence", "2: \"The First Bridge failed, at four tons, said Ada.\""},
+                          {"verdict", "told"}}))
+        << "case and punctuation aside";
+    EXPECT_EQ(read("the bridge failed at four tons", sentences),
+              (json::Json{{"evidence", ""}, {"verdict", "not_told"}}))
+        << "its words, but not in a row";
+    EXPECT_ERRC(oracle.chat(holding("eval_fact", "sentences", sentences), {}, {}), Errc::invalid_argument)
+        << "no quote line";
+    llm::ChatRequest unclosed = fact_asked("x", sentences);
+    unclosed.messages.back() = llm::Message::user(
+        std::format("Said in the video: \"the first bridge\n<sentences>\n{}\n</sentences>\n", sentences));
+    EXPECT_ERRC(oracle.chat(unclosed, {}, {}), Errc::invalid_argument) << "a quote never closed";
+    EXPECT_ERRC(oracle.chat(fact_asked("told", "First, a sentence unnumbered."), {}, {}),
+                Errc::invalid_argument);
+}
+
+TEST(OracleAnswers, EvalSupportReadsEverySentenceAsNoneQuotingItsFirstEvidence) {
+    Oracle oracle;
+    teach_stages(oracle);
+    const std::string_view sentences =
+        "1. The first bridge failed at four tons.\n"
+        "   S12 [1:02, Ada] The first one we tried failed at four tons.\n"
+        "   S13 [1:05] It held for an hour.\n"
+        "2. Arches help.\n"
+        "   (no sentence of the video: it cites none)";
+    const json::Json judged = unwrap(json::parse(
+        unwrap(oracle.chat(holding("eval_support", "sentences", sentences), {}, {})).first().content));
+    EXPECT_EQ(judged,
+              (json::Json{{"sentences",
+                           {{{"sentence", 1},
+                             {"evidence", "S12: \"The first one we tried failed at four tons.\""},
+                             {"reading", nullptr},
+                             {"issue", "none"}},
+                            {{"sentence", 2}, {"evidence", ""}, {"reading", nullptr}, {"issue", "none"}}}}}))
+        << "the speaker in the brackets, never in the quote";
+    EXPECT_ERRC(oracle.chat(holding("eval_support", "sentences", "First. Unnumbered."), {}, {}),
+                Errc::invalid_argument);
+}
+
+TEST(OracleAnswers, EvalFlowPrefersTheShorterVersionInEitherOrder) {
+    Oracle oracle;
+    teach_stages(oracle);
+    const auto better = [&](std::string_view first, std::string_view second) {
+        const llm::ChatResponse response =
+            unwrap(oracle.chat(holding_both("eval_flow", "first", first, "second", second), {}, {}));
+        return unwrap(json::parse(response.first().content)).at("better").get<std::string>();
+    };
+    EXPECT_EQ(better("Short.", "Longer one."), "first");
+    EXPECT_EQ(better("Longer one.", "Short."), "second");
+    EXPECT_EQ(better("Same.", "Also."), "tie");
+}
+
 TEST(OracleAnswers, SeamRewritesBothParagraphsAsWritten) {
     Oracle oracle;
     teach_stages(oracle);

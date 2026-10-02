@@ -848,10 +848,34 @@ expect = "RunsTest.EveryEntryIsListedWithItsScoresOrNone"
 [[mutant]]
 name = "scores-are-added-to"
 file = "src/eval/run.cpp"
-expect = "RunsTest.AJobScoredAgainIsScoredWhole"
+expect = "RunsTest.AnEntryScoredAgainByAFamilyIsScoredWholeByItAndOtherFamiliesStay"
   [[mutant.edit]]
-  from = '''"DELETE FROM eval_scores WHERE run_id = ?1 AND video = ?2 AND replicate = ?3"'''
-  to = '''"DELETE FROM eval_scores WHERE run_id = ?1 AND video = ?2 AND replicate = ?3 AND 0"'''
+  from = '''"AND substr(scorer, 1, length(?4)) = ?4",'''
+  to = '''"AND substr(scorer, 1, length(?4)) = ?4 AND 0",'''
+
+[[mutant]]
+name = "a-scoring-replaces-every-family"
+file = "src/eval/run.cpp"
+expect = "RunsTest.AnEntryScoredAgainByAFamilyIsScoredWholeByItAndOtherFamiliesStay"
+  [[mutant.edit]]
+  from = '''"AND substr(scorer, 1, length(?4)) = ?4",'''
+  to = '''"AND (substr(scorer, 1, length(?4)) = ?4 OR 1)",'''
+
+[[mutant]]
+name = "a-name-without-at-is-a-scorer"
+file = "src/eval/run.cpp"
+expect = "ScorerFamily.IsWhatComesBeforeTheAt"
+  [[mutant.edit]]
+  from = '''    if (at == 0 || at == std::string_view::npos || at + 1 == scorer.size()) {'''
+  to = '''    if (at == 0 || at + 1 == scorer.size()) {'''
+
+[[mutant]]
+name = "scorings-are-not-told-apart"
+file = "src/eval/run.cpp"
+expect = "RunsTest.AnEntryScoredAgainByAFamilyIsScoredWholeByItAndOtherFamiliesStay"
+  [[mutant.edit]]
+  from = '''scorings.empty() || scorings.back().scorer != scorer) {'''
+  to = '''scorings.empty() || scorer.empty()) {'''
 
 [[mutant]]
 name = "the-test-split-is-planned"
@@ -1052,7 +1076,7 @@ expect = "Export.CsvQuotesWhatWouldBreakAField"
 [[mutant]]
 name = "a-video-has-no-kind"
 file = "src/eval/export.cpp"
-expect = "Export.ACsvRowAnEntryItsMetricsInColumnsSortedByName"
+expect = "Export.ACsvRowAnEntryItsScorersThenItsMetricsInColumnsSortedByName"
   [[mutant.edit]]
   from = '''    return {std::string{to_string(found->type)}, std::string{media::to_string(found->captions)}};'''
   to = '''    return {std::string{}, std::string{media::to_string(found->captions)}};'''
@@ -1060,7 +1084,393 @@ expect = "Export.ACsvRowAnEntryItsMetricsInColumnsSortedByName"
 [[mutant]]
 name = "json-has-no-scores"
 file = "src/eval/export.cpp"
-expect = "Export.JsonHoldsTheRunAndEachEntrysScores"
+expect = "Export.JsonHoldsTheRunAndEachEntrysScoresByScorer"
   [[mutant.edit]]
   from = '''                        {"scores", std::move(scores)}});'''
   to = '''                        {"scores", json::Json::object()}});'''
+
+[[mutant]]
+name = "json-scores-are-flat"
+file = "src/eval/export.cpp"
+expect = "Export.JsonHoldsTheRunAndEachEntrysScoresByScorer"
+  [[mutant.edit]]
+  from = '''            scores[scoring.scorer] = std::move(values);'''
+  to = '''            scores.update(values);'''
+
+[[mutant]]
+name = "a-row-names-one-scorer"
+file = "src/eval/export.cpp"
+expect = "Export.ACsvRowAnEntryItsScorersThenItsMetricsInColumnsSortedByName"
+  [[mutant.edit]]
+  from = '''        scorers += (scorers.empty() ? "" : "+") + scoring.scorer;'''
+  to = '''        scorers = scoring.scorer;'''
+
+[[mutant]]
+name = "a-later-scorers-metric-is-missed"
+file = "src/eval/export.cpp"
+expect = "Export.ACsvRowAnEntryItsScorersThenItsMetricsInColumnsSortedByName"
+  [[mutant.edit]]
+  from = '''            return &*found;
+        }
+    }'''
+  to = '''            return &*found;
+        }
+        break;
+    }'''
+
+# --- The frozen panel (panel.cpp, P24) -----------------------------------------
+
+[[mutant]]
+name = "a-panel-may-ask-with-any-prompt"
+file = "src/eval/panel.cpp"
+expect = "Panel.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''RR_TRY_ASSIGN(prompt.name, table.choice("name", kJudgePrompts));'''
+  to = '''RR_TRY_ASSIGN(prompt.name, table.text("name"));'''
+
+[[mutant]]
+name = "a-prompt-may-be-pinned-twice"
+file = "src/eval/panel.cpp"
+expect = "Panel.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (std::ranges::contains(panel.prompts, prompt.name, &PanelPrompt::name)) {'''
+  to = '''    if (false && std::ranges::contains(panel.prompts, prompt.name, &PanelPrompt::name)) {'''
+
+[[mutant]]
+name = "a-prompt-may-go-unpinned"
+file = "src/eval/panel.cpp"
+expect = "Panel.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''        if (!std::ranges::contains(panel.prompts, needed, &PanelPrompt::name)) {'''
+  to = '''        if (false && !std::ranges::contains(panel.prompts, needed, &PanelPrompt::name)) {'''
+
+[[mutant]]
+name = "a-role-may-judge-twice"
+file = "src/eval/panel.cpp"
+expect = "Panel.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (std::ranges::contains(panel.judges, judge.role, &PanelJudge::role)) {'''
+  to = '''    if (false && std::ranges::contains(panel.judges, judge.role, &PanelJudge::role)) {'''
+
+[[mutant]]
+name = "any-text-is-a-checksum"
+file = "src/eval/panel.cpp"
+expect = "Panel.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (!is_sha256(judge.sha256)) {'''
+  to = '''    if (judge.sha256.empty() && !is_sha256(judge.sha256)) {'''
+
+[[mutant]]
+name = "a-panel-needs-no-judge"
+file = "src/eval/panel.cpp"
+expect = "Panel.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (panel.judges.empty()) {'''
+  to = '''    if (false && panel.judges.empty()) {'''
+
+[[mutant]]
+name = "a-file-may-name-another-panel"
+file = "src/eval/panel.cpp"
+expect = "Panel.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (panel.name != name) {'''
+  to = '''    if (false && panel.name != name) {'''
+
+[[mutant]]
+name = "the-procedure-is-not-checked"
+file = "src/eval/panel.cpp"
+expect = "Panel.APanelFrozenWithAnotherPromptOrProcedureIsRefused"
+  [[mutant.edit]]
+  from = '''    if (panel.procedure != kJudgingProcedure) {'''
+  to = '''    if (false && panel.procedure != kJudgingProcedure) {'''
+
+[[mutant]]
+name = "a-prompt-version-is-not-checked"
+file = "src/eval/panel.cpp"
+expect = "Panel.APanelFrozenWithAnotherPromptOrProcedureIsRefused"
+  [[mutant.edit]]
+  from = '''        if (current.number != pinned.version || current.hash != pinned.hash) {'''
+  to = '''        if (current.hash != pinned.hash) {'''
+
+[[mutant]]
+name = "a-prompt-hash-is-not-checked"
+file = "src/eval/panel.cpp"
+expect = "Panel.APanelFrozenWithAnotherPromptOrProcedureIsRefused"
+  [[mutant.edit]]
+  from = '''        if (current.number != pinned.version || current.hash != pinned.hash) {'''
+  to = '''        if (current.number != pinned.version) {'''
+
+[[mutant]]
+name = "any-file-is-the-judge"
+file = "src/eval/panel.cpp"
+expect = "Panel.AJudgeIsTheEngineServingItsPinnedFile"
+  [[mutant.edit]]
+  from = '''        if (engine != nullptr && engine->checksum == judge.sha256) {'''
+  to = '''        if (engine != nullptr) {'''
+
+# --- The judgement (judgement.cpp, P24) ----------------------------------------
+
+[[mutant]]
+name = "headings-are-prose"
+file = "src/eval/judgement.cpp"
+expect = "ArticleSentences.AreItsProseSentencesWithoutMarkersEachWithItsParagraphAndSection"
+  [[mutant.edit]]
+  from = '''        if (block.kind == knowledge::BlockKind::heading) {'''
+  to = '''        if (false && block.kind == knowledge::BlockKind::heading) {'''
+
+[[mutant]]
+name = "a-marker-of-no-atom-is-cited"
+file = "src/eval/judgement.cpp"
+expect = "ArticleSentences.AreItsProseSentencesWithoutMarkersEachWithItsParagraphAndSection"
+  [[mutant.edit]]
+  from = '''if (ledger.find(marker.atom) != nullptr && !std::ranges::contains(read.cited, marker.atom)) {'''
+  to = '''if ((ledger.find(marker.atom) != nullptr || true) && !std::ranges::contains(read.cited, marker.atom)) {'''
+
+[[mutant]]
+name = "a-citing-sentence-is-not-shown"
+file = "src/eval/judgement.cpp"
+expect = "FactCandidates.ASentenceCitingTheFactsAtomsIsShownInWhateverWordsItTellsIt"
+  [[mutant.edit]]
+  from = '''        if (chosen.size() < kMostCandidates &&
+            std::ranges::any_of(sentence.cited, [&](AtomId id) { return atoms.contains(id); })) {'''
+  to = '''        if (false && chosen.size() < kMostCandidates &&
+            std::ranges::any_of(sentence.cited, [&](AtomId id) { return atoms.contains(id); })) {'''
+
+[[mutant]]
+name = "twelve-is-no-limit"
+file = "src/eval/judgement.cpp"
+expect = "FactCandidates.AreTwelveAtMost"
+  [[mutant.edit]]
+  from = '''        if (chosen.size() < kMostCandidates &&
+            std::ranges::any_of(sentence.cited, [&](AtomId id) { return atoms.contains(id); })) {'''
+  to = '''        if (
+            std::ranges::any_of(sentence.cited, [&](AtomId id) { return atoms.contains(id); })) {'''
+
+[[mutant]]
+name = "bm25-adds-nothing"
+file = "src/eval/judgement.cpp"
+expect = "FactCandidates.AreTheSentencesCitingItsSentencesThenTheBestByBm25InTheArticlesOrder"
+  [[mutant.edit]]
+  from = '''fact.quote), kBm25Candidates)) {'''
+  to = '''fact.quote), 0)) {'''
+
+[[mutant]]
+name = "candidates-in-the-order-found"
+file = "src/eval/judgement.cpp"
+expect = "FactCandidates.AreInTheArticlesOrderWhereverTheyWereFound"
+  [[mutant.edit]]
+  from = '''    std::ranges::sort(chosen);'''
+  to = ''''''
+
+[[mutant]]
+name = "a-sentence-citing-nothing-is-shown-nothing"
+file = "src/eval/judgement.cpp"
+expect = "EvidenceOf.IsTheVideosSentencesOfTheAtomsCitedOrTheParagraphsWhenNone"
+  [[mutant.edit]]
+  from = '''    if (cited.empty()) {'''
+  to = '''    if (false && cited.empty()) {'''
+
+[[mutant]]
+name = "evidence-shown-twice"
+file = "src/eval/judgement.cpp"
+expect = "EvidenceOf.IsTheVideosSentencesOfTheAtomsCitedOrTheParagraphsWhenNone"
+  [[mutant.edit]]
+  from = '''    said.erase(repeated.begin(), repeated.end());'''
+  to = '''    said.erase(repeated.end(), repeated.end());'''
+
+[[mutant]]
+name = "evidence-need-not-be-quoted"
+file = "src/eval/judgement.cpp"
+expect = "EvidenceProblems.AQuoteMustBeWhatWasShownWordForWord"
+  [[mutant.edit]]
+  from = '''    if (required && passages.empty()) {'''
+  to = '''    if (false && required && passages.empty()) {'''
+
+[[mutant]]
+name = "any-quote-was-shown"
+file = "src/eval/judgement.cpp"
+expect = "EvidenceProblems.AQuoteMustBeWhatWasShownWordForWord"
+  [[mutant.edit]]
+  from = '''        const bool found = std::ranges::any_of('''
+  to = '''        const bool found = true || std::ranges::any_of('''
+
+[[mutant]]
+name = "curly-quotes-quote-nothing"
+file = "src/eval/judgement.cpp"
+expect = "EvidenceProblems.AQuoteMustBeWhatWasShownWordForWord"
+  [[mutant.edit]]
+  from = '''        const bool is_curly = curly < straight;'''
+  to = '''        const bool is_curly = false && curly < straight;'''
+
+[[mutant]]
+name = "a-fact-near-no-sentence-is-asked"
+file = "src/eval/judgement.cpp"
+expect = "JudgementStage.ReadsEveryFactAndSentenceByEveryJudgeOfThePanel"
+  [[mutant.edit]]
+  from = '''            if (!judged.candidates.empty()) {'''
+  to = '''            if (true) {'''
+
+[[mutant]]
+name = "a-mission-is-sent-though-not-held"
+file = "src/eval/judgement.cpp"
+expect = "JudgementStage.AParagraphItsJudgesEngineCannotHoldIsCutUntilEachPartFits"
+  [[mutant.edit]]
+  from = '''        if (army_->holds(mission)) {'''
+  to = '''        if (true || army_->holds(mission)) {'''
+
+[[mutant]]
+name = "a-paragraph-is-never-cut"
+file = "src/eval/judgement.cpp"
+expect = "JudgementStage.AParagraphItsJudgesEngineCannotHoldIsCutUntilEachPartFits"
+  [[mutant.edit]]
+  from = '''        if (part.size() == 1) {'''
+  to = '''        if (true) {'''
+
+[[mutant]]
+name = "judges-sample"
+file = "src/eval/judgement.cpp"
+expect = "JudgementStage.ReadsEveryFactAndSentenceByEveryJudgeOfThePanel"
+  [[mutant.edit]]
+  from = '''.temperature = 0.0,  // greedy'''
+  to = '''.temperature = 1.0,  // greedy'''
+
+[[mutant]]
+name = "a-judge-may-climb-the-ladder"
+file = "src/eval/judgement.cpp"
+expect = "JudgementStage.AnAnswerQuotingWhatItWasNotShownIsSentBackOnceThenTheItemIsUnread"
+  [[mutant.edit]]
+  from = '''constexpr agents::Escalation kFrozen{.thinking = false, .commander = false, .other_family = false};'''
+  to = '''constexpr agents::Escalation kFrozen{};'''
+
+[[mutant]]
+name = "an-unread-reading-scores-nought"
+file = "src/eval/judgement.cpp"
+expect = "JudgedScores.AreEachItemsMeanOverTheJudgesThatReadIt"
+  [[mutant.edit]]
+  from = '''    return read == 0 ? std::nullopt : std::optional<double>{sum / static_cast<double>(read)};'''
+  to = '''    return read == 0 ? std::optional<double>{0.0} : std::optional<double>{sum / static_cast<double>(read)};'''
+
+[[mutant]]
+name = "a-fact-near-no-sentence-is-left-out"
+file = "src/eval/judgement.cpp"
+expect = "JudgedScores.AreEachItemsMeanOverTheJudgesThatReadIt"
+  [[mutant.edit]]
+  from = '''        const std::optional<double> is_told = fact.candidates.empty()
+                                                  ? std::optional{0.0}'''
+  to = '''        const std::optional<double> is_told = fact.candidates.empty()
+                                                  ? std::optional<double>{}'''
+
+[[mutant]]
+name = "every-judged-fact-is-core"
+file = "src/eval/judgement.cpp"
+expect = "JudgedScores.AreEachItemsMeanOverTheJudgesThatReadIt"
+  [[mutant.edit]]
+  from = '''        if (fact.core) {'''
+  to = '''        if (true) {'''
+
+[[mutant]]
+name = "one-reading-agrees-with-itself"
+file = "src/eval/judgement.cpp"
+expect = "JudgedScores.AreEachItemsMeanOverTheJudgesThatReadIt"
+  [[mutant.edit]]
+  from = '''    if (keys.size() < 2) {'''
+  to = '''    if (keys.empty()) {'''
+
+[[mutant]]
+name = "partly-is-not-told"
+file = "src/eval/judgement.cpp"
+expect = "JudgedScores.AreEachItemsMeanOverTheJudgesThatReadIt"
+  [[mutant.edit]]
+  from = '''verdict_is({FactVerdict::told, FactVerdict::partly}));'''
+  to = '''verdict_is({FactVerdict::told}));'''
+
+[[mutant]]
+name = "an-unread-sentence-reading-is-supported"
+file = "src/eval/judgement.cpp"
+expect = "JudgedScores.AreEachItemsMeanOverTheJudgesThatReadIt"
+  [[mutant.edit]]
+  from = '''            if (!reading.issue.has_value()) {
+                continue;  // unread by this judge'''
+  to = '''            if (!reading.issue.has_value()) {
+                ++said[0];
+                ++readings;
+                continue;  // unread by this judge'''
+
+[[mutant]]
+name = "issues-under-each-others-names"
+file = "src/eval/judgement.cpp"
+expect = "JudgedScores.CountEachIssueUnderItsOwnName"
+  [[mutant.edit]]
+  from = '''.issue = pipeline::Issue::softens, .metric = "softens"'''
+  to = '''.issue = pipeline::Issue::softens, .metric = "intensifies"'''
+  [[mutant.edit]]
+  from = '''.issue = pipeline::Issue::intensifies, .metric = "intensifies"'''
+  to = '''.issue = pipeline::Issue::intensifies, .metric = "softens"'''
+
+[[mutant]]
+name = "a-sentence-unread-by-all-scores"
+file = "src/eval/judgement.cpp"
+expect = "JudgedScores.AreEachItemsMeanOverTheJudgesThatReadIt"
+  [[mutant.edit]]
+  from = '''        if (readings == 0) {
+            continue;  // every judge left it unread
+        }'''
+  to = '''        if (readings == 0) {
+            readings = 1;
+        }'''
+
+[[mutant]]
+name = "the-key-holds-no-facts"
+file = "src/eval/judgement.cpp"
+expect = "JudgementStage.ItsKeyHoldsWhatTheJudgesReadAndHowTheyAreAsked"
+  [[mutant.edit]]
+  from = '''                      {"facts", json::content_hash(facts).hex()}};'''
+  to = '''                      {"facts", ""}};'''
+
+[[mutant]]
+name = "the-key-holds-no-slot-size"
+file = "src/eval/judgement.cpp"
+expect = "JudgementStage.ItsKeyHoldsWhatTheJudgesReadAndHowTheyAreAsked"
+  [[mutant.edit]]
+  from = '''{"holds", engines[index]->ctx_per_slot},'''
+  to = '''{"holds", 0},'''
+
+[[mutant]]
+name = "the-key-holds-no-title"
+file = "src/eval/judgement.cpp"
+expect = "JudgementStage.ItsKeyHoldsWhatTheJudgesReadAndHowTheyAreAsked"
+  [[mutant.edit]]
+  from = '''{"video", json::Json{{"title", article.title}, {"channel", article.channel}}},'''
+  to = '''{"video", json::Json{{"channel", article.channel}}},'''
+
+[[mutant]]
+name = "a-judgement-is-made-every-time"
+file = "src/eval/judgement.cpp"
+expect = "Judging.AnArticleHasOneJudgementAPanelTakenUpAfter"
+  [[mutant.edit]]
+  from = '''    if (found.has_value()) {'''
+  to = '''    if (false && found.has_value()) {'''
+
+[[mutant]]
+name = "a-judgement-has-no-title"
+file = "src/eval/judgement.cpp"
+expect = "Judging.AnArticleHasOneJudgementAPanelTakenUpAfter"
+  [[mutant.edit]]
+  from = '''    job.title = article.title;'''
+  to = '''    (void)article.title;'''
+
+[[mutant]]
+name = "a-judgement-not-done-is-scored"
+file = "src/eval/judgement.cpp"
+expect = "Judging.AJudgementWithoutThePodNeedsYouAndIsNotScored"
+  [[mutant.edit]]
+  from = '''    if (judged.run.job.status != library::JobStatus::done) {'''
+  to = '''    if (false && judged.run.job.status != library::JobStatus::done) {'''
+
+[[mutant]]
+name = "a-judgement-is-written-wrong"
+file = "src/eval/judgement.cpp"
+expect = "Judgement.RoundTripsThroughItsArtifact"
+  [[mutant.edit]]
+  from = '''reading.reading.has_value() ? json::Json(*reading.reading) : json::Json(nullptr);'''
+  to = '''json::Json(nullptr);'''

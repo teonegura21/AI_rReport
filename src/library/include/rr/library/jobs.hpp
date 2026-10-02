@@ -7,10 +7,12 @@
 //   (migrations/0004_pipeline.sql). Its stages' results are kept apart, as
 //   artifacts (rr/library/stage_store.hpp): a job holds where it stands.
 //
-//   A job makes an article (`rreport ingest`), or the eval's annotation of a
-//   video (`rreport eval annotate`, rr/eval/annotate.hpp): each takes its
-//   source through stages of its own, so a job is taken up again only by
-//   the command that runs its kind's stages (migrations/0005_job_kind.sql).
+//   A job makes an article (`rreport ingest`), the eval's annotation of a
+//   video (`rreport eval annotate`, rr/eval/annotate.hpp), or the eval's
+//   judgement of an article (`rreport eval judge`, rr/eval/judgement.hpp):
+//   each takes its source through stages of its own, so a job is taken up
+//   again only by the command that runs its kind's stages
+//   (migrations/0005_job_kind.sql, 0007_judgement.sql).
 //
 //   A job's status says what happens next:
 //     running      its stages are under way (or the hub died while they
@@ -55,6 +57,7 @@ enum class JobStatus : std::uint8_t {
 enum class JobKind : std::uint8_t {
     article,     // a video, through the article's stages (rreport ingest)
     annotation,  // an eval snapshot, through the annotation's (rreport eval annotate)
+    judgement,   // an article job's article, read by the eval's judges (rreport eval judge)
 };
 
 [[nodiscard]] std::string_view to_string(JobKind kind) noexcept;
@@ -63,8 +66,8 @@ enum class JobKind : std::uint8_t {
 
 struct Job {
     std::string id{};      // a ULID
-    std::string source{};  // a web address, or a caption file's path
-    std::string tier{};    // fast | thorough | max
+    std::string source{};  // a web address, a caption file's path, or the job judged
+    std::string tier{};    // fast | thorough | max; a judgement's panel
     std::int64_t salt = 0;
     JobStatus status = JobStatus::running;
     std::optional<std::string> error{};   // why it is not done, as the user is told

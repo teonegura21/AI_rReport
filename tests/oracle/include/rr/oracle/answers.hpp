@@ -26,7 +26,9 @@
 //   seams (rr/pipeline/seams_stage.hpp), have no single right answer either.
 //   The oracle answers each by a rule a test can predict, and that keeps
 //   every check: see annotate(), outline(), describe(), brief(), atomize(),
-//   plan(), write(), judge(), flow() and seam(). A synthetic video is
+//   plan(), write(), judge(), flow() and seam(), and the eval's frozen
+//   judges' readings, eval_fact(), eval_support() and eval_flow(). A
+//   synthetic video is
 //   written for the rule: its talk turns at a sentence that opens with
 //   "Now," or "Next,"; a speaker says "I'm Ada"; its words for things are
 //   acronyms; "Um, so." is a disfluency and "Hello and welcome back." a
@@ -126,6 +128,21 @@ namespace rr::oracle {
 // pass every check a rewrite is held to. A test that wants a seam rewritten
 // changes the answer (a fault).
 [[nodiscard]] Answerer seam();
+
+// Answers eval_fact missions (prompts/eval_fact): told when a sentence shown
+// holds the fact's quote, its words in a row (case and punctuation aside),
+// the evidence that whole sentence, quoted; not_told, with no evidence,
+// when none does. A test that wants another verdict makes a fault.
+[[nodiscard]] Answerer eval_fact();
+
+// Answers eval_support missions (prompts/eval_support): every sentence
+// "none", its evidence the words of the first of the video's sentences
+// shown with it, quoted (none when it was shown none).
+[[nodiscard]] Answerer eval_support();
+
+// Answers eval_flow missions (prompts/eval_flow) as flow() answers flow
+// missions: the shorter version, and two of a length tie.
+[[nodiscard]] Answerer eval_flow();
 
 // Teaches `oracle` every mission kind the pipeline's stages send, punctuating
 // from `script` when there is one.

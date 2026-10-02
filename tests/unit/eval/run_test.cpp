@@ -5,6 +5,7 @@
 #include <rr/eval/run.hpp>
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -143,18 +144,42 @@ TEST_F(RunsTest, AnEntryGetsAnArticleJobFromItsSnapshotWhenItsTurnComesAndKeepsI
         << "one job a replicate";
 }
 
-TEST_F(RunsTest, AJobScoredAgainIsScoredWhole) {
+TEST_F(RunsTest, AnEntryScoredAgainByAFamilyIsScoredWholeByItAndOtherFamiliesStay) {
     const EvalRun run = unwrap(runs().open(spec()));
     const library::Job job = unwrap(jobs().create("talk.vtt", "max", 0));
     const RunEntry entry{.video = "a-talk", .replicate = 0, .job = job.id};
     unwrap(runs().add(run.id, entry));
-    const std::vector<Score> first{{.metric = "atoms_told", .value = 0.5}, {.metric = "minutes", .value = 3}};
-    unwrap(runs().keep(run.id, entry, "code@1", first));
-    const std::vector<Score> second{{.metric = "atoms_told", .value = 1.0}};
-    unwrap(runs().keep(run.id, entry, "code@2", second));
+    const Scoring first{
+        .scorer = "code@1",
+        .scores = {{.metric = "atoms_told", .value = 0.5}, {.metric = "minutes", .value = 3}}};
+    unwrap(runs().keep(run.id, entry, first));
+    const Scoring judged{.scorer = "judges@eval-v1", .scores = {{.metric = "facts_told", .value = 0.9}}};
+    unwrap(runs().keep(run.id, entry, judged));
+    const Scoring second{.scorer = "code@2", .scores = {{.metric = "atoms_told", .value = 1.0}}};
+    unwrap(runs().keep(run.id, entry, second));
     EXPECT_THAT(unwrap(runs().scores(run.id)),
-                ElementsAre(ScoredEntry{.entry = entry, .scorer = "code@2", .scores = second}))
-        << "the minutes of the first scoring are gone";
+                ElementsAre(ScoredEntry{.entry = entry, .scorings = {second, judged}}))
+        << "code@1's minutes gone with it; the judges' scores kept";
+
+    const Scoring rejudged{.scorer = "judges@eval-v2", .scores = {}};
+    unwrap(runs().keep(run.id, entry, rejudged));
+    EXPECT_THAT(unwrap(runs().scores(run.id)), ElementsAre(ScoredEntry{.entry = entry, .scorings = {second}}))
+        << "a scoring of nothing still replaces its family's";
+
+    EXPECT_ERRC(runs().keep(run.id, entry, Scoring{.scorer = "code"}), Errc::invalid_argument);
+    EXPECT_ERRC(
+        runs().keep(run.id, entry,
+                    Scoring{.scorer = "judges@eval-v1", .scores = {{.metric = "atoms_told", .value = 1.0}}}),
+        Errc::conflict)
+        << "a metric is one family's";
+}
+
+TEST(ScorerFamily, IsWhatComesBeforeTheAt) {
+    EXPECT_EQ(scorer_family("judges@eval-v1"), "judges");
+    EXPECT_EQ(scorer_family("code@1"), "code");
+    EXPECT_EQ(scorer_family("code"), std::nullopt);
+    EXPECT_EQ(scorer_family("@1"), std::nullopt);
+    EXPECT_EQ(scorer_family("code@"), std::nullopt);
 }
 
 TEST_F(RunsTest, EveryEntryIsListedWithItsScoresOrNone) {
@@ -163,11 +188,13 @@ TEST_F(RunsTest, EveryEntryIsListedWithItsScoresOrNone) {
     const RunEntry waiting{.video = "a-talk", .replicate = 1, .job = unwrap(jobs().create("a", "max", 1)).id};
     unwrap(runs().add(run.id, scored));
     unwrap(runs().add(run.id, waiting));
-    const std::vector<Score> scores{{.metric = "atoms_told", .value = 1}, {.metric = "minutes", .value = 2}};
-    unwrap(runs().keep(run.id, scored, "code@1", scores));
-    EXPECT_THAT(unwrap(runs().scores(run.id)),
-                ElementsAre(ScoredEntry{.entry = waiting},
-                            ScoredEntry{.entry = scored, .scorer = "code@1", .scores = scores}))
+    const Scoring scoring{
+        .scorer = "code@1",
+        .scores = {{.metric = "atoms_told", .value = 1}, {.metric = "minutes", .value = 2}}};
+    unwrap(runs().keep(run.id, scored, scoring));
+    EXPECT_THAT(
+        unwrap(runs().scores(run.id)),
+        ElementsAre(ScoredEntry{.entry = waiting}, ScoredEntry{.entry = scored, .scorings = {scoring}}))
         << "by video, then replicate";
     EXPECT_THAT(unwrap(runs().entries(run.id)), ElementsAre(waiting, scored))
         << "the same order, not the order made";

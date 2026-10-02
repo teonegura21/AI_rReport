@@ -1,0 +1,59 @@
+# Mutants of rr_db's migrations: each removes one rule of running a migration
+# with foreign keys off (so that it may rebuild a table others refer to) and
+# names the test that must fail without it. rr_db was mutation-tested before
+# these specs existed (docs/design/database.md); this file starts with what P24
+# changed.
+# Run: scripts/mutate.py tests/mutants/db.toml
+# What they found is in docs/design/database.md, "How the tests were validated".
+
+target = "rr_db_tests"
+binary = "build/dev/tests/unit/db/rr_db_tests"
+timeout = 60
+
+[[mutant]]
+name = "foreign-keys-stay-on-while-migrating"
+file = "src/db/database.cpp"
+expect = "Migrations.MayRebuildATableOthersReferToKeepingItsRowsAndTheirReferences"
+  [[mutant.edit]]
+  from = '''    RR_TRY(run(connection, "PRAGMA foreign_keys = OFF"));'''
+  to = ''''''
+
+[[mutant]]
+name = "references-are-not-checked"
+file = "src/db/database.cpp"
+expect = "Migrations.AMigrationThatBreaksAReferenceIsRefusedAndRolledBack"
+  [[mutant.edit]]
+  from = '''    if (!broken.empty()) {'''
+  to = '''    if (false && !broken.empty()) {'''
+
+[[mutant]]
+name = "foreign-keys-are-left-off"
+file = "src/db/database.cpp"
+expect = "Migrations.MayRebuildATableOthersReferToKeepingItsRowsAndTheirReferences"
+  [[mutant.edit]]
+  from = '''    RR_TRY(run(connection, "PRAGMA foreign_keys = ON"));'''
+  to = ''''''
+
+[[mutant]]
+name = "foreign-keys-on-inside-the-failed-transaction"
+file = "src/db/database.cpp"
+expect = "Migrations.ForeignKeysAreOnAgainAfterAMigrationThatFails"
+  [[mutant.edit]]
+  from = '''    if (sqlite3_get_autocommit(connection.get()) == 0) {
+        RR_TRY(run(connection, "ROLLBACK"));  // a failure left it open
+    }
+    RR_TRY(run(connection, "PRAGMA foreign_keys = ON"));'''
+  to = '''    RR_TRY(run(connection, "PRAGMA foreign_keys = ON"));
+    if (sqlite3_get_autocommit(connection.get()) == 0) {
+        RR_TRY(run(connection, "ROLLBACK"));  // a failure left it open
+    }'''
+
+[[mutant]]
+name = "a-failed-migration-is-left-to-the-lease"
+file = "src/db/database.cpp"
+expect = "Migrations.AMigrationThatBreaksAReferenceIsRefusedAndRolledBack"
+  [[mutant.edit]]
+  from = '''    if (sqlite3_get_autocommit(connection.get()) == 0) {
+        RR_TRY(run(connection, "ROLLBACK"));  // a failure left it open
+    }'''
+  to = ''''''

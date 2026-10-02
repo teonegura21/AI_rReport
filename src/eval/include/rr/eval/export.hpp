@@ -21,14 +21,16 @@
 namespace rr::eval {
 
 // `entries`, the scores of `run`, as CSV (RFC 4180): a header, then a row an
-// entry, its metrics in columns sorted by name; a metric an entry has not is
-// an empty cell. A video no longer in `set` has no type nor caption kind.
+// entry, its scorers in one field ("code@1+judges@eval-v1"), then its
+// metrics in columns sorted by name, whichever scorer computed each; a
+// metric an entry has not is an empty cell. A video no longer in `set` has
+// no type nor caption kind.
 [[nodiscard]] std::string to_csv(const EvalRun& run, const EvalSet& set,
                                  std::span<const ScoredEntry> entries);
 
 // The same as JSON: {"run": {"label", "set", "split", "tier", "replicates"},
-// "entries": [{"video", "replicate", "job", "type", "captions", "scorer",
-// "scores": {metric: value, …}}, …]}.
+// "entries": [{"video", "replicate", "job", "type", "captions",
+// "scores": {scorer: {metric: value, …}, …}}, …]}.
 [[nodiscard]] json::Json to_json(const EvalRun& run, const EvalSet& set,
                                  std::span<const ScoredEntry> entries);
 

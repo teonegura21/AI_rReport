@@ -601,10 +601,8 @@ name = "judge-reads-an-atom-without-its-number"
 file = "tests/oracle/answers.cpp"
 expect = "OracleAnswers.JudgeReadsEverySentenceAsSayingWhatItsAtomsSay"
   [[mutant.edit]]
-  from = '''            if (dot == std::string_view::npos || error != std::errc{} ||
-                end != digits.data() + digits.size()) {'''
-  to = '''            if (dot == std::string_view::npos || (error != std::errc{} && end == nullptr) ||
-                end == nullptr) {'''
+  from = '''    if (dot == std::string_view::npos || error != std::errc{} || end != digits.data() + digits.size()) {'''
+  to = '''    if (dot == std::string_view::npos || (error != std::errc{} && end == nullptr) || end == nullptr) {'''
 
 [[mutant]]
 name = "judge-takes-any-atom-line"
@@ -674,3 +672,21 @@ expect = "OracleAnswers.SeamRewritesBothParagraphsAsWritten"
   from = '''    oracle.teach("seam", seam());
 '''
   to = ''''''
+
+# --- The eval's frozen judges' answers (P24) ------------------------------------
+
+[[mutant]]
+name = "eval-fact-is-always-told"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.EvalFactIsToldWhereASentenceHoldsTheQuotesWordsInARow"
+  [[mutant.edit]]
+  from = '''            if (!quote.empty() && !std::ranges::search(words, quote).empty()) {'''
+  to = '''            if (!quote.empty() && !words.empty()) {'''
+
+[[mutant]]
+name = "eval-support-quotes-the-whole-line"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.EvalSupportReadsEverySentenceAsNoneQuotingItsFirstEvidence"
+  [[mutant.edit]]
+  from = '''std::format("{}: \"{}\"", line.substr(id, line.find(' ', id) - id), line.substr(words + 2));'''
+  to = '''std::format("{}: \"{}\"", line.substr(id, line.find(' ', id) - id), line.substr(id));'''

@@ -123,6 +123,8 @@ One trap is handled explicitly: an empty `std::vector` may have `data() == nullp
 - **Concurrent processes.** The version is re-checked under the write lock, so two processes starting at once cannot apply the same migration twice.
 - **Newer databases.** A database newer than the program is refused (`Errc::conflict`). Downgrading data is never silent.
 - **No transaction control.** A script must not contain `BEGIN`/`COMMIT`/`ROLLBACK`. If one ends the enclosing transaction, that is detected right after the script runs and reported as a bug.
+- **Foreign keys off, and checked before the commit** (P24). SQLite's `ALTER TABLE` cannot change a CHECK, among much else: the table is made anew, its rows copied, the old one dropped and the new one renamed, [SQLite's own procedure](https://www.sqlite.org/lang_altertable.html#otheralter). With foreign keys on, that fails for a table others refer to, and deferring them does not help, as tried with `sqlite3`: dropping the old table breaks every reference to it, SQLite counts them, and renaming the new table does not count them back, so the `COMMIT` fails though the data is whole. So `apply()` turns foreign keys off on the writer before the transaction (`PRAGMA foreign_keys` does nothing inside one), runs the migration, and counts `pragma_foreign_key_check` before committing: a migration that leaves a reference broken fails with `Errc::integrity`, naming each pair of tables (`tags → items (1)`), and is rolled back.
+- **On again, after the transaction ends.** Foreign keys are turned back on after the commit, or after the rollback of a migration that failed, never before it: inside the still-open transaction the pragma would do nothing, and the writer would go on without them, silently. A `ROLLBACK` that itself failed is returned as the error, and the database is not used further.
 
 ## Closing order
 
@@ -148,5 +150,12 @@ Every protective mechanism above was **mutation-tested**: the protection was rem
 | Script-ended-transaction detection | `AScriptMustNotEndTheTransaction` |
 | `ROLLBACK` on lease release | `AnExceptionRollsBackAndReleasesTheWriter` |
 | Constraint sub-classification | `ConstraintViolationsAreClassified` |
+| Foreign keys off while migrating (P24) | `MayRebuildATableOthersReferToKeepingItsRowsAndTheirReferences` |
+| The references checked before a migration commits | `AMigrationThatBreaksAReferenceIsRefusedAndRolledBack` |
+| Foreign keys on again after a migration | `MayRebuildATableOthersReferToKeepingItsRowsAndTheirReferences` |
+| On again only after the failed transaction ends | `ForeignKeysAreOnAgainAfterAMigrationThatFails` |
+| The failed transaction rolled back before they are | `AMigrationThatBreaksAReferenceIsRefusedAndRolledBack` |
 
 The concurrency tests (snapshot isolation, serialized writers, reader-pool waits) also run under ThreadSanitizer and were repeated 100 times without a failure.
+
+The mutants of P24's rows are kept in `tests/mutants/db.toml`, so `scripts/mutate.py` runs them again; the earlier rows were run by hand, before those specs existed.

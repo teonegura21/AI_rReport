@@ -2,7 +2,7 @@
 # compiled in) and the repositories over it: the model-call log, a job's memo
 # of its calls (ADR-0020), the battle log of its missions (ADR-0011), and the
 # pipeline's record: jobs, artifacts, the stage cache (ADR-0004); the eval's
-# runs and their scores (ADR-0019).
+# runs, their scores and their judgements (ADR-0019).
 # Hub only.
 rr_add_embedded_library(library_migrations
     NAMESPACE rr::embedded::library_migrations
@@ -12,7 +12,8 @@ rr_add_embedded_library(library_migrations
         migrations/0003_missions.sql
         migrations/0004_pipeline.sql
         migrations/0005_job_kind.sql
-        migrations/0006_eval.sql)
+        migrations/0006_eval.sql
+        migrations/0007_judgement.sql)
 
 rr_add_module(library
     SOURCES

@@ -387,6 +387,45 @@ std::string purpose_of(const std::vector<std::string>& atoms) {
     return std::format("Tells {} {} {}.", atoms.front(), atoms.size() == 2 ? "and" : "to", atoms.back());
 }
 
+// The rest of the first line, in the mission's latest message that has one,
+// that opens with `prefix`.
+Result<std::string> line_after(const llm::ChatRequest& request, std::string_view prefix) {
+    for (const llm::Message& message : std::views::reverse(request.messages)) {
+        const std::string text = message.text();
+        for (const auto part : std::views::split(text, '\n')) {
+            const std::string_view line{part.begin(), part.end()};
+            if (line.starts_with(prefix)) {
+                return std::string{line.substr(prefix.size())};
+            }
+        }
+    }
+    return fail(Errc::invalid_argument,
+                std::format("no message of the mission has a line opening \"{}\"", prefix));
+}
+
+// `line`, "3. The words.", as its number and its words.
+Result<std::pair<std::size_t, std::string_view>> numbered(std::string_view line) {
+    const std::size_t dot = line.find(". ");
+    const std::string_view digits = line.substr(0, dot);
+    std::size_t number = 0;
+    const auto [end, error] = std::from_chars(digits.data(), digits.data() + digits.size(), number);
+    if (dot == std::string_view::npos || error != std::errc{} || end != digits.data() + digits.size()) {
+        return fail(Errc::invalid_argument, std::format("no numbered sentence in \"{}\"", line));
+    }
+    return std::pair{number, line.substr(dot + 2)};
+}
+
+// `text`'s words, bare (bare()), the empty ones left out.
+std::vector<std::string> bare_words(std::string_view text) {
+    std::vector<std::string> words;
+    for (const std::string& word : words_of(text)) {
+        if (std::string kept = bare(word); !kept.empty()) {
+            words.push_back(std::move(kept));
+        }
+    }
+    return words;
+}
+
 }  // namespace
 
 Answerer annotate() {
@@ -609,17 +648,10 @@ Answerer judge() {
         }
         json::Json judged = json::Json::array();
         for (const auto part : std::views::split(sentences, '\n')) {
-            const std::string_view line{part.begin(), part.end()};
-            const std::size_t dot = line.find(". ");
-            const std::string_view digits = line.substr(0, dot);  // the whole line, without a dot
-            std::size_t number = 0;
-            const auto [end, error] = std::from_chars(digits.data(), digits.data() + digits.size(), number);
-            if (dot == std::string_view::npos || error != std::errc{} ||
-                end != digits.data() + digits.size()) {
-                return fail(Errc::invalid_argument, std::format("no numbered sentence in \"{}\"", line));
-            }
+            RR_TRY_ASSIGN(const auto sentence, numbered(std::string_view{part.begin(), part.end()}));
+            const auto& [number, said] = sentence;
             std::string evidence;
-            for (const std::string& atom : cited_in(line.substr(dot + 2))) {
+            for (const std::string& atom : cited_in(said)) {
                 const auto found = words.find(atom);
                 evidence += std::format("{}{}: \"{}\"", evidence.empty() ? "" : "; ", atom,
                                         found == words.end() ? std::string{"?"} : found->second);
@@ -651,6 +683,58 @@ Answerer seam() {
         RR_TRY_ASSIGN(const std::string second, block_in(request, "second"));
         return first + "\n\n" + second;
     };
+}
+
+Answerer eval_fact() {
+    return [](const llm::ChatRequest& request) -> Result<std::string> {
+        RR_TRY_ASSIGN(std::string said, line_after(request, "Said in the video: \""));
+        if (!said.ends_with('"')) {
+            return fail(Errc::invalid_argument, std::format("the fact's quote \"{}\" is not closed", said));
+        }
+        said.pop_back();
+        const std::vector<std::string> quote = bare_words(said);
+        RR_TRY_ASSIGN(const std::string sentences, block_in(request, "sentences"));
+        for (const auto part : std::views::split(sentences, '\n')) {
+            RR_TRY_ASSIGN(const auto sentence, numbered(std::string_view{part.begin(), part.end()}));
+            const std::vector<std::string> words = bare_words(sentence.second);
+            if (!quote.empty() && !std::ranges::search(words, quote).empty()) {
+                return json::dump(
+                    json::Json{{"evidence", std::format("{}: \"{}\"", sentence.first, sentence.second)},
+                               {"verdict", "told"}});
+            }
+        }
+        return json::dump(json::Json{{"evidence", ""}, {"verdict", "not_told"}});
+    };
+}
+
+Answerer eval_support() {
+    return [](const llm::ChatRequest& request) -> Result<std::string> {
+        RR_TRY_ASSIGN(const std::string sentences, block_in(request, "sentences"));
+        json::Json judged = json::Json::array();
+        for (const auto part : std::views::split(sentences, '\n')) {
+            const std::string_view line{part.begin(), part.end()};
+            if (!line.starts_with(' ')) {
+                RR_TRY_ASSIGN(const auto sentence, numbered(line));
+                judged.push_back(json::Json{
+                    {"sentence", sentence.first}, {"evidence", ""}, {"reading", nullptr}, {"issue", "none"}});
+                continue;
+            }
+            // The video's words for the sentence before it: "   S12 [1:02, Ada] The words."
+            const std::size_t id = line.find_first_not_of(' ');
+            const std::size_t words = line.find("] ");
+            if (judged.empty() || words == std::string_view::npos ||
+                !judged.back().at("evidence").get<std::string>().empty()) {
+                continue;  // shown none, or quoted already
+            }
+            judged.back()["evidence"] =
+                std::format("{}: \"{}\"", line.substr(id, line.find(' ', id) - id), line.substr(words + 2));
+        }
+        return json::dump(json::Json{{"sentences", std::move(judged)}});
+    };
+}
+
+Answerer eval_flow() {
+    return flow();  // the same rule: its answer has the same fields
 }
 
 Result<std::string> excerpt_in(const llm::ChatRequest& request) {
@@ -691,6 +775,9 @@ void teach_stages(Oracle& oracle, std::optional<std::string> script) {
     oracle.teach("judge", judge());
     oracle.teach("flow", flow());
     oracle.teach("seam", seam());
+    oracle.teach("eval_fact", eval_fact());
+    oracle.teach("eval_support", eval_support());
+    oracle.teach("eval_flow", eval_flow());
 }
 
 }  // namespace rr::oracle

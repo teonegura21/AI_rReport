@@ -21,6 +21,7 @@ constexpr auto kStatuses = std::to_array<std::pair<JobStatus, std::string_view>>
 constexpr auto kKinds = std::to_array<std::pair<JobKind, std::string_view>>({
     {JobKind::article, "article"},
     {JobKind::annotation, "annotation"},
+    {JobKind::judgement, "judgement"},
 });
 
 std::int64_t millis(std::chrono::system_clock::time_point at) {

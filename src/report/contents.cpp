@@ -53,12 +53,20 @@ Result<void> put(std::string_view stage, const json::Json& artifact, Contents& c
 }  // namespace
 
 Result<Contents> contents_of(const library::Job& job, const library::StageStore& store) {
-    if (job.kind != library::JobKind::article) {
-        return fail(
-            Errc::invalid_argument,
-            std::format("job {} drafts an eval annotation, which has no article: `rreport eval sheet` "
-                        "shows what it drafted, with the video's id",
-                        job.id));
+    switch (job.kind) {
+        case library::JobKind::article:
+            break;
+        case library::JobKind::annotation:
+            return fail(Errc::invalid_argument,
+                        std::format("job {} drafts an eval annotation, which has no article: `rreport eval "
+                                    "sheet` shows what it drafted, with the video's id",
+                                    job.id));
+        case library::JobKind::judgement:
+            return fail(
+                Errc::invalid_argument,
+                std::format("job {} judges the article of job {} for the eval, and has none of its own: "
+                            "`rreport report {}` pages that one",
+                            job.id, job.source, job.source));
     }
     RR_TRY_ASSIGN(const std::vector<library::StageRun> runs, store.runs(job.id));
     Contents contents{.job = job.id, .tier = job.tier};

@@ -106,7 +106,7 @@ The remaining faults (refusal, truncation, broken JSON, running out while thinki
 
 ## What waits
 
-What needs a model (softening without a quote, misattribution in paraphrase, sentences that add) the write stage's judge reads, sentence by sentence and evidence first (P20b, [pipeline.md](pipeline.md#the-write-stage)): its readings choose between drafts and are published as readings, never as checks. The eval's own judges, frozen and calibrated, arrive with P24. Until then, a finding goes back to the mission that can fix it only from the stage that made the text: a window's Ledger A findings to its readers (P18), a section's Ledger B findings to its writer (P20).
+What needs a model (softening without a quote, misattribution in paraphrase, sentences that add) the write stage's judge reads, sentence by sentence and evidence first (P20b, [pipeline.md](pipeline.md#the-write-stage)): its readings choose between drafts and are published as readings, never as checks. The eval's own judges, frozen, read since P24 ([eval.md](eval.md#the-judges)), against the video's own words rather than the atoms, and are calibrated against a person's labels in P27. Until then, a finding goes back to the mission that can fix it only from the stage that made the text: a window's Ledger A findings to its readers (P18), a section's Ledger B findings to its writer (P20).
 
 ## How the tests were validated
 

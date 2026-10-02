@@ -1,0 +1,41 @@
+# The eval's judges, frozen (rr/eval/panel.hpp, docs/design/eval.md "The
+# judges"). Every score they give is kept as "judges@eval-v1", and is never
+# compared with another panel's. Do not edit what this file pins: a change to
+# a prompt, a model or the judging procedure makes a new panel, eval-v2, in a
+# file of its own. Only `calibrated` changes here, once a person's labels
+# have shown that the panel reads as they do (plan P27): until then its
+# scores are reported, and the gate ignores them.
+
+name = "eval-v1"
+procedure = 1
+calibrated = false
+
+# The prompts, by version and hash as prompts/manifest.toml has them.
+[[prompt]]
+name = "eval_fact"
+version = 1
+hash = "ef66ea0578b0abca1bbd4222f2f59e61ce91b588ce616e691d1e4e16a35713bc"
+
+[[prompt]]
+name = "eval_support"
+version = 1
+hash = "c1a76fb7ac4841665128d32c751bc99a597ac9e801d966c24b623ed7d5007e18"
+
+[[prompt]]
+name = "eval_flow"
+version = 1
+hash = "6f8414ff5fca70fe2c4fa69785a4a4592e6ae8142243f7e34a1ed8975423d686"
+
+# The judges: two families, the 48 GB profile's pair (docker/runtime/
+# catalog.toml). A pod that serves other files (the 80 GB profile's 8-bit
+# commander, a lighter infantry being tried) serves the 48 GB profile to
+# judge.
+[[judge]]
+role = "commander"
+model = "qwen3.8-27b-q4"
+sha256 = "c600de0300ae8a0eb3a6c0b8b5561b8b96f16bd2c863c2a66c42de29d391a747"
+
+[[judge]]
+role = "infantry"
+model = "gemma-4-26b-a4b"
+sha256 = "88f4a13b0bb95f031a7fad973e10854122fb67ebc34d214d39a2f65053046abc"

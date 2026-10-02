@@ -123,10 +123,10 @@ void against_gold(std::vector<Score>& scores, const Gold& gold, const knowledge:
     share(scores, "core_facts_cited", core_cited, core);
 }
 
-// The gold of `video` to score against: reviewed, and of the snapshot the
-// run read. Otherwise none, and `notes` says why.
-Result<std::optional<Gold>> gold_for(const std::filesystem::path& eval_root, const EvalVideo& video,
-                                     std::vector<std::string>& notes) {
+}  // namespace
+
+Result<std::optional<Gold>> reviewed_gold(const std::filesystem::path& eval_root, const EvalVideo& video,
+                                          std::vector<std::string>& notes) {
     Result<std::string> text = read_file(gold_file(eval_root, video.id));
     if (!text.has_value()) {
         if (text.error().code() != Errc::not_found) {
@@ -150,8 +150,6 @@ Result<std::optional<Gold>> gold_for(const std::filesystem::path& eval_root, con
     }
     return gold;
 }
-
-}  // namespace
 
 Result<Costs> costs_of(db::Database& database, const library::Job& job) {
     Costs costs{.elapsed = job.elapsed};
@@ -259,7 +257,7 @@ Result<RunScoring> score_run(const std::filesystem::path& eval_root, const EvalS
         if (gold == golds.end()) {
             std::optional<Gold> read;
             if (const EvalVideo* video = set.find(entry.video); video != nullptr) {
-                RR_TRY_ASSIGN(read, gold_for(eval_root, *video, scoring.notes));
+                RR_TRY_ASSIGN(read, reviewed_gold(eval_root, *video, scoring.notes));
             } else {
                 scoring.notes.push_back(
                     std::format("{}: the set has it no more: scored without gold", entry.video));
@@ -268,9 +266,10 @@ Result<RunScoring> score_run(const std::filesystem::path& eval_root, const EvalS
         }
         RR_TRY_ASSIGN(const report::Contents contents, report::contents_of(job, store));
         RR_TRY_ASSIGN(const Costs costs, costs_of(database, job));
-        const std::vector<Score> scores =
-            scores_of(contents, gold->second.has_value() ? &*gold->second : nullptr, costs);
-        RR_TRY(runs.keep(run.id, entry, kCodeScorer, scores));
+        const Scoring computed{
+            .scorer = std::string{kCodeScorer},
+            .scores = scores_of(contents, gold->second.has_value() ? &*gold->second : nullptr, costs)};
+        RR_TRY(runs.keep(run.id, entry, computed));
         ++scoring.scored;
     }
     return scoring;

@@ -195,6 +195,14 @@ TEST_F(ContentsTest, AnEvalAnnotationHasNoArticleToShow) {
     EXPECT_THAT(contents.error().message(), HasSubstr("rreport eval sheet"));
 }
 
+TEST_F(ContentsTest, AnEvalJudgementHasNoArticleOfItsOwnButTheOneItJudges) {
+    const library::Job judgement = job(library::JobKind::judgement);
+    const Result<Contents> contents = contents_of(judgement, store());
+    EXPECT_ERRC(contents, Errc::invalid_argument);
+    EXPECT_THAT(contents.error().message(),
+                HasSubstr(std::format("`rreport report {}` pages that one", judgement.source)));
+}
+
 TEST_F(ContentsTest, AnArtifactThatDoesNotReadAsItsStagesIsAnError) {
     const library::Job lecture = job();
     done(lecture, pipeline::TranscriptStage::kName, json::Json{{"sentences", "none"}});
