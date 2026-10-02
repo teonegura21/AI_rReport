@@ -6,7 +6,7 @@ rReport promises an article faithful to its video: every sentence accounted for,
 
 | When | Function | Holds | Against |
 |---|---|---|---|
-| After atomize | `check_ledger(transcript, ledger)` | Ledger A: the atoms | the transcript, or the window of it a mission was given |
+| After atomize | `check_ledger(transcript, ledger, lexicon)` | Ledger A: the atoms | the transcript, or the window of it a mission was given; the video's lexicon |
 | After write | `check_article(transcript, ledger, markdown)` | Ledger B: the article | the atoms and the transcript |
 
 Both return a `Report`: findings, and a `Coverage` that counts how much of each promise was kept. Reports add up (`Report::add()`), so the whole job's report is the sum of its windows and its article.
@@ -33,6 +33,8 @@ Every check has a stable name, used by reports, repairs and the eval:
 | `must-quote-kept` | error | a must-quote stands, verbatim, where it is cited | A3 must be quoted verbatim, "the most beautiful element", and the paragraph citing it has nothing like it |
 | `quote-verbatim` | error | every quotation is the transcript's words | the quote "radium the most lovely element" is not what was said: the transcript has "radium the most beautiful element" |
 | `order-kept` | warning | within a section, atoms are told in the order said | A4 was said at S5, before what this section tells ahead of it: keep the order of the talk |
+
+A filler may hide none of the video's words: the lexicon `filler-empty` holds it to is the atoms' own terms and the video's, its brief's (P17), which the atomize stage passes (P18). A window's atoms need not use a word the video uses elsewhere, and without the brief's lexicon a label would slip through there.
 
 A finding also names the sentences and atoms it concerns, and where it is in the article, so a repair can be given exactly the evidence it needs. One problem gives one finding. A sentence both labelled filler and told by an atom is reported by `sentence-once` alone, not also by `filler-empty`.
 
@@ -79,7 +81,7 @@ The remaining faults (refusal, truncation, broken JSON, running out while thinki
 
 ## What waits
 
-Judge-backed checks, those that need a model (softening without a quote, misattribution in paraphrase, unsupported sentences), arrive with the stages and the eval (P20, P24). Repair orchestration, which sends each finding to the mission that can fix it, arrives with the stages too. A brief's lexicon (P17) will add to the terms a filler may not hide. Until then, the lexicon is the atoms' own terms.
+Judge-backed checks, those that need a model (softening without a quote, misattribution in paraphrase, unsupported sentences), arrive with the stages and the eval (P20, P24). Repair orchestration, which sends each finding to the mission that can fix it, arrives with the stages too.
 
 ## How the tests were validated
 

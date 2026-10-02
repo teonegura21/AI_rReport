@@ -98,9 +98,11 @@ struct WindowPlan {
 
 // Cuts `transcript` into windows (see the header comment): each filled to
 // `bytes` of lines, then the largest that `army` holds the mission
-// `mission_for` builds for. Every sentence is in exactly one window, of
-// `windows` or of `too_long`. Errors: mission_for()'s.
+// `mission_for` builds for, with up to `context` sentences of context on
+// either side. Every sentence is in exactly one window, of `windows` or of
+// `too_long`. Errors: mission_for()'s.
 [[nodiscard]] Result<WindowPlan> plan_windows(const knowledge::Transcript& transcript, std::size_t bytes,
-                                              const agents::Army& army, const MissionFor& mission_for);
+                                              const agents::Army& army, const MissionFor& mission_for,
+                                              std::size_t context = kContextSentences);
 
 }  // namespace rr::pipeline

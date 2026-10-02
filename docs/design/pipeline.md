@@ -1,6 +1,6 @@
 # The pipeline: jobs, stages, and the stage cache
 
-A **job** takes one video through the **stages**: today `source`, `transcript` and `outline`, then `atomize`, `plan` and `write` as they land (P18–P20). The eval's annotation jobs run `source`, `transcript` and `annotate` ([eval.md](eval.md#silver-drafted-by-models)). Each stage turns the artifacts of the stages before it into one artifact of its own, an immutable JSON document that follows its schema (ADR-0004). This note is about what runs them, `rr_pipeline`, and the first three stages.
+A **job** takes one video through the **stages**: today `source`, `transcript`, `outline` and `atomize`, then `plan` and `write` as they land (P19–P20). The eval's annotation jobs run `source`, `transcript` and `annotate` ([eval.md](eval.md#silver-drafted-by-models)). Each stage turns the artifacts of the stages before it into one artifact of its own, an immutable JSON document that follows its schema (ADR-0004). This note is about what runs them, `rr_pipeline`, and the first four stages.
 
 | Piece | Where | What |
 |---|---|---|
@@ -12,9 +12,11 @@ A **job** takes one video through the **stages**: today `source`, `transcript` a
 | `SourceStage` | `rr/pipeline/source.hpp` | A video (through yt-dlp) or a caption file, read once |
 | `TranscriptStage` | `rr/pipeline/transcript_stage.hpp` | Captions into numbered sentences; punctuated by the infantry when they are not |
 | `OutlineStage` | `rr/pipeline/outline_stage.hpp` | The video's sections, and the brief every later mission is given |
+| `AtomizeStage` | `rr/pipeline/atomize_stage.hpp` | Ledger A: what became of every sentence, atoms or a filler label |
 | windows | `rr/pipeline/windows.hpp` | A transcript cut into windows of whole sentences, each as large as its engine holds |
 | sections | `rr/pipeline/outline.hpp` | Sections from chapters, from pauses, from outlines agreed on; long ones cut; briefs joined |
-| asking | `rr/pipeline/asking.hpp` | What every stage that asks models says the same way: the video, a prompt's fingerprint, why a mission went unanswered |
+| readings | `rr/pipeline/readings.hpp` | What models made of a window, voted on sentence by sentence and reduced to one reading |
+| asking | `rr/pipeline/asking.hpp` | What every stage that asks models says the same way: the video, a prompt's fingerprint, an answer's problems a few at a time, why a mission went unanswered |
 
 ## The cache key
 
@@ -73,7 +75,7 @@ A pod costs money from the minute it starts. So a stage is given **the means to 
 
 A failure is returned to the stage that asked, and the next stage that asks tries again: a pod that did not come up may come up later. A stage that needs the army also raises it in its fingerprint, since its key names the models that will answer.
 
-Without a runtime configured, and outside replay mode, the CLI gives the stages no means to raise an army at all. A stage that needs a model then does what it can without one, and says so in a finding.
+Without a runtime configured, and outside replay mode, the CLI gives the stages no means to raise an army at all. A stage that needs a model then does what it can without one, and says so in a finding. The atomize stage can do nothing without one: the job stops there, `needs_user`, and `rreport resume` takes it up once a pod is set up.
 
 ## The source stage
 
@@ -143,7 +145,9 @@ The oracle answers `punctuate` missions from the script a synthetic video was re
 
 Holding is monotone in a window's end: giving up a sentence takes its line out of the prompt and puts at most one line of context in, and the answer shrinks with it. That is why bisection finds the window that giving up one sentence at a time would; a test compares the two over six engine sizes and three fill sizes, with sentences too long for context and for the engine among them. The eval's silver drafts (P16) were the first to read this way, and now read through the same code.
 
-**Asking** (`rr/pipeline/asking.hpp`). What a prompt's shared part shows of the video (its title, its channel, and its description cut after a line at 1,500 bytes, before the links and sponsors that follow), a prompt's place in a key (its label and content hash), and why a mission ended without an answer: the models declined; the job reached a ceiling first; or no answer passed the stage's checks, with the last problems. Findings say it the same way in every stage.
+**Asking** (`rr/pipeline/asking.hpp`). What a prompt's shared part shows of the video (its title, its channel, and its description cut after a line at 1,500 bytes, before the links and sponsors that follow), a prompt's place in a key (its label and content hash), and why a mission ended without an answer: the models declined; the job reached a ceiling first; or no answer passed the stage's checks, with the last problems. Findings say it the same way in every stage. An answer's problems are sent back **eight at a time at most**, then "and 3 more like them" (`Problems`): enough to fix, few enough to read. A window that dropped forty sentences gets eight named, not forty lines that bury the rule.
+
+**Tiers** (`job_tier()`). A stage finds its job's tier through `StageContext::tiers`: the shipped tiers (`reason::builtin_tier()`) unless the context says otherwise. Tests use it for the settings no shipped tier has (a tier that takes no chapters, one that asks for waves), and the eval's sweeps will use it for their variants (P26). A key holds a tier's settings, never its name, so a variant never takes a shipped tier's results.
 
 ## The outline stage
 
@@ -199,6 +203,102 @@ The stage samples, so the job's salt is in its key. Its fingerprint holds the ti
 
 All three share the video's title, channel and description in their system part, and each example is synthetic. The oracle answers each by a rule a test can predict (`rr/oracle/answers.hpp`): a section starts at S1 and at each sentence that opens with "Now," or "Next,"; a speaker for each "I'm" and the name after it; a word for each acronym; the first sentence as a section's gist; and "A video in 4 sections, from … to …" as the video's.
 
+## The atomize stage
+
+**Ledger A.** An article is only as faithful as what it is written from. So rReport never asks a model to summarize: it asks what **every sentence** says, and code checks that none is missing (ADR-0005). Each sentence becomes one or more **atoms**, units of what was said that a faithful retelling must keep, or a **filler label** from a closed list (a disfluency, a greeting, a repetition, a sponsor, a decorative remark) that says why it holds nothing to retell. The article is later written from the atoms, and must tell every one of them (Ledger B, P20). The ledger's form is in [knowledge.md](knowledge.md#atoms); its checks in [fidelity.md](fidelity.md).
+
+The stage takes five steps (`rr/pipeline/atomize_stage.hpp`):
+
+### 1. Reading a window
+
+The infantry reads the transcript in **closed-world windows**: about 2,500 bytes of sentence lines, then given up from the end until the infantry holds the mission (the shared windows above), with **two sentences of context** on either side that it may read but not cite (the plan's ±2). A window is a closed world: an answer may write rows for its own sentences only, and the checks hold it to that.
+
+The answer is a row a sentence, in order (`schemas/missions/atomize.json`):
+
+```json
+{"sentence": "S9", "filler": null, "atoms": [
+  {"also": [], "names": ["Marie Curie"], "terms": [], "text": "In 1902 Marie Curie called radium \"the most precious thing\".",
+   "kind": "number", "modality": "asserted", "register": "main", "intensity": "medium",
+   "speaker": null, "attributed_to": null, "must_quote": "the most precious thing"}]}
+```
+
+**The fields come in the order a careful reader works** (plan: reason, then format). The evidence first: the later sentences the atom also draws on, then the names and the video's words it uses, copied as said. Then the atom's own words. Then the judgments: its kind, its modality (hedged, reported, hypothetical…), its register, its intensity, who says it, whom it reports, and the words it must quote. A constrained decoder writes fields in schema order (P1), so the model has written down what the sentence says before it labels it.
+
+**An atom is written in the row of the first sentence it draws on**, and names the later ones in `also`: a thought that runs over two sentences is one atom citing both, never two halves. A sentence whose thought an earlier row's atom already holds has no atoms of its own, and is accounted for all the same.
+
+**The prompt.** Its system part holds the rules, a synthetic example (five sentences: a disfluency, a number with an aside, a definition to quote, a thought that runs on), and the video's **brief** from the outline stage: its gist, its speakers with their roles, its words for things with their meanings. It is the same for every window, so the engine's prompt cache serves it from the second window on (P7's layout rule). The task part holds the window's section titles, its context, its sentences, and what the mode adds (below).
+
+**Without thinking, at every shipped tier.** Labelling is narrow and schema-bound; thinking adds cost, and reasoning models invent more when they restate (the Vectara figures above). A tier may turn it on; the eval decides (P26).
+
+**How large an answer may be.** Its JSON takes about 300 bytes a sentence besides the words it restates: the row, and an atom or two with their eleven fields. The prompt's own example takes 1,180 bytes for five short sentences. The stage allows 320 bytes a sentence plus the sentences' own bytes, counted at the estimator's three bytes a token, which errs high, plus 128 tokens, between 512 and 8,192. An answer cut short is asked again whole, which costs more than room left unused; and since the window planner shrinks a window until its answer fits, a generous answer only makes windows smaller.
+
+**What that means on a pod.** On the 48 GB profile, each of the infantry's sixteen slots holds 4,096 tokens. The rules, the example and the brief take about 1,500 of them, so a window holds a dozen sentences or so: the test lecture is read as windows of 15, 12 and 3 sentences, against two windows on an engine that holds 32,768. Smaller windows cost more calls and more repeated system prompts (served from the cache), not accuracy; but runbook R1 should weigh unified KV for the infantry too, which would let one sequence use the pool's 65,536 tokens.
+
+### 2. What is sent back
+
+Each answer is checked as Ledger A is, on its own window (`fidelity::check_ledger()`), and sent back with what to do, the repair loop and the escalation ladder doing the rest (`rr/agents/army.hpp`):
+
+| The answer | What it is told |
+|---|---|
+| writes a row for a sentence outside its window | `S99 is not among the sentences to read (S1–S27): write rows for those only` |
+| writes a sentence twice, or out of order | `S2 is written again, or out of order: one row a sentence, in order` |
+| leaves a sentence with neither atoms nor a label | `S4 is not accounted for: give it one or more atoms, or a filler label (…)` |
+| labels a sentence and gives it atoms | `S1 is labelled greeting and has atoms: it is one or the other` |
+| names an `also` that is not a later sentence of the window | `S7's atom 1 also names S40: name only later sentences among those to read` |
+| gives a number its sentences do not say | `S4's atom 1 says "4", which its sentences (S4) do not: they say "3"` |
+| quotes words that are not the sentence's, word for word | `S9's atom 1's quote "the most valuable thing" is not what was said: its sentences say "the most precious thing"` |
+| labels as filler a sentence that holds a number, a name or one of the video's words | `S6 is labelled decorative, yet holds the term "half-life": re-examine it, and give it atoms unless it carries nothing` |
+| gives a speaker neither the brief nor the sentences shown name | `S2's atom 1 gives its speaker as "Pierre", whom neither the video's speakers nor these sentences name: give null when the transcript does not tell` |
+
+**Atoms are named by where they were written.** The ledger's checks number atoms A1, A2, …, but an answer has no A3: it wrote rows. So every message is translated before it is sent: `A3` becomes `S12's atom 2`, the second atom of the row S12. A model fixes what it can find. Only the atoms a finding concerns are renamed (`Finding::atoms`), each as a whole word: a quoted sentence that happens to say "A2" keeps its words, and `A1` is never read inside `A18` (`S22 is labelled disfluency and told by S2's atom 1, S21's atom 1`).
+
+**A warning is not sent back.** A name the transcript does not say (`name-said`) is worth a reader's look, not a repair: the answer is taken, and the finding is published with the ledger.
+
+**The video's words count.** A filler may hold none of the video's own words, its brief's lexicon, besides the atoms' terms (`check_ledger(…, lexicon)`, new here): a window whose atoms happen not to use "half-life" must still not label "Its half-life is long." decorative.
+
+**A speaker is the brief's or the window's.** Compared folded, the brief's "Ada" accepts "ada"; a name the sentences or their context say is accepted too ("Marie Curie" in the sentence itself). Anything else is a guess, and `null` is the honest answer when the transcript does not tell.
+
+### 3. Votes, and what they do not settle
+
+At `max` each window is read **three times**, the samples drawn at once from one reading of the prompt where the engine holds them (P3), each with its own seed. Self-consistency over samples beats asking a model to check itself at equal compute (Wang et al., 2023; Singhi et al., 2025). The readings are reduced to one by pure functions (`rr/pipeline/readings.hpp`), sentence by sentence:
+
+- **What is voted on is what a sentence became, not its words.** Free text never agrees, so a sentence's ballot is its **verdict**: `filler greeting`, or the sorted kinds, modalities and must-quote flags of the atoms that cite it, `atoms claim/asserted, number/hedged/quote`. A hedge read as a fact, a must-quote missed, a sentence dropped as filler: those are what a vote should catch. Register and intensity are left out: readers place them on a scale and differ without either being wrong, so voting on them would contest most sentences and decide nothing.
+- **One reading, never a patchwork.** An atom may cite several sentences, so the window's atoms are never stitched together from different readings: that would split one atom, or tell it twice. They come from its **base reading**, the one whose verdicts win the most votes (the first on a tie). A verdict wins with the tier's quorum: two of three at `max`.
+- **Where the base is not the winner**, because it lost the vote or the vote is tied, its sentences are **unsettled**. They are grouped into stretches, each grown until no atom of the base crosses its edge, and joined where they meet: taking a stretch out of the base takes whole atoms.
+- **The commander reads each stretch again, thinking** (`contested_to_commander`, on at `max`), shown what each reader made of it:
+
+  ```
+  Reader 1:
+  - S5: fact (hedged): Maybe the scales are older than the lab.
+
+  Reader 2:
+  - S5: claim (asserted): Maybe the scales are older than the lab.
+  ```
+
+  It is told to agree with a reader only where the sentences agree with them, and its reading replaces the base's on the stretch. It thinks within its engine's own budget, but never more than half of what it holds (the outline's rule). A stretch the commander cannot hold, or does not settle, leaves the base standing there, with a finding that says so; so does a tier that does not ask the commander, and a pod that serves none (the 24 GB infantry profile).
+
+### 4. Asked again
+
+At `thorough` and `max` (`recall_pass`), a sentence whose atoms hold **less than half its words** is asked again (`coverage()`: the share of its words found in its atoms' texts, names, terms and quotes, folded). The infantry is shown the sentence alone, with the atoms it has, and asked for what they miss:
+
+- the answer's atoms are **added**; nothing is taken away, so the pass can only add what was said;
+- a sentence asked again is **never filler**: it was read as saying something;
+- an atom that **repeats** one the sentence has (its words within a quarter of the other's, `reason::word_distance()`) is sent back: write only what is missing.
+
+The sentences are shown alone, without context, since the ones asked again from a window need not follow one another; the atoms they have say what they are about. A sentence its atoms hold whole is never asked: the pass costs nothing where the first reading was complete.
+
+### 5. The ledger
+
+The windows join into one ledger, atoms renumbered `A1…An` in the order said, and it is **checked whole**. What still fails is a finding, never hidden. A window no answer read (the models declined, a ceiling came first, or no answer passed its checks) leaves its sentences unaccounted for, and a finding says why, once, for the window: not again for each sentence it left unaccounted.
+
+**What the stage says while it works**: `atomize: the infantry reads 2 windows, 3 times each`; `atomize: the commander settles 1 stretch the readings disagree on`; `atomize: the infantry reads 1 window again, where atoms hold little of what was said`.
+
+**The key.** The stage samples, so the job's salt is in its key. Its fingerprint holds the tier's atomize settings, the prompt's label and hash, the army, what the infantry and the commander hold, the windows' size and context, the least coverage and what counts as a repeat.
+
+**What it refuses.** Without a pod, its fingerprint is `Errc::needs_user`, and the job waits. A tier that asks for more waves of samples where the first disagree (`atomize.step`) is refused, `Errc::unsupported`: no shipped tier asks for them, and drawing them is a Phase 6 experiment (P28). A transcript without sentences is `invalid_argument`; an outline that does not cover its transcript is the outline stage's bug, `internal`.
+
+**The oracle** answers every mode by a rule a test can predict (`rr/oracle/answers.hpp`): filler words alone are a disfluency, greeting words a greeting; any other sentence is one atom, the sentence itself, running on into the next when it ends without a full stop; a digit makes a number, "?" a question, "maybe" or "I think" a hedge; runs of capitalized words are names, acronyms terms, and the words between double quotes are to be quoted. Asked again, it writes the atom it would have read, unless an atom shown holds it already.
+
 ## The commands
 
 | Command | What |
@@ -212,8 +312,8 @@ Each stage says how it is doing on stderr. At the end, the command says what the
 
 ## What waits
 
-- **Job ceilings per video-hour** (ADR-0018) need the video's duration, which the source stage now knows. They arrive with atomize, the first stage whose spending grows with the video (P18). Until then a job has no ceiling, and each mission is bounded: its answer's size, its thinking budget, its repairs, the ladder.
-- **A tier that does not take chapters.** The stage reads `[outline] chapters`, but every shipped tier sets it, so no test can turn it off through a tier. Its other side waits for a tier that needs it.
+- **Job ceilings per video-hour** (ADR-0018) need the video's duration, which the source stage knows, at the moment the army is raised. Atomize is the first stage whose spending grows with the video, so they come next. Until then a job has no ceiling, and each mission is bounded: its answer's size, its thinking budget, its repairs, the ladder.
+- **More waves of samples** where the first disagree (a tier's `atomize.step`): refused until the eval shows adaptive waves pay (P28).
 - **Thinking while describing**, and a brief from more than gists: the eval decides (P26).
 - **The token estimator** is not yet calibrated from the call log: the default, which errs high, sizes every request.
 - **A video read again**: a source is read once per library, so captions the creator fixed later are not seen. A way to read a source again, on purpose, will come with the library's commands.
@@ -224,7 +324,7 @@ Each stage says how it is doing on stderr. At the end, the command says what the
 
 | Suite | What it holds |
 |---|---|
-| `tests/unit/pipeline/` (91) | the executor on scripted stages: found done, run again only where an input changed, a failure recorded and resumed, a stop, an artifact that breaks its schema, the salt, a result kept for one job, the cache key and the army's fingerprint; `run_job()`; punctuation's windows and answer checks; the source stage on a fake yt-dlp and on files; the transcript stage on an army of oracles, with faults injected; sentence windows, planned against engines of many sizes, bisection against giving up one sentence at a time; what asking stages share; sections from chapters, pauses and agreement, long ones cut, briefs joined; the outline stage on a synthetic lecture: outlines, chapters, no pod, windows, a sentence too long, an engine too small, every check sent back and repaired, every failure a finding |
+| `tests/unit/pipeline/` (129) | the executor on scripted stages: found done, run again only where an input changed, a failure recorded and resumed, a stop, an artifact that breaks its schema, the salt, a result kept for one job, the cache key and the army's fingerprint; `run_job()`; punctuation's windows and answer checks; the source stage on a fake yt-dlp and on files; the transcript stage on an army of oracles, with faults injected; sentence windows, planned against engines of many sizes, bisection against giving up one sentence at a time; what asking stages share; sections from chapters, pauses and agreement, long ones cut, briefs joined; the outline stage on a synthetic lecture: outlines, chapters, no pod, windows, a sentence too long, an engine too small, every check sent back and repaired, every failure a finding; a job's tier found through its context; readings voted on, grown and replaced, and what atoms hold of a sentence; the atomize stage on a synthetic lecture: every sentence accounted for, every rule sent back and repaired, votes and the commander's settling, sentences asked again, windows, ceilings, no pod, every failure a finding |
 | `tests/unit/library/` | jobs, and the stage store: one commit or none, an artifact kept once, a damaged one refused, findings per run |
 | `tests/unit/hub/` | `JobArmy`: raised once, recorded engines replayed, what needs the user; the configured yt-dlp |
 | `tests/component/hub_cli_test.cpp` | `rreport ingest / resume / jobs` through the real executable: a caption file done without a pod, the outline's finding said, then every stage found done; no pod, a finding; a missing file; an unknown tier |
@@ -263,3 +363,24 @@ clang-tidy found an optional read through an index it could not prove checked, a
 - `every-outline-that-agrees-adds-a-cut` was killed before the test that claimed it could run. Its duplicate cuts reach `outline_of()` in the ceiling test, whose invariant aborts the process, as it should. It is claimed now by the first test that catches it.
 
 The final run kills all 129, and the 7, 5 and 42, each by the test that claims it.
+
+**The atomize stage (P18).** Its tests run it on a synthetic fifteen-minute lecture written for the oracle's rule: a greeting at either end, a disfluency, a number lent by the NRC, two hedges, one of the video's words, a thought that runs over two sentences, a name, a year and words to quote, a question, and Pierre named only near the end. The happy path reads it in two windows, three samples each; the faults are made on the first window's answers, as JSON, sentence by sentence. Readings, votes and coverage have their own tests (`readings_test.cpp`), as pure functions.
+
+What the tests found before any mutant ran:
+1. **The windows test assumed what bisection does not do.** An infantry holding one token less than the first window takes still reads the lecture in two windows: the first gives up a sentence or two, and the second takes them. The test now uses the 48 GB profile's own 4,096 tokens a slot, and the lecture is read in windows of 15, 12 and 3 sentences, to the same ledger.
+2. A test counted the lecture's atoms from 0 and looked for S27's at index 22: it is 23, since S8 has none of its own.
+
+**Writing the mutants found code that changed nothing**, now gone: a stretch's neighbours merged where `grown()` joins them anyway; fillers re-sorted when consecutive windows give them in order; a shortcut for a single reading, which wins every vote the same way; a sort of windows nothing read in order; a line for a sentence a reading made nothing of, which an accepted reading cannot do; the video's lexicon passed again to the final check, after every window was held to it. And ceilings noted in three places are noted in one (`fight()`, every squad's outcomes).
+
+**It found a weakness, now fixed**: repair messages renamed every `A<digits>` they held, so a quoted sentence that says "A2" would have been renamed too. Only the atoms a finding names are renamed now, each as a whole word.
+
+**And behaviour no test held, now tested**: a verdict sorted whatever order its atoms are written in; a stretch grown over two passes; labels replaced within a stretch; terms counting toward coverage; an answer's size, its least and its most; the seeds; what the stage says while it works; three sections named "A", "B" and "C"; what a reader made of a labelled sentence and of a thought that runs on; a sentence held exactly half, which is enough; an atom asked again that also cites a sentence not asked; a pod with no commander; an atom that also names an earlier sentence; `A1` beside `A18`; a name warning published and not sent back; a speaker only the brief names; and in the oracle, greeting words without a greeting, a thought that cannot run on past a gap, a closing quote, names split by a comma.
+
+clang-tidy found `unsettled()` too complex to read (it is four named steps now), three optionals read through an index it could not prove checked (each an invariant, now asserted where it holds), and in the tests vectors filled without a reserve, parameters copied, an `int` product widened, a variable that could be `const`.
+
+**The mutants** (`tests/mutants/pipeline.toml`, 227 now). 120 ran: 64 of the atomize stage, 30 of readings, 1 of a job's tier, 1 of the outline's chapters setting, and again the 14 of windows and the 10 of asking, since windows take their context as a parameter now, and asking holds `Problems`, with the two mutants the eval had for it. With them ran the oracle's 18 new ones (`oracle.toml`), one of the ledger's checks (`fidelity.toml`: the video's lexicon ignored), and the eval's 3 in `draft_problems()`, which notes its problems through `Problems` now. The first run killed 118 of the 120:
+- `a-stretch-grows-in-one-pass` survived. The test's chain of two atoms had S3, the sentence both cite, out-voted as well, so one pass from S3 reached both atoms. S3 now wins its vote: only S5 is unsettled, and only a second pass reaches the first atom.
+- `every-later-section-holds-the-window` did not build (it left a parameter unused), and was written another way.
+- Six were killed, but not by the tests that claim them. Each made an atomize test read the first element of an empty list, undefined behaviour that ended the test binary before the readings tests ran. The tests read through `.at(0)` now, which throws: one test fails, and the run goes on.
+
+The final run kills all 120, each by the test that claims it, and the 18, the 1 and the 3.

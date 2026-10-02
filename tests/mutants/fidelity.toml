@@ -270,3 +270,11 @@ expect = "Article.WithinASectionTheTalksOrderIsKept"
 }'''
   to = '''    }
 }'''
+
+[[mutant]]
+name = "the-videos-lexicon-is-ignored"
+file = "src/fidelity/ledger.cpp"
+expect = "Ledger.AFillerHoldsNoNumberNameOrTerm"
+  [[mutant.edit]]
+  from = '''    std::set<std::string> lexicon(video.begin(), video.end());'''
+  to = '''    std::set<std::string> lexicon(video.begin(), video.begin());'''

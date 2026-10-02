@@ -80,11 +80,12 @@ SentenceWindow window_from(const knowledge::Transcript& transcript, std::size_t 
 }
 
 Result<WindowPlan> plan_windows(const knowledge::Transcript& transcript, std::size_t bytes,
-                                const agents::Army& army, const MissionFor& mission_for) {
+                                const agents::Army& army, const MissionFor& mission_for,
+                                std::size_t context) {
     WindowPlan plan;
     for (std::size_t begin = 0; begin < transcript.sentences.size();) {
         const std::size_t number = plan.missions.size() + 1;
-        SentenceWindow window = window_from(transcript, begin, bytes);
+        SentenceWindow window = window_from(transcript, begin, bytes, context);
         RR_TRY_ASSIGN(agents::Mission mission, mission_for(window, number));
         if (!army.holds(mission)) {
             // Bisect for the largest end the engine holds: `held` holds (or
@@ -94,14 +95,14 @@ Result<WindowPlan> plan_windows(const knowledge::Transcript& transcript, std::si
             while (refused - held > 1) {
                 const std::size_t middle = held + ((refused - held) / 2);
                 RR_TRY_ASSIGN(const agents::Mission trial,
-                              mission_for(window_of(transcript, begin, middle), number));
+                              mission_for(window_of(transcript, begin, middle, context), number));
                 if (army.holds(trial)) {
                     held = middle;
                 } else {
                     refused = middle;
                 }
             }
-            window = window_of(transcript, begin, held);
+            window = window_of(transcript, begin, held, context);
             RR_TRY_ASSIGN(mission, mission_for(window, number));
         }
         if (army.holds(mission)) {

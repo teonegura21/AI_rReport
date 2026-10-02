@@ -1,0 +1,44 @@
+You read part of a video's transcript and write down what each sentence says, as atoms: the units a faithful retelling must keep. Nothing is summarized away. Every sentence is accounted for, by atoms or by a label that says why it holds none, and code checks every row against the words said.
+
+Write one row for each sentence to read, in order:
+- sentence: its number (S12);
+- filler: null, or why it holds nothing to retell: "disfluency" (a false start, "um", a stammer), "greeting", "repetition" (it only says again what was just said), "sponsor" (an advertisement) or "decorative" (a remark that carries no information). A sentence that holds a number, a name or one of the video's words is never filler;
+- atoms: one for each thing it says. Write an atom in the row of the first sentence it draws on; when the thought runs on, name the sentences it also needs in "also". A sentence whose thought an earlier row's atom already holds has no atoms of its own.
+
+Each atom, in this order:
+- also: the sentences after this one that the atom also draws on, or none;
+- names: the names it gives (people, places, organizations, works), as said;
+- terms: the video's own words for things it uses, as said;
+- text: what was said, as one plain sentence that stands alone, never more than was said;
+- kind: "claim", "fact", "number", "example", "anecdote", "aside", "joke", "hedge", "opinion", "question", "instruction", "definition", "reference", or "visual" (it points at something shown);
+- modality: "asserted", "hedged" (maybe, I think), "hypothetical", "reported" (someone else said it), "sarcastic" or "question";
+- register: "main", "aside", "joke", "anecdote" or "example";
+- intensity: "low", "medium" or "high": as strongly as it was said, neither softened nor sharpened;
+- speaker: who says it, one of the speakers below, or null when the transcript does not tell;
+- attributed_to: whom it quotes or reports, or null;
+- must_quote: the exact words to keep, copied from the sentence, or null. Keep them when the wording itself matters: a definition, a promise, a strong, controversial or profane statement, a precise figure of speech.
+
+Write only what the sentences say, never what you know about the subject.
+
+An example. The sentences to read:
+S7 [1:02] Um, so.
+S8 [1:03] The first bridge we tried failed at four tons, which honestly surprised me.
+S9 [1:09] We call the most a bridge carries its proof load.
+S10 [1:14] Then we added a second arch, and the load it held
+S11 [1:18] doubled.
+Your answer:
+{"sentences": [{"sentence": "S7", "filler": "disfluency", "atoms": []}, {"sentence": "S8", "filler": null, "atoms": [{"also": [], "names": [], "terms": [], "text": "The first bridge the team tried failed at four tons.", "kind": "number", "modality": "asserted", "register": "main", "intensity": "medium", "speaker": null, "attributed_to": null, "must_quote": null}, {"also": [], "names": [], "terms": [], "text": "The speaker was surprised that it failed.", "kind": "opinion", "modality": "asserted", "register": "aside", "intensity": "medium", "speaker": null, "attributed_to": null, "must_quote": null}]}, {"sentence": "S9", "filler": null, "atoms": [{"also": [], "names": [], "terms": ["proof load"], "text": "The most a bridge carries is called its proof load.", "kind": "definition", "modality": "asserted", "register": "main", "intensity": "medium", "speaker": null, "attributed_to": null, "must_quote": "We call the most a bridge carries its proof load."}]}, {"sentence": "S10", "filler": null, "atoms": [{"also": ["S11"], "names": [], "terms": [], "text": "Adding a second arch doubled the load the bridge held.", "kind": "claim", "modality": "asserted", "register": "main", "intensity": "medium", "speaker": null, "attributed_to": null, "must_quote": null}]}, {"sentence": "S11", "filler": null, "atoms": []}]}
+
+The transcript is of the video "{{ title }}"{% if channel != "" %}, by {{ channel }}{% endif %}.
+{% if gist != "" %}
+What the whole video says:
+{{ gist }}
+{% endif %}
+{% if speakers != "" %}
+Its speakers:
+{{ speakers }}
+{% endif %}
+{% if lexicon != "" %}
+Its words for things:
+{{ lexicon }}
+{% endif %}

@@ -1,12 +1,18 @@
 #include <rr/oracle/answers.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <charconv>
 #include <cstddef>
+#include <cstdint>
 #include <format>
 #include <memory>
+#include <optional>
 #include <ranges>
+#include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -178,6 +184,144 @@ std::vector<std::string> titles_in(std::string_view lines) {
     return titles;
 }
 
+// --- What a sentence says (atomize()) -------------------------------------------
+
+// The words of a sentence of filler; and those of a greeting, which opens
+// with one of kGreetings.
+constexpr std::array<std::string_view, 10> kFillerWords{"um",   "uh",   "er",    "hmm",  "so",
+                                                        "well", "okay", "right", "like", "yeah"};
+constexpr std::array<std::string_view, 6> kGreetings{"hello", "hi", "hey", "welcome", "thanks", "thank"};
+constexpr std::array<std::string_view, 14> kGreetingWords{"you", "everyone", "everybody", "all",     "back",
+                                                          "and", "to",       "the",       "channel", "show",
+                                                          "for", "watching", "much",      "again"};
+
+// The filler label atomize() gives `text`, or none.
+std::optional<std::string> filler_label(std::string_view text) {
+    const std::vector<std::string> words = words_of(text);
+    bool filler = !words.empty();    // filler words alone
+    bool greeting = !words.empty();  // greeting and filler words alone
+    bool greets = false;             // one greeting word at least
+    for (const std::string& word : words) {
+        const std::string plain = bare(word);
+        const bool filler_word = std::ranges::contains(kFillerWords, plain);
+        const bool greeting_word = std::ranges::contains(kGreetings, plain);
+        filler = filler && filler_word;
+        greeting = greeting && (filler_word || greeting_word || std::ranges::contains(kGreetingWords, plain));
+        greets = greets || greeting_word;
+    }
+    if (filler) {
+        return "disfluency";
+    }
+    if (greeting && greets) {
+        return "greeting";
+    }
+    return std::nullopt;
+}
+
+// Whether `text` ends a sentence: a full stop, a question or an exclamation
+// mark, or an ellipsis, before any closing quotes or brackets.
+bool ends_a_sentence(std::string_view text) {
+    while (!text.empty() && std::string_view{"\"')] "}.contains(text.back())) {
+        text.remove_suffix(1);
+    }
+    return text.ends_with('.') || text.ends_with('?') || text.ends_with('!') || text.ends_with("\u2026");
+}
+
+// 12 for "S12"; 0 for anything else.
+std::uint32_t number_of(std::string_view id) {
+    std::uint32_t number = 0;
+    const bool parsed = id.size() >= 2 && id.front() == 'S' &&
+                        std::from_chars(id.data() + 1, id.data() + id.size(), number).ec == std::errc{};
+    return parsed ? number : 0;
+}
+
+// The runs of capitalized words after the first word of `text`, each a name
+// ("Ada Lovelace"), once each. A word with punctuation after it ends its run.
+std::vector<std::string> names_in(std::string_view text) {
+    const std::vector<std::string> words = words_of(text);
+    std::vector<std::string> names;
+    std::string run;
+    const auto close = [&] {
+        if (!run.empty() && !std::ranges::contains(names, run)) {
+            names.push_back(run);
+        }
+        run.clear();
+    };
+    for (std::size_t index = 1; index < words.size(); ++index) {
+        const std::string_view word = trimmed(words[index]);
+        const bool capitalized = word.size() >= 2 && std::isupper(static_cast<unsigned char>(word[0])) != 0 &&
+                                 std::islower(static_cast<unsigned char>(word[1])) != 0;
+        if (!capitalized) {
+            close();
+            continue;
+        }
+        run += run.empty() ? std::string{word} : " " + std::string{word};
+        if (!words[index].ends_with(word)) {
+            close();
+        }
+    }
+    close();
+    return names;
+}
+
+// The acronyms of `text`, once each.
+std::vector<std::string> acronyms_in(std::string_view text) {
+    std::vector<std::string> terms;
+    for (const std::string& word : words_of(text)) {
+        if (const std::string_view plain = trimmed(word);
+            acronym(plain) && !std::ranges::contains(terms, plain)) {
+            terms.emplace_back(plain);
+        }
+    }
+    return terms;
+}
+
+// The words between the first pair of double quotes of `text`, or none.
+std::optional<std::string> quoted_in(std::string_view text) {
+    const std::size_t open = text.find('"');
+    const std::size_t close = open == std::string_view::npos ? open : text.find('"', open + 1);
+    if (close == std::string_view::npos || close == open + 1) {
+        return std::nullopt;
+    }
+    return std::string{text.substr(open + 1, close - open - 1)};
+}
+
+// The atom atomize() writes of `text`, which also draws on `also`.
+json::Json atom_of(const std::string& text, json::Json also) {
+    const bool number = text.find_first_of("0123456789") != std::string::npos;
+    const bool question = text.ends_with('?');
+    const bool hedged = text.find("maybe") != std::string::npos || text.find("Maybe") != std::string::npos ||
+                        text.find("I think") != std::string::npos;
+    std::string kind = "claim";
+    if (number) {
+        kind = "number";
+    } else if (question) {
+        kind = "question";
+    }
+    std::string modality = "asserted";
+    if (question) {
+        modality = "question";
+    } else if (hedged) {
+        modality = "hedged";
+    }
+    const std::optional<std::string> quote = quoted_in(text);
+    return json::Json{{"also", std::move(also)},
+                      {"names", names_in(text)},
+                      {"terms", acronyms_in(text)},
+                      {"text", text},
+                      {"kind", std::move(kind)},
+                      {"modality", std::move(modality)},
+                      {"register", "main"},
+                      {"intensity", "medium"},
+                      {"speaker", nullptr},
+                      {"attributed_to", nullptr},
+                      {"must_quote", quote.has_value() ? json::Json(*quote) : json::Json(nullptr)}};
+}
+
+json::Json row_of(const Said& sentence, json::Json filler, json::Json atoms) {
+    return json::Json{{"sentence", sentence.id}, {"filler", std::move(filler)}, {"atoms", std::move(atoms)}};
+}
+
 }  // namespace
 
 Answerer annotate() {
@@ -272,6 +416,41 @@ Answerer brief() {
     };
 }
 
+Answerer atomize() {
+    return [](const llm::ChatRequest& request) -> Result<std::string> {
+        RR_TRY_ASSIGN(const std::string lines, block_in(request, "sentences"));
+        // Asked again what the sentences' atoms miss, the request shows them.
+        const Result<std::string> held = block_in(request, "atoms");
+        const std::vector<Said> sentences = said_in(lines);
+        json::Json rows = json::Json::array();
+        for (std::size_t index = 0; index < sentences.size(); ++index) {
+            const Said& sentence = sentences[index];
+            if (const std::optional<std::string> label = filler_label(sentence.text);
+                label.has_value() && !held.has_value()) {
+                rows.push_back(row_of(sentence, *label, json::Json::array()));
+                continue;
+            }
+            const bool runs_on = !ends_a_sentence(sentence.text) && index + 1 < sentences.size() &&
+                                 number_of(sentences[index + 1].id) == number_of(sentence.id) + 1;
+            std::string text = sentence.text;
+            json::Json also = json::Json::array();
+            if (runs_on) {
+                text += " " + sentences[index + 1].text;
+                also.push_back(sentences[index + 1].id);
+            }
+            json::Json atoms = json::Json::array();
+            if (!held.has_value() || held->find(text) == std::string::npos) {
+                atoms.push_back(atom_of(text, std::move(also)));
+            }
+            rows.push_back(row_of(sentence, nullptr, std::move(atoms)));
+            if (runs_on) {
+                rows.push_back(row_of(sentences[++index], nullptr, json::Json::array()));
+            }
+        }
+        return json::dump(json::Json{{"sentences", std::move(rows)}});
+    };
+}
+
 Result<std::string> excerpt_in(const llm::ChatRequest& request) {
     // A repair's conversation ends with its instruction: the excerpt is in
     // the order's message, before it.
@@ -304,6 +483,7 @@ void teach_stages(Oracle& oracle, std::optional<std::string> script) {
     oracle.teach("outline", outline());
     oracle.teach("describe", describe());
     oracle.teach("brief", brief());
+    oracle.teach("atomize", atomize());
 }
 
 }  // namespace rr::oracle

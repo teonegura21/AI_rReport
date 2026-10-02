@@ -1,0 +1,34 @@
+Answer with JSON: {"sentences": [{"sentence": "S12", "filler": null, "atoms": [...]}, ...]}, a row for each sentence to read.
+They are from {{ sections }}.
+{% if before != "" %}
+Before them, for context only (write no rows for these):
+{{ before }}
+
+{% endif %}
+The sentences to read:
+<sentences>
+{{ sentences }}
+</sentences>
+{% if after != "" %}
+
+After them, for context only (write no rows for these):
+{{ after }}
+{% endif %}
+{% if mode == "settle" %}
+
+Other readers disagreed about these sentences. What each made of them:
+<readings>
+{{ readings }}
+</readings>
+
+Read the sentences yourself and write your own rows: agree with a reader only where the sentences agree with them.
+{% endif %}
+{% if mode == "recall" %}
+
+The atoms read from them so far hold little of what they say:
+<atoms>
+{{ atoms }}
+</atoms>
+
+For each sentence, write only the atoms these miss: what it says that none of them holds. A sentence they hold whole gets no atoms, and none is filler.
+{% endif %}

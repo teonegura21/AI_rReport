@@ -3,6 +3,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -171,8 +172,9 @@ std::string signal_in(std::string_view sentence, const std::set<std::string>& le
     return {};
 }
 
-void check_fillers(const Transcript& transcript, const AtomLedger& ledger, Report& report) {
-    std::set<std::string> lexicon;
+void check_fillers(const Transcript& transcript, const AtomLedger& ledger, std::span<const std::string> video,
+                   Report& report) {
+    std::set<std::string> lexicon(video.begin(), video.end());
     std::set<SentenceId> told;
     for (const Atom& atom : ledger.atoms) {
         lexicon.insert(atom.terms.begin(), atom.terms.end());
@@ -196,7 +198,8 @@ void check_fillers(const Transcript& transcript, const AtomLedger& ledger, Repor
 
 }  // namespace
 
-Report check_ledger(const Transcript& transcript, const AtomLedger& ledger) {
+Report check_ledger(const Transcript& transcript, const AtomLedger& ledger,
+                    std::span<const std::string> lexicon) {
     Report report;
     account_for_sentences(transcript, ledger, report);
     std::vector<SentenceId> all;
@@ -208,7 +211,7 @@ Report check_ledger(const Transcript& transcript, const AtomLedger& ledger) {
     for (const Atom& atom : ledger.atoms) {
         ground_atom(transcript, whole, atom, report);
     }
-    check_fillers(transcript, ledger, report);
+    check_fillers(transcript, ledger, lexicon, report);
     return report;
 }
 

@@ -364,31 +364,36 @@ std::string job_in(const std::string& output) {
     return at == std::string::npos ? std::string{} : output.substr(at + 4, 26);
 }
 
-// Without a pod, so far: the fake engines do not answer as the oracle does
-// yet (plan P22), and every stage does what it can without models.
-TEST_F(Hub, IngestsACaptionFileWithoutAPodAndSaysWhatItCouldNotDo) {
+// Without a pod: the fake engines do not answer as the oracle does yet
+// (plan P22). The stages that can do without models do, and say what they
+// could not do; the atomize stage cannot, and the job waits for a pod.
+TEST_F(Hub, IngestsACaptionFileWithoutAPodUntilItNeedsOne) {
     const std::vector<std::string> no_pod{"runtime.url=", "runpod.pod_id="};
     const std::filesystem::path captions = home().write_file("On radium.vtt", kCaptions);
     const proc::RunResult first = rreport({"ingest", captions.string()}, no_pod);
-    ASSERT_EQ(first.status.code, 0) << first.stdout_text << first.stderr_text;
-    EXPECT_THAT(first.stdout_text, HasSubstr("is done: On radium"));
+    EXPECT_EQ(first.status.code, 1) << first.stdout_text << first.stderr_text;
     EXPECT_THAT(first.stderr_text, HasSubstr("transcript: done"));
     EXPECT_THAT(first.stderr_text, HasSubstr("outline: done"));
     EXPECT_THAT(first.stdout_text, HasSubstr("what the stages could not do:"));
     EXPECT_THAT(first.stdout_text,
                 HasSubstr("outline: No pod is configured to read the video: its sections are cut "
                           "where the speaker paused"));
+    const std::string job = job_in(first.stdout_text);
+    EXPECT_THAT(first.stdout_text,
+                HasSubstr(std::format("job {} needs you: atomizing needs models, and no pod is configured: "
+                                      "rreport doctor says how to set one up\n  then: rreport resume {}",
+                                      job, job)));
 
     const proc::RunResult second = rreport({"ingest", captions.string()}, no_pod);
-    ASSERT_EQ(second.status.code, 0);
+    EXPECT_EQ(second.status.code, 1);
     EXPECT_THAT(second.stderr_text, HasSubstr("source: found done"));
     EXPECT_THAT(second.stderr_text, HasSubstr("transcript: found done")) << "the stage cache answers";
     EXPECT_THAT(second.stderr_text, HasSubstr("outline: found done"));
 
     const proc::RunResult listed = rreport({"jobs"});
     ASSERT_EQ(listed.status.code, 0);
-    EXPECT_THAT(listed.stdout_text, HasSubstr(job_in(first.stdout_text)));
-    EXPECT_THAT(listed.stdout_text, HasSubstr("done"));
+    EXPECT_THAT(listed.stdout_text, HasSubstr(job));
+    EXPECT_THAT(listed.stdout_text, HasSubstr("needs_user"));
 
     const proc::RunResult shown = rreport({"jobs", "show", job_in(second.stdout_text)});
     ASSERT_EQ(shown.status.code, 0);
@@ -397,18 +402,18 @@ TEST_F(Hub, IngestsACaptionFileWithoutAPodAndSaysWhatItCouldNotDo) {
     EXPECT_THAT(shown.stdout_text, HasSubstr("stage transcript   found done"));
     EXPECT_THAT(shown.stdout_text, HasSubstr("stage outline      found done"));
 
-    const proc::RunResult resumed = rreport({"resume", job_in(first.stdout_text)}, no_pod);
-    EXPECT_EQ(resumed.status.code, 0);
-    EXPECT_THAT(resumed.stdout_text, HasSubstr("is done already"));
+    const proc::RunResult resumed = rreport({"resume", job}, no_pod);
+    EXPECT_EQ(resumed.status.code, 1);
+    EXPECT_THAT(resumed.stdout_text, HasSubstr(std::format("job {} needs you: atomizing needs models", job)));
 }
 
-TEST_F(Hub, UnpunctuatedCaptionsWithoutAPodAreDoneAndSaySo) {
+TEST_F(Hub, UnpunctuatedCaptionsWithoutAPodSaySo) {
     const std::filesystem::path captions =
         home().write_file("auto.vtt",
                           "WEBVTT\n\n00:00.000 --> 00:03.000\nso marie curie won two nobel prizes she\n\n"
                           "00:03.000 --> 00:06.000\ncalled the element radium and it glowed\n");
     const proc::RunResult result = rreport({"ingest", captions.string()}, {"runtime.url=", "runpod.pod_id="});
-    ASSERT_EQ(result.status.code, 0) << result.stdout_text << result.stderr_text;
+    EXPECT_EQ(result.status.code, 1) << "the atomize stage waits for a pod";
     EXPECT_THAT(result.stdout_text, HasSubstr("what the stages could not do:"));
     EXPECT_THAT(result.stdout_text,
                 HasSubstr("transcript: The captions are not punctuated, and no pod is configured"));

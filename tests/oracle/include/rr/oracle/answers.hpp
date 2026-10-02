@@ -17,14 +17,16 @@
 //   that keeps every word and passes the checks, so a pipeline runs end to
 //   end on any captions.
 //
-// Annotation, outlines and descriptions
+// Annotation, outlines, descriptions and atoms
 //   The eval's silver drafts (rr/eval/annotate.hpp), a video's outline and
-//   its sections' descriptions (rr/pipeline/outline_stage.hpp) have no
-//   single right answer either. The oracle answers each by a rule a test can
-//   predict, and that keeps every check: see annotate(), outline(),
-//   describe() and brief(). A synthetic video is written for the rule: its
-//   talk turns at a sentence that opens with "Now," or "Next,"; a speaker
-//   says "I'm Ada"; its words for things are acronyms.
+//   its sections' descriptions (rr/pipeline/outline_stage.hpp), and what each
+//   sentence says (rr/pipeline/atomize_stage.hpp) have no single right
+//   answer either. The oracle answers each by a rule a test can predict, and
+//   that keeps every check: see annotate(), outline(), describe(), brief()
+//   and atomize(). A synthetic video is written for the rule: its talk turns
+//   at a sentence that opens with "Now," or "Next,"; a speaker says "I'm
+//   Ada"; its words for things are acronyms; "Um, so." is a disfluency and
+//   "Hello and welcome back." a greeting.
 //
 // Thread-safety: answerers are immutable and safe to call from many threads.
 #pragma once
@@ -72,6 +74,26 @@ namespace rr::oracle {
 // Answers brief missions (prompts/brief): "A video in 3 sections, from
 // <the first's title> to <the last's>."
 [[nodiscard]] Answerer brief();
+
+// Answers atomize missions (prompts/atomize), a row for each sentence to read:
+//   * a sentence of filler words alone ("Um, so.") is a "disfluency"; one of
+//     greeting words, filler words among them, a "greeting" ("Hello and
+//     welcome back.", "Thanks for watching!");
+//   * any other sentence is one atom, its text the sentence itself. One that
+//     runs on (it ends without a full stop, a question or an exclamation
+//     mark) into the next sentence to read takes that one in: the atom's
+//     text is both, it names the next in "also", and the next has no atoms
+//     of its own;
+//   * an atom is a "number" when it holds a digit, a "question" (asked) when
+//     it ends with "?", a "claim" otherwise; "hedged" when it says "maybe" or
+//     "I think". Its names are the runs of capitalized words after its first
+//     ("Ada Lovelace"), its terms its acronyms; it must quote the words
+//     between its first pair of double quotes. Register "main", intensity
+//     "medium", no speaker, attributed to no one.
+// The same rule settles a stretch other readers disagreed on. Asked again
+// what a sentence's atoms miss (recall), it writes the atom it would have
+// read, never a filler, unless an atom shown holds that atom's text already.
+[[nodiscard]] Answerer atomize();
 
 // Teaches `oracle` every mission kind the pipeline's stages send, punctuating
 // from `script` when there is one.

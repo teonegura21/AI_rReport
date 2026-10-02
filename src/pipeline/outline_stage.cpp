@@ -43,7 +43,6 @@ constexpr std::size_t kTitleWords = 12;       // a section's title
 constexpr std::size_t kSectionTerms = 15;     // the words a section's description lists
 constexpr std::size_t kGistWords = 60;        // a section's gist: one or two sentences
 constexpr std::size_t kVideoGistWords = 150;  // the video's: a paragraph
-constexpr std::size_t kMostProblems = 8;      // sent back at once: enough to fix, few enough to read
 constexpr int kOutlineAnswerTokens = 1'024;   // fifty sections and their titles
 constexpr int kDescribeAnswerTokens = 1'024;
 constexpr int kBriefAnswerTokens = 1'024;
@@ -54,29 +53,6 @@ constexpr std::size_t kWholeTranscript = std::numeric_limits<std::size_t>::max()
 constexpr std::string_view kNoPod =
     "No pod is configured to read the video: its sections are {}, without gists, and its brief is empty. Set "
     "up the pod (rreport doctor says how) and ingest the video again.";
-
-// What is wrong with an answer: at most kMostProblems, then how many more.
-class Problems {
-public:
-    void note(std::string problem) {
-        if (problems_.size() < kMostProblems) {
-            problems_.push_back(std::move(problem));
-        } else {
-            ++more_;
-        }
-    }
-
-    [[nodiscard]] std::vector<std::string> list() && {
-        if (more_ > 0) {
-            problems_.push_back(std::format("and {} more like them", more_));
-        }
-        return std::move(problems_);
-    }
-
-private:
-    std::vector<std::string> problems_;
-    std::size_t more_ = 0;
-};
 
 std::size_t words_in(const json::Json& text) {
     return text::terms(text.get<std::string>()).size();
@@ -562,7 +538,7 @@ Result<Read> read_input(const StageContext& context) {
     if (read.transcript.sentences.empty()) {
         return fail(Errc::invalid_argument, "the transcript has no sentences: there is nothing to outline");
     }
-    RR_TRY_ASSIGN(read.tier, reason::builtin_tier(context.job->tier));
+    RR_TRY_ASSIGN(read.tier, job_tier(context));
     read.chapters = read.tier.outline.chapters && read.source.video.chapters.size() >= kLeastChapters;
     return read;
 }
@@ -571,7 +547,7 @@ Result<Read> read_input(const StageContext& context) {
 
 Result<json::Json> OutlineStage::fingerprint(const StageContext& context) const {
     RR_ASSERT(context.job != nullptr, "a stage runs for a job");
-    RR_TRY_ASSIGN(const reason::Tier tier, reason::builtin_tier(context.job->tier));
+    RR_TRY_ASSIGN(const reason::Tier tier, job_tier(context));
     json::Json fingerprint{{"tier", tier.canonical(reason::Stage::outline)},
                            {"longest_ms", kLongestSection.count()},
                            {"models", nullptr}};

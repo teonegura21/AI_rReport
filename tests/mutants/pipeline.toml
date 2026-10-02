@@ -477,6 +477,22 @@ expect = "Asking.ADescriptionWithoutASpaceIsCutBeforeACharacterNeverInsideOne"
   to = '''        while (false) {'''
 
 [[mutant]]
+name = "every-problem-is-sent-back"
+file = "src/pipeline/asking.cpp"
+expect = "Asking.AnAnswersProblemsAreSentBackAFewAtATime"
+  [[mutant.edit]]
+  from = '''    if (problems_.size() < kMostProblems) {'''
+  to = '''    if (true) {'''
+
+[[mutant]]
+name = "the-problems-left-out-are-not-counted"
+file = "src/pipeline/asking.cpp"
+expect = "Asking.AnAnswersProblemsAreSentBackAFewAtATime"
+  [[mutant.edit]]
+  from = '''    if (more_ > 0) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
 name = "any-engine-serves-every-role"
 file = "src/pipeline/asking.cpp"
 expect = "Asking.TheEngineServingARoleIsFound"
@@ -1072,3 +1088,785 @@ expect = "OutlineStageTest.ATranscriptWithoutSentencesIsNothingToOutline"
   [[mutant.edit]]
   from = '''    if (read.transcript.sentences.empty()) {'''
   to = '''    if (read.transcript.sentences.empty() && false) {'''
+
+# --- Readings: what models made of a window, voted on (readings.cpp) -------------
+
+[[mutant]]
+name = "an-atom-cites-only-its-row"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.AnAnswerIsReadAsTheLedgerWouldBe"
+  [[mutant.edit]]
+  from = '''                cited.push_back(sentence_of(also));'''
+  to = '''                (void)sentence_of(also);'''
+
+[[mutant]]
+name = "an-atom-cites-in-the-order-written"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.AnAnswerIsReadAsTheLedgerWouldBe"
+  [[mutant.edit]]
+  from = '''            std::ranges::sort(cited);'''
+  to = '''            std::ranges::sort(cited.begin(), cited.begin());'''
+
+[[mutant]]
+name = "an-atom-cites-a-sentence-twice"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.AnAnswerIsReadAsTheLedgerWouldBe"
+  [[mutant.edit]]
+  from = '''            cited.erase(repeats.begin(), repeats.end());'''
+  to = '''            cited.erase(repeats.end(), repeats.end());'''
+
+[[mutant]]
+name = "atoms-are-numbered-from-zero"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.AnAnswerIsReadAsTheLedgerWouldBe"
+  [[mutant.edit]]
+  from = '''            atoms.push_back(json::Json{{"id", std::format("A{}", atoms.size() + 1)},'''
+  to = '''            atoms.push_back(json::Json{{"id", std::format("A{}", atoms.size())},'''
+
+[[mutant]]
+name = "a-must-quote-is-not-flagged"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.AnAnswerIsReadAsTheLedgerWouldBe"
+  [[mutant.edit]]
+  from = '''                                       {"must_quote", !quote.is_null()},'''
+  to = '''                                       {"must_quote", false},'''
+
+[[mutant]]
+name = "a-filler-is-dropped"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.AnAnswerIsReadAsTheLedgerWouldBe"
+  [[mutant.edit]]
+  from = '''        if (!row.at("filler").is_null()) {'''
+  to = '''        if (!row.at("filler").is_null() && false) {'''
+
+[[mutant]]
+name = "a-filler-verdict-is-its-atoms"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.AVerdictIsWhatASentenceBecameNotItsWords"
+  [[mutant.edit]]
+  from = '''    if (filler != reading.fillers.end()) {'''
+  to = '''    if (filler != reading.fillers.end() && false) {'''
+
+[[mutant]]
+name = "a-verdict-forgets-the-must-quote"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.AVerdictIsWhatASentenceBecameNotItsWords"
+  [[mutant.edit]]
+  from = '''                                        atom.must_quote ? "/quote" : ""));'''
+  to = '''                                        atom.must_quote && false ? "/quote" : ""));'''
+
+[[mutant]]
+name = "a-verdict-forgets-the-modality"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.AVerdictIsWhatASentenceBecameNotItsWords"
+  [[mutant.edit]]
+  from = '''                                        knowledge::to_string(atom.modality),'''
+  to = '''                                        knowledge::to_string(atom.kind),'''
+
+[[mutant]]
+name = "a-verdict-is-in-the-order-written"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.AVerdictIsWhatASentenceBecameNotItsWords"
+  [[mutant.edit]]
+  from = '''    std::ranges::sort(parts);'''
+  to = '''    std::ranges::sort(parts.begin(), parts.begin());'''
+
+[[mutant]]
+name = "a-ballot-carries-no-text"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.BallotsAreOneASentenceASample"
+  [[mutant.edit]]
+  from = '''                    text += text.empty() ? atom.text : " " + atom.text;'''
+  to = '''                    text += std::string{};'''
+
+[[mutant]]
+name = "ballots-are-numbered-from-one"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.BallotsAreOneASentenceASample"
+  [[mutant.edit]]
+  from = '''                                             .sample = static_cast<int>(sample)});'''
+  to = '''                                             .sample = static_cast<int>(sample + 1)});'''
+
+[[mutant]]
+name = "the-base-is-the-last-of-a-tie"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.TheBaseReadingWinsTheMostVotes"
+  [[mutant.edit]]
+  from = '''        if (won > most) {'''
+  to = '''        if (won >= most) {'''
+
+[[mutant]]
+name = "the-base-is-always-the-first"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.TheBaseReadingWinsTheMostVotes"
+  [[mutant.edit]]
+  from = '''            base = sample;'''
+  to = '''            base = sample * 0;'''
+
+[[mutant]]
+name = "a-lost-vote-is-settled"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.WhatTheBaseDoesNotSettleIsGrownUntilNoAtomCrossesItsEdge"
+  [[mutant.edit]]
+  from = '''        if (votes[index].winner != verdict_on(base, ids[index])) {'''
+  to = '''        if (votes[index].winner != verdict_on(base, ids[index]) && false) {'''
+
+[[mutant]]
+name = "an-atom-spans-its-first-sentence-only"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.WhatTheBaseDoesNotSettleIsGrownUntilNoAtomCrossesItsEdge"
+  [[mutant.edit]]
+  from = '''            extents.push_back(Stretch{.begin = *first, .end = *last + 1});'''
+  to = '''            extents.push_back(Stretch{.begin = *first, .end = *first + 1});'''
+
+[[mutant]]
+name = "a-distant-atom-crosses-too"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.WhatTheBaseDoesNotSettleIsGrownUntilNoAtomCrossesItsEdge"
+  [[mutant.edit]]
+  from = '''    return extent.begin < stretch.end && extent.end > stretch.begin &&'''
+  to = '''    return extent.begin < stretch.end + 100 && extent.end + 100 > stretch.begin &&'''
+
+[[mutant]]
+name = "touching-stretches-stay-apart"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.WhatTheBaseDoesNotSettleIsGrownUntilNoAtomCrossesItsEdge"
+  [[mutant.edit]]
+  from = '''        if (!kept.empty() && stretch.begin <= kept.back().end) {'''
+  to = '''        if (!kept.empty() && stretch.begin < kept.back().end) {'''
+
+[[mutant]]
+name = "a-stretch-grows-in-one-pass"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.WhatTheBaseDoesNotSettleIsGrownUntilNoAtomCrossesItsEdge"
+  [[mutant.edit]]
+  from = '''                    growing = true;'''
+  to = '''                    growing = growing && true;'''
+
+[[mutant]]
+name = "the-base-keeps-its-reading-of-the-stretch"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.ASettledReadingReplacesTheBasesOnItsStretch"
+  [[mutant.edit]]
+  from = '''    std::erase_if(base.atoms, [&](const Atom& atom) { return inside(atom.sentences.front()); });'''
+  to = '''    std::erase_if(base.atoms, [&](const Atom& atom) { return inside(atom.sentences.front()) && false; });'''
+
+[[mutant]]
+name = "the-base-keeps-its-labels-of-the-stretch"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.ASettledReadingReplacesTheBasesOnItsStretch"
+  [[mutant.edit]]
+  from = '''    std::erase_if(base.fillers, [&](const knowledge::Filler& filler) { return inside(filler.sentence); });'''
+  to = '''    std::erase_if(base.fillers, [&](const knowledge::Filler& filler) { return inside(filler.sentence) && false; });'''
+
+[[mutant]]
+name = "a-stretch-ends-a-sentence-late"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.ASettledReadingReplacesTheBasesOnItsStretch"
+  [[mutant.edit]]
+  from = '''        return index.has_value() && *index >= stretch.begin && *index < stretch.end;'''
+  to = '''        return index.has_value() && *index >= stretch.begin && *index <= stretch.end;'''
+
+[[mutant]]
+name = "settled-labels-come-last"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.ASettledReadingReplacesTheBasesOnItsStretch"
+  [[mutant.edit]]
+  from = '''    std::ranges::stable_sort(base.fillers, {}, &knowledge::Filler::sentence);'''
+  to = '''    std::ranges::stable_sort(base.fillers.begin(), base.fillers.begin(), {}, &knowledge::Filler::sentence);'''
+
+[[mutant]]
+name = "a-settled-reading-keeps-its-numbers"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.ASettledReadingReplacesTheBasesOnItsStretch"
+  [[mutant.edit]]
+  from = '''    renumber(base.atoms);
+    return base;'''
+  to = '''    return base;'''
+
+[[mutant]]
+name = "names-hold-nothing"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.CoverageIsTheShareOfASentencesWordsItsAtomsHold"
+  [[mutant.edit]]
+  from = '''            hold(name);'''
+  to = '''            hold(name.substr(0, 0));'''
+
+[[mutant]]
+name = "terms-hold-nothing"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.CoverageIsTheShareOfASentencesWordsItsAtomsHold"
+  [[mutant.edit]]
+  from = '''            hold(term);'''
+  to = '''            hold(term.substr(0, 0));'''
+
+[[mutant]]
+name = "quotes-hold-nothing"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.CoverageIsTheShareOfASentencesWordsItsAtomsHold"
+  [[mutant.edit]]
+  from = '''            hold(*atom.quote);'''
+  to = '''            hold(atom.quote->substr(0, 0));'''
+
+[[mutant]]
+name = "a-sentence-without-words-lacks-everything"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.CoverageIsTheShareOfASentencesWordsItsAtomsHold"
+  [[mutant.edit]]
+  from = '''        return 1.0;'''
+  to = '''        return 0.0;'''
+
+[[mutant]]
+name = "windows-keep-their-own-numbers"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.WindowsJoinIntoOneLedgerInTheOrderSaid"
+  [[mutant.edit]]
+  from = '''    renumber(ledger.atoms);  // a recalled atom was added at its window's end'''
+  to = '''    (void)renumber;'''
+
+[[mutant]]
+name = "a-recalled-atom-stays-at-its-windows-end"
+file = "src/pipeline/readings.cpp"
+expect = "AtomizeStageTest.ASentenceItsAtomsBarelyHoldIsAskedAgain"
+  [[mutant.edit]]
+  from = '''    std::ranges::stable_sort(atoms, {}, [](const Atom& atom) { return atom.sentences.front(); });'''
+  to = '''    std::ranges::stable_sort(atoms.begin(), atoms.begin(), {}, [](const Atom& atom) { return atom.sentences.front(); });'''
+
+# --- The atomize stage (atomize_stage.cpp) ---------------------------------------
+
+[[mutant]]
+name = "an-answer-may-take-less"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.AnAnswerMayTakeThreeHundredAndTwentyBytesASentenceBesidesItsWords"
+  [[mutant.edit]]
+  from = '''constexpr std::size_t kRowBytes = 320;'''
+  to = '''constexpr std::size_t kRowBytes = 300;'''
+
+[[mutant]]
+name = "an-answer-has-no-least-size"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.AnAnswerMayTakeThreeHundredAndTwentyBytesASentenceBesidesItsWords"
+  [[mutant.edit]]
+  from = '''    return static_cast<int>(std::clamp(tokens, kLeastAnswer, kMostAnswer));'''
+  to = '''    return static_cast<int>(std::clamp(tokens, kLeastAnswer * 0, kMostAnswer));'''
+
+[[mutant]]
+name = "an-answer-has-no-most-size"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.AnAnswerMayTakeThreeHundredAndTwentyBytesASentenceBesidesItsWords"
+  [[mutant.edit]]
+  from = '''    return static_cast<int>(std::clamp(tokens, kLeastAnswer, kMostAnswer));'''
+  to = '''    return static_cast<int>(std::clamp(tokens, kLeastAnswer, kMostAnswer * 100));'''
+
+[[mutant]]
+name = "a-row-outside-the-window-is-read"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''        if (at == asked.rows.end()) {'''
+  to = '''        if (at == asked.rows.end() && false) {'''
+
+[[mutant]]
+name = "a-row-written-twice-is-read"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''        if (index < next) {'''
+  to = '''        if (index < next && false) {'''
+
+[[mutant]]
+name = "a-labelled-row-may-have-atoms"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''    } else if (!filler.is_null() && !row.at("atoms").empty()) {'''
+  to = '''    } else if (!filler.is_null() && !row.at("atoms").empty() && false) {'''
+
+[[mutant]]
+name = "also-may-name-an-earlier-sentence"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''            if (later <= sentence || !std::ranges::contains(asked.rows, later)) {'''
+  to = '''            if ((later <= sentence && false) || !std::ranges::contains(asked.rows, later)) {'''
+
+[[mutant]]
+name = "also-may-name-a-sentence-outside"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''            if (later <= sentence || !std::ranges::contains(asked.rows, later)) {'''
+  to = '''            if (later <= sentence || (!std::ranges::contains(asked.rows, later) && false)) {'''
+
+[[mutant]]
+name = "messages-name-atoms-by-number"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''            message = replace_word(message, id.str(), positions[id.number() - 1]);'''
+  to = '''            message = replace_word(message, id.str(), id.str() + positions[id.number() - 1].substr(0, 0));'''
+
+[[mutant]]
+name = "an-atom-is-renamed-inside-another"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''        const bool whole = (found == 0 || !word_character(text[found - 1])) &&
+                           (end == text.size() || !word_character(text[end]));'''
+  to = '''        const bool whole = (found == 0 || !word_character(text[found - 1])) || true;'''
+
+[[mutant]]
+name = "an-atoms-speaker-no-one-names-is-taken"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''        if (speaker.has_value() && !std::ranges::contains(asked.speakers, folded(*speaker)) &&
+            !says(asked.said, *speaker)) {'''
+  to = '''        if (speaker.has_value() && !std::ranges::contains(asked.speakers, folded(*speaker)) &&
+            !says(asked.said, *speaker) && false) {'''
+
+[[mutant]]
+name = "the-briefs-speakers-are-not-asked"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.ASpeakerTheVideoOrTheSentencesShownNameIsTaken"
+  [[mutant.edit]]
+  from = '''        if (speaker.has_value() && !std::ranges::contains(asked.speakers, folded(*speaker)) &&'''
+  to = '''        if (speaker.has_value() && !std::ranges::contains(asked.speakers, *speaker) &&'''
+
+[[mutant]]
+name = "the-context-names-no-speaker"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.ASpeakerTheVideoOrTheSentencesShownNameIsTaken"
+  [[mutant.edit]]
+  from = '''                                             indices_of(window.context_begin, window.context_end))));
+        mission.samples = compute_.waves.first;'''
+  to = '''                                             indices_of(window.begin, window.end))));
+        mission.samples = compute_.waves.first;'''
+
+[[mutant]]
+name = "warnings-are-sent-back"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.ASpeakerTheVideoOrTheSentencesShownNameIsTaken"
+  [[mutant.edit]]
+  from = '''        if (finding.severity == fidelity::Severity::error) {'''
+  to = '''        if (finding.severity == fidelity::Severity::error || true) {'''
+
+[[mutant]]
+name = "the-ledgers-checks-are-not-asked"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''        if (finding.severity == fidelity::Severity::error) {'''
+  to = '''        if (finding.severity == fidelity::Severity::error && false) {'''
+
+[[mutant]]
+name = "the-videos-words-are-not-asked"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''            lexicon_.push_back(term.term);'''
+  to = '''            lexicon_.push_back(term.term.substr(0, 0) + "?");'''
+
+[[mutant]]
+name = "a-recalled-label-is-read"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.AnAnswerAskedAgainAddsWithoutRepeatingOrLabelling"
+  [[mutant.edit]]
+  from = '''    if (!filler.is_null() && asked.recall) {'''
+  to = '''    if (!filler.is_null() && asked.recall && false) {'''
+
+[[mutant]]
+name = "a-repeat-is-taken"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.AnAnswerAskedAgainAddsWithoutRepeatingOrLabelling"
+  [[mutant.edit]]
+  from = '''        if (repeats) {'''
+  to = '''        if (repeats && false) {'''
+
+[[mutant]]
+name = "every-recalled-atom-repeats"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.ASentenceItsAtomsBarelyHoldIsAskedAgain"
+  [[mutant.edit]]
+  from = '''            return share_a_sentence(atom, kept) && reason::word_distance(atom.text, kept.text) < kRepeated;'''
+  to = '''            return share_a_sentence(atom, kept) && reason::word_distance(atom.text, kept.text) < 2.0;'''
+
+[[mutant]]
+name = "a-recall-is-checked-without-the-atoms-it-has"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.SentencesAskedAgainAreShownAloneAndNamedOneByOne"
+  [[mutant.edit]]
+  from = '''    for (const Atom& kept : asked.held) {'''
+  to = '''    for (const Atom& kept : std::span<const Atom>{}) {'''
+
+[[mutant]]
+name = "one-sample-a-window"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.EverySentenceBecomesAtomsOrAFillerLabel"
+  [[mutant.edit]]
+  from = '''        mission.samples = compute_.waves.first;'''
+  to = '''        mission.samples = 1;'''
+
+[[mutant]]
+name = "the-infantry-thinks"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.EverySentenceBecomesAtomsOrAFillerLabel"
+  [[mutant.edit]]
+  from = '''                                        .thinking = compute_.thinking},'''
+  to = '''                                        .thinking = !compute_.thinking},'''
+
+[[mutant]]
+name = "no-answer-is-repaired"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''            .repairs = compute_.repairs};'''
+  to = '''            .repairs = compute_.repairs * 0};'''
+
+[[mutant]]
+name = "every-mission-draws-one-seed"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.EverySentenceBecomesAtomsOrAFillerLabel"
+  [[mutant.edit]]
+  from = '''        const std::int64_t seed = llm::derived_seed(context_->job->salt, AtomizeStage::kName, id, 0);'''
+  to = '''        const std::int64_t seed = llm::derived_seed(context_->job->salt, AtomizeStage::kName, id.substr(0, 0), 0);'''
+
+[[mutant]]
+name = "the-commander-settles-without-thinking"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.WhatNoVoteSettlesTheCommanderReadsAgainThinking"
+  [[mutant.edit]]
+  from = '''        mission.request.thinking = true;'''
+  to = '''        mission.request.thinking = false;'''
+
+[[mutant]]
+name = "the-commander-thinks-its-whole-budget"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.TheCommanderSettlesWithinHalfOfWhatItHolds"
+  [[mutant.edit]]
+  from = '''        mission.request.thinking_budget = settle_budget_;  // none: the engine's own, whole'''
+  to = '''        mission.request.thinking_budget = std::nullopt;  // none: the engine's own, whole'''
+
+[[mutant]]
+name = "the-commander-may-think-past-half"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.TheCommanderSettlesWithinHalfOfWhatItHolds"
+  [[mutant.edit]]
+  from = '''            settle_budget_->tokens = std::min(settle_budget_->tokens, commander->ctx_per_slot / 2);'''
+  to = '''            settle_budget_->tokens = std::min(settle_budget_->tokens, commander->ctx_per_slot * 2);'''
+
+[[mutant]]
+name = "the-commander-settles-whatever-the-tier"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.WithoutTheCommanderTheReadingMostAgreedWithStands"
+  [[mutant.edit]]
+  from = '''                if (!compute_.contested_to_commander) {'''
+  to = '''                if (!compute_.contested_to_commander && false) {'''
+
+[[mutant]]
+name = "a-missing-commander-is-too-small"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.ThePodsInfantryAloneLeavesTheVoteStanding"
+  [[mutant.edit]]
+  from = '''                if (engine_serving(*army_, "commander") == nullptr) {'''
+  to = '''                if (engine_serving(*army_, "commander") == nullptr && false) {'''
+
+[[mutant]]
+name = "a-stretch-too-long-is-sent-anyway"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.AStretchTooLongForTheCommanderIsLeftAsTheVoteLeftIt"
+  [[mutant.edit]]
+  from = '''                if (!army_->holds(mission)) {'''
+  to = '''                if (!army_->holds(mission) && false) {'''
+
+[[mutant]]
+name = "the-commanders-reading-is-dropped"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.WhatNoVoteSettlesTheCommanderReadsAgainThinking"
+  [[mutant.edit]]
+  from = '''        base = replaced(*base, window.ids, stretch, accepted(outcome.answers.front()));'''
+  to = '''        base = replaced(*base, window.ids, Stretch{}, accepted(outcome.answers.front()));'''
+
+[[mutant]]
+name = "an-unsettled-stretch-says-it-was-unread"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.AStretchTheModelsDeclineToSettleIsLeftAsTheVoteLeftIt"
+  [[mutant.edit]]
+  from = '''                sentences_have(*transcript_, first, end), why_unanswered(outcome, *army_, "settle them")));'''
+  to = '''                sentences_have(*transcript_, first, end), why_unanswered(outcome, *army_, "read them")));'''
+
+[[mutant]]
+name = "the-base-is-the-first-reading"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.ReadingsThatDisagreeAreVotedOnSentenceBySentence"
+  [[mutant.edit]]
+  from = '''        window.reading = window.readings[base];'''
+  to = '''        window.reading = window.readings.front();'''
+
+[[mutant]]
+name = "nothing-is-left-unsettled"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.WhatNoVoteSettlesTheCommanderReadsAgainThinking"
+  [[mutant.edit]]
+  from = '''        window.unsettled = unsettled(window.readings[base], window.ids, *votes);'''
+  to = '''        window.unsettled = {};'''
+
+[[mutant]]
+name = "an-unread-window-says-it-was-unsettled"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.AWindowTheModelsDeclineToReadLeavesItsSentencesUnaccounted"
+  [[mutant.edit]]
+  from = '''                why_unanswered(outcome, *army_, "read them")));'''
+  to = '''                why_unanswered(outcome, *army_, "settle them")));'''
+
+[[mutant]]
+name = "a-ceiling-leaves-the-ledger-reusable"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.AJobCeilingMakesTheResultThisJobsAlone"
+  [[mutant.edit]]
+  from = '''                return outcome.verdict == agents::Verdict::ceiling;'''
+  to = '''                return outcome.verdict == agents::Verdict::ceiling && false;'''
+
+[[mutant]]
+name = "the-recall-pass-always-runs"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.AFastTierReadsOnceAndNeverAsksAgain"
+  [[mutant.edit]]
+  from = '''        if (!compute_.recall_pass) {'''
+  to = '''        if (!compute_.recall_pass && false) {'''
+
+[[mutant]]
+name = "no-sentence-is-asked-again"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.ASentenceItsAtomsBarelyHoldIsAskedAgain"
+  [[mutant.edit]]
+  from = '''            if (army_->holds(mission)) {  // the window was held whole: this is less, and nearly always held'''
+  to = '''            if (army_->holds(mission) && false) {  // the window was held whole: this is less, and nearly always held'''
+
+[[mutant]]
+name = "what-recall-adds-is-dropped"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.ASentenceItsAtomsBarelyHoldIsAskedAgain"
+  [[mutant.edit]]
+  from = '''            kept->atoms.insert(kept->atoms.end(), added.atoms.begin(), added.atoms.end());'''
+  to = '''            kept->atoms.insert(kept->atoms.end(), added.atoms.begin(), added.atoms.begin());'''
+
+[[mutant]]
+name = "a-filler-is-asked-again"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.EverySentenceBecomesAtomsOrAFillerLabel"
+  [[mutant.edit]]
+  from = '''            if (!atoms.empty() && coverage(transcript_->sentences[index_of(id)], atoms) < kLeastCoverage) {'''
+  to = '''            if (coverage(transcript_->sentences[index_of(id)], atoms) < kLeastCoverage) {'''
+
+[[mutant]]
+name = "half-held-is-asked-again"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.ASentenceItsAtomsBarelyHoldIsAskedAgain"
+  [[mutant.edit]]
+  from = '''            if (!atoms.empty() && coverage(transcript_->sentences[index_of(id)], atoms) < kLeastCoverage) {'''
+  to = '''            if (!atoms.empty() && coverage(transcript_->sentences[index_of(id)], atoms) <= kLeastCoverage) {'''
+
+[[mutant]]
+name = "a-recall-shows-every-atom-of-the-window"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.ASentenceItsAtomsBarelyHoldIsAskedAgain"
+  [[mutant.edit]]
+  from = '''            if (!holds_one) {'''
+  to = '''            if (!holds_one && false) {'''
+
+[[mutant]]
+name = "a-recall-is-checked-on-the-sentences-asked-only"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.SentencesAskedAgainAreShownAloneAndNamedOneByOne"
+  [[mutant.edit]]
+  from = '''                cited.insert(index_of(id));'''
+  to = '''                (void)index_of(id);'''
+
+[[mutant]]
+name = "a-recall-is-read-as-a-first-reading"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.AnAnswerAskedAgainAddsWithoutRepeatingOrLabelling"
+  [[mutant.edit]]
+  from = '''        asked.recall = true;'''
+  to = '''        asked.recall = false;'''
+
+[[mutant]]
+name = "a-recall-shows-the-context"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.ASentenceItsAtomsBarelyHoldIsAskedAgain"
+  [[mutant.edit]]
+  from = '''                               {"before", ""},'''
+  to = '''                               {"before", sentence_lines(*transcript_, 0, thin.front())},'''
+
+[[mutant]]
+name = "a-reader-labels-nothing"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.TheCommanderIsShownWhatEachReaderMadeOfTheStretch"
+  [[mutant.edit]]
+  from = '''            line = std::format("filler {}", knowledge::to_string(filler->label));'''
+  to = '''            line = std::format("filler {}", knowledge::to_string(filler->label)).substr(0, 0);'''
+
+[[mutant]]
+name = "a-reader-runs-on-into-nothing"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.TheCommanderIsShownWhatEachReaderMadeOfTheStretch"
+  [[mutant.edit]]
+  from = '''                also += std::format(", also {}", atom.sentences[index]);'''
+  to = '''                also += std::format(", also {}", atom.sentences[index]).substr(0, 0);'''
+
+[[mutant]]
+name = "an-unread-windows-sentences-are-said-twice"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.AWindowTheModelsDeclineToReadLeavesItsSentencesUnaccounted"
+  [[mutant.edit]]
+  from = '''                finding.check == fidelity::Check::sentence_accounted &&'''
+  to = '''                finding.check == fidelity::Check::sentence_accounted && false &&'''
+
+[[mutant]]
+name = "sections-are-all-joined-by-and"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.EverySentenceBecomesAtomsOrAFillerLabel"
+  [[mutant.edit]]
+  from = '''                named += index + 1 == titles.size() ? " and " : ", ";'''
+  to = '''                named += index + 1 == titles.size() || true ? " and " : ", ";'''
+
+[[mutant]]
+name = "one-section-is-several"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.EverySentenceBecomesAtomsOrAFillerLabel"
+  [[mutant.edit]]
+  from = '''        std::string named = titles.size() == 1 ? "the section " : "the sections ";'''
+  to = '''        std::string named = titles.size() == 0 ? "the section " : "the sections ";'''
+
+[[mutant]]
+name = "every-later-section-holds-the-window"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.EverySentenceBecomesAtomsOrAFillerLabel"
+  [[mutant.edit]]
+  from = '''            if (index_of(section.first) < end && index_of(section.last) >= first) {'''
+  to = '''            if (index_of(section.first) < end && (index_of(section.last) >= first || true)) {'''
+
+[[mutant]]
+name = "a-speakers-role-is-not-shown"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.EverySentenceBecomesAtomsOrAFillerLabel"
+  [[mutant.edit]]
+  from = '''                                speaker.role.has_value() ? ", " + *speaker.role : "");'''
+  to = '''                                speaker.role.has_value() && false ? ", " + *speaker.role : "");'''
+
+[[mutant]]
+name = "a-words-meaning-is-not-shown"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.EverySentenceBecomesAtomsOrAFillerLabel"
+  [[mutant.edit]]
+  from = '''                               term.meaning.has_value() ? ": " + *term.meaning : "");'''
+  to = '''                               term.meaning.has_value() && false ? ": " + *term.meaning : "");'''
+
+[[mutant]]
+name = "the-videos-gist-is-not-shown"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.EverySentenceBecomesAtomsOrAFillerLabel"
+  [[mutant.edit]]
+  from = '''                      {"gist", brief.gist.value_or("")},'''
+  to = '''                      {"gist", brief.gist.value_or("").substr(0, 0)},'''
+
+[[mutant]]
+name = "a-sentence-set-aside-blames-the-commander"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.ASentenceTooLongForTheInfantryEvenAloneHasNoAtoms"
+  [[mutant.edit]]
+  from = '''                            sentences_have(*transcript_, window.begin, window.end), model("infantry")));'''
+  to = '''                            sentences_have(*transcript_, window.begin, window.end), model("commander")));'''
+
+[[mutant]]
+name = "an-empty-transcript-is-atomized"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.ATranscriptWithoutSentencesIsNothingToAtomize"
+  [[mutant.edit]]
+  from = '''    if (read.transcript.sentences.empty()) {'''
+  to = '''    if (read.transcript.sentences.empty() && false) {'''
+
+[[mutant]]
+name = "a-short-outline-is-taken"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.AnOutlineThatDoesNotCoverItsTranscriptIsABug"
+  [[mutant.edit]]
+  from = '''        !problems.empty()) {
+        return fail(Errc::internal,'''
+  to = '''        !problems.empty() && false) {
+        return fail(Errc::internal,'''
+
+[[mutant]]
+name = "waves-are-ignored"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.ATierThatAsksForWavesIsRefused"
+  [[mutant.edit]]
+  from = '''    if (tier.atomize.waves.step > 0) {'''
+  to = '''    if (tier.atomize.waves.step > 0 && false) {'''
+
+[[mutant]]
+name = "the-key-forgets-what-counts-as-a-repeat"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.TheKeyHoldsTheTierThePromptTheArmyAndWhatEachRoleHolds"
+  [[mutant.edit]]
+  from = '''        {"repeated", kRepeated},'''
+  to = '''        {"repeated", kRepeated * 0},'''
+
+[[mutant]]
+name = "the-key-forgets-the-least-coverage"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.TheKeyHoldsTheTierThePromptTheArmyAndWhatEachRoleHolds"
+  [[mutant.edit]]
+  from = '''        {"least_coverage", kLeastCoverage},'''
+  to = '''        {"least_coverage", kLeastCoverage * 0},'''
+
+[[mutant]]
+name = "the-key-forgets-the-windows"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.TheKeyHoldsTheTierThePromptTheArmyAndWhatEachRoleHolds"
+  [[mutant.edit]]
+  from = '''        {"window", json::Json{{"bytes", kWindowBytes}, {"context", kContext}}},'''
+  to = '''        {"window", json::Json{{"bytes", kWindowBytes * 0}, {"context", kContext}}},'''
+
+[[mutant]]
+name = "the-key-forgets-what-the-infantry-holds"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.TheKeyHoldsTheTierThePromptTheArmyAndWhatEachRoleHolds"
+  [[mutant.edit]]
+  from = '''        {"holds", json::Json{{"infantry", holds("infantry")}, {"commander", holds("commander")}}}};'''
+  to = '''        {"holds", json::Json{{"infantry", holds("commander")}, {"commander", holds("commander")}}}};'''
+
+[[mutant]]
+name = "a-role-no-engine-serves-holds-something"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.ThePodsInfantryAloneLeavesTheVoteStanding"
+  [[mutant.edit]]
+  from = '''        return engine == nullptr ? 0 : engine->ctx_per_slot;'''
+  to = '''        return engine == nullptr ? 1 : engine->ctx_per_slot;'''
+
+[[mutant]]
+name = "no-pod-raises-the-army-anyway"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.WithoutAPodThereIsNoLedger"
+  [[mutant.edit]]
+  from = '''    if (!context.army) {'''
+  to = '''    if (!context.army && false) {'''
+
+# --- The tier a stage runs at (executor.cpp) ---------------------------------------
+
+[[mutant]]
+name = "a-contexts-own-tiers-are-ignored"
+file = "src/pipeline/executor.cpp"
+expect = "JobTier.IsAShippedTierUnlessTheContextFindsItsOwn"
+  [[mutant.edit]]
+  from = '''    return context.tiers ? context.tiers(context.job->tier) : reason::builtin_tier(context.job->tier);'''
+  to = '''    return context.tiers && false ? context.tiers(context.job->tier) : reason::builtin_tier(context.job->tier);'''
+
+[[mutant]]
+name = "the-chapters-are-taken-whatever-the-tier"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.ATierThatTakesNoChaptersHasTheCommanderOutlineAll"
+  [[mutant.edit]]
+  from = '''    read.chapters = read.tier.outline.chapters && read.source.video.chapters.size() >= kLeastChapters;'''
+  to = '''    read.chapters = (read.tier.outline.chapters || true) && read.source.video.chapters.size() >= kLeastChapters;'''

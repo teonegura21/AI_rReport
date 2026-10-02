@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Atomization",
+  "description": "A window of a transcript, sentence by sentence: each its filler label, or the atoms it says, evidence before judgment (prompts/atomize).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sentences"],
+  "properties": {
+    "sentences": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sentence", "filler", "atoms"],
+        "properties": {
+          "sentence": {"type": "string", "pattern": "^S[1-9][0-9]{0,8}$"},
+          "filler": {"enum": ["disfluency", "greeting", "repetition", "sponsor", "decorative", null]},
+          "atoms": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["also", "names", "terms", "text", "kind", "modality", "register", "intensity", "speaker", "attributed_to", "must_quote"],
+              "properties": {
+                "also": {"type": "array", "items": {"type": "string", "pattern": "^S[1-9][0-9]{0,8}$"}},
+                "names": {"type": "array", "items": {"type": "string", "minLength": 1}},
+                "terms": {"type": "array", "items": {"type": "string", "minLength": 1}},
+                "text": {"type": "string", "minLength": 1},
+                "kind": {"enum": ["claim", "fact", "number", "example", "anecdote", "aside", "joke", "hedge", "opinion", "question", "instruction", "definition", "reference", "visual"]},
+                "modality": {"enum": ["asserted", "hedged", "hypothetical", "reported", "sarcastic", "question"]},
+                "register": {"enum": ["main", "aside", "joke", "anecdote", "example"]},
+                "intensity": {"enum": ["low", "medium", "high"]},
+                "speaker": {"type": ["string", "null"], "minLength": 1},
+                "attributed_to": {"type": ["string", "null"], "minLength": 1},
+                "must_quote": {"type": ["string", "null"], "minLength": 1}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

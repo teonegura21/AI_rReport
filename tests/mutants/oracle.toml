@@ -302,3 +302,159 @@ expect = "OracleAnswers.BriefSaysHowManySectionsFromWhichToWhich"
   [[mutant.edit]]
   from = '''                                                          titles.size(), titles.front(), titles.back())}});'''
   to = '''                                                          titles.size() + 1, titles.front(), titles.back())}});'''
+
+# --- What a sentence says (atomize()) -------------------------------------------
+
+[[mutant]]
+name = "filler-words-make-an-atom"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AtomizeLabelsFillerAndMakesEveryOtherSentenceAnAtom"
+  [[mutant.edit]]
+  from = '''    if (filler) {'''
+  to = '''    if (filler && false) {'''
+
+[[mutant]]
+name = "a-greeting-makes-an-atom"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AtomizeLabelsFillerAndMakesEveryOtherSentenceAnAtom"
+  [[mutant.edit]]
+  from = '''    if (greeting && greets) {'''
+  to = '''    if (greeting && greets && false) {'''
+
+[[mutant]]
+name = "greeting-words-greet-without-a-greeting"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AtomizeLabelsFillerAndMakesEveryOtherSentenceAnAtom"
+  [[mutant.edit]]
+  from = '''    if (greeting && greets) {'''
+  to = '''    if (greeting && (greets || true)) {'''
+
+[[mutant]]
+name = "no-thought-runs-on"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AtomizeLabelsFillerAndMakesEveryOtherSentenceAnAtom"
+  [[mutant.edit]]
+  from = '''            const bool runs_on = !ends_a_sentence(sentence.text) && index + 1 < sentences.size() &&'''
+  to = '''            const bool runs_on = !ends_a_sentence(sentence.text) && index + 1 < sentences.size() && false &&'''
+
+[[mutant]]
+name = "a-thought-runs-on-past-a-gap"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AtomizeLabelsFillerAndMakesEveryOtherSentenceAnAtom"
+  [[mutant.edit]]
+  from = '''                                 number_of(sentences[index + 1].id) == number_of(sentence.id) + 1;'''
+  to = '''                                 number_of(sentences[index + 1].id) >= number_of(sentence.id) + 1;'''
+
+[[mutant]]
+name = "a-closing-quote-runs-on"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AtomizeLabelsFillerAndMakesEveryOtherSentenceAnAtom"
+  [[mutant.edit]]
+  from = '''    while (!text.empty() && std::string_view{"\"')] "}.contains(text.back())) {'''
+  to = '''    while (!text.empty() && std::string_view{"\"')] "}.contains(text.back()) && false) {'''
+
+[[mutant]]
+name = "a-digit-makes-a-claim"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AtomizeLabelsFillerAndMakesEveryOtherSentenceAnAtom"
+  [[mutant.edit]]
+  from = '''    if (number) {
+        kind = "number";'''
+  to = '''    if (number && false) {
+        kind = "number";'''
+
+[[mutant]]
+name = "a-question-is-a-claim"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AtomizeLabelsFillerAndMakesEveryOtherSentenceAnAtom"
+  [[mutant.edit]]
+  from = '''    } else if (question) {
+        kind = "question";'''
+  to = '''    } else if (question && false) {
+        kind = "question";'''
+
+[[mutant]]
+name = "a-question-is-asserted"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AtomizeLabelsFillerAndMakesEveryOtherSentenceAnAtom"
+  [[mutant.edit]]
+  from = '''    if (question) {
+        modality = "question";'''
+  to = '''    if (question && false) {
+        modality = "question";'''
+
+[[mutant]]
+name = "a-hedge-is-asserted"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AtomizeLabelsFillerAndMakesEveryOtherSentenceAnAtom"
+  [[mutant.edit]]
+  from = '''    } else if (hedged) {'''
+  to = '''    } else if (hedged && false) {'''
+
+[[mutant]]
+name = "an-atom-names-no-one"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AtomizeLabelsFillerAndMakesEveryOtherSentenceAnAtom"
+  [[mutant.edit]]
+  from = '''                      {"names", names_in(text)},'''
+  to = '''                      {"names", names_in(text.substr(0, 0))},'''
+
+[[mutant]]
+name = "a-name-runs-past-a-comma"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AtomizeLabelsFillerAndMakesEveryOtherSentenceAnAtom"
+  [[mutant.edit]]
+  from = '''        if (!words[index].ends_with(word)) {'''
+  to = '''        if (!words[index].ends_with(word) && false) {'''
+
+[[mutant]]
+name = "the-first-word-is-a-name"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AtomizeLabelsFillerAndMakesEveryOtherSentenceAnAtom"
+  [[mutant.edit]]
+  from = '''    for (std::size_t index = 1; index < words.size(); ++index) {
+        const std::string_view word = trimmed(words[index]);
+        const bool capitalized'''
+  to = '''    for (std::size_t index = 0; index < words.size(); ++index) {
+        const std::string_view word = trimmed(words[index]);
+        const bool capitalized'''
+
+[[mutant]]
+name = "an-atom-uses-no-term"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AtomizeLabelsFillerAndMakesEveryOtherSentenceAnAtom"
+  [[mutant.edit]]
+  from = '''                      {"terms", acronyms_in(text)},'''
+  to = '''                      {"terms", acronyms_in(text.substr(0, 0))},'''
+
+[[mutant]]
+name = "the-whole-sentence-is-quoted"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AtomizeLabelsFillerAndMakesEveryOtherSentenceAnAtom"
+  [[mutant.edit]]
+  from = '''    return std::string{text.substr(open + 1, close - open - 1)};'''
+  to = '''    return std::string{text.substr(open + 0 * close)};'''
+
+[[mutant]]
+name = "a-recall-repeats-what-is-held"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AtomizeAskedAgainWritesOnlyTheAtomsTheSentencesMiss"
+  [[mutant.edit]]
+  from = '''            if (!held.has_value() || held->find(text) == std::string::npos) {'''
+  to = '''            if (!held.has_value() || held->find(text) == std::string::npos || true) {'''
+
+[[mutant]]
+name = "a-recall-labels-filler"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AtomizeAskedAgainWritesOnlyTheAtomsTheSentencesMiss"
+  [[mutant.edit]]
+  from = '''                label.has_value() && !held.has_value()) {'''
+  to = '''                label.has_value()) {'''
+
+[[mutant]]
+name = "atomize-is-not-taught"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.AtomizeLabelsFillerAndMakesEveryOtherSentenceAnAtom"
+  [[mutant.edit]]
+  from = '''    oracle.teach("atomize", atomize());'''
+  to = '''    (void)atomize;'''

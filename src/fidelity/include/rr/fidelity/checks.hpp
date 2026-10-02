@@ -30,6 +30,8 @@
 // Thread-safety: pure functions.
 #pragma once
 
+#include <span>
+#include <string>
 #include <string_view>
 
 #include <rr/fidelity/finding.hpp>
@@ -39,10 +41,12 @@
 namespace rr::fidelity {
 
 // Ledger A: `ledger` against `transcript`, which may be a window of the whole
-// (the sentences one atomize mission was given). Fills the coverage of
-// sentences.
+// (the sentences one atomize mission was given). A filler may hold none of
+// the atoms' terms, nor of `lexicon`: the video's own (its brief's), which a
+// window's atoms may not use. Fills the coverage of sentences.
 [[nodiscard]] Report check_ledger(const knowledge::Transcript& transcript,
-                                  const knowledge::AtomLedger& ledger);
+                                  const knowledge::AtomLedger& ledger,
+                                  std::span<const std::string> lexicon = {});
 
 // Ledger B: the article `markdown` against `ledger` and `transcript`. Fills
 // the coverage of atoms, markers, must-quotes and numbers.

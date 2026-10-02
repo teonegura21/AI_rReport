@@ -3,18 +3,20 @@
 # artifact with its cache entry and the job's record in one transaction, and
 # the stages: `source` (the video, or a caption file, read once),
 # `transcript` (captions into numbered sentences, punctuated by the infantry
-# when they are not) and `outline` (the video's sections and its brief);
-# the windows a transcript is read in, each as large as its engine holds;
-# and run_job(), a job taken through them and saved
-# (docs/design/pipeline.md). Hub only.
+# when they are not), `outline` (the video's sections and its brief) and
+# `atomize` (Ledger A: what became of every sentence); the windows a
+# transcript is read in, each as large as its engine holds; and run_job(),
+# a job taken through them and saved (docs/design/pipeline.md). Hub only.
 rr_add_module(pipeline
     SOURCES
         asking.cpp
+        atomize_stage.cpp
         executor.cpp
         job_run.cpp
         outline.cpp
         outline_stage.cpp
         punctuation.cpp
+        readings.cpp
         source.cpp
         transcript_stage.cpp
         windows.cpp
@@ -27,9 +29,10 @@ rr_add_module(pipeline
         rr::library
         rr::media
         rr::prompt
+        rr::reason
         rr::transcript
     PRIVATE_DEPS
+        rr::fidelity
         rr::llm
         rr::log
-        rr::reason
         rr::text)

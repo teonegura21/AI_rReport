@@ -1,0 +1,14 @@
+{
+  "shared": {
+    "title": "How bridges stand up",
+    "channel": "Engineering Hour",
+    "gist": "Ada and Ben load a pine bridge until it breaks, then show why an arch carries more.",
+    "speakers": "- Ada, lecturer\n- Ben",
+    "lexicon": "- proof load: the most a bridge carries without bending for good\n- arch"
+  },
+  "orders": [
+    {"mode": "read", "sections": "the section \"Loading a bridge until it breaks\"", "before": "", "sentences": "S1 [0:00] Welcome back.\nS2 [0:03] Today we load a bridge until it breaks.", "after": "S3 [0:08] First, the tools.", "readings": "", "atoms": ""},
+    {"mode": "settle", "sections": "the sections \"Steel\" and \"The arch\"", "before": "S11 [1:40] Now the arch.", "sentences": "S12 [1:44] The Romans had no steel, so every bridge they built is an arch.", "after": "", "readings": "Reader 1:\n- S12: fact (asserted): The Romans had no steel.\n\nReader 2:\n- S12: claim (asserted): Every Roman bridge is an arch, for want of steel.", "atoms": ""},
+    {"mode": "recall", "sections": "the section \"The arch\"", "before": "", "sentences": "S12 [1:44] The Romans had no steel, so every bridge they built is an arch.", "after": "", "readings": "", "atoms": "- S12: fact (asserted): The Romans had no steel."}
+  ]
+}

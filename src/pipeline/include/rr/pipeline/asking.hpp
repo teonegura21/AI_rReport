@@ -1,7 +1,7 @@
 // rr/pipeline/asking.hpp — what every stage that asks models does the same
 // way: find its prompts and fingerprint them, find the engine serving a
-// role, show the video in a prompt's shared part, and say why a mission
-// ended without an answer.
+// role, show the video in a prompt's shared part, send an answer's problems
+// back a few at a time, and say why a mission ended without an answer.
 //
 // Why this exists
 //   Stages differ in what they ask, not in how they introduce the video or
@@ -11,6 +11,8 @@
 //       links and sponsors that follow them. The start is cut after a line
 //       or, failing that, after a word, never inside a character, and "…"
 //       says where.
+//     * An answer's problems are sent back with it a few at a time, eight at
+//       most and then how many more: enough to fix, few enough to read.
 //     * A mission that ended without an answer becomes a finding that says
 //       why, in the reader's terms: the models declined; the job reached a
 //       ceiling first; or no answer passed the stage's checks, and which.
@@ -23,6 +25,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <rr/agents/army.hpp>
 #include <rr/core/result.hpp>
@@ -50,6 +53,24 @@ struct StagePrompt {
 
 // The engine of `army` that serves `role`, or nullptr.
 [[nodiscard]] const agents::Engine* engine_serving(const agents::Army& army, std::string_view role);
+
+// The most problems sent back with an answer at once.
+inline constexpr std::size_t kMostProblems = 8;
+
+// What is wrong with an answer, each said as what to do instead (see the
+// header comment).
+class Problems {
+public:
+    void note(std::string problem);
+    [[nodiscard]] bool empty() const noexcept { return problems_.empty(); }
+
+    // The first kMostProblems noted, then "and 3 more like them".
+    [[nodiscard]] std::vector<std::string> list() &&;
+
+private:
+    std::vector<std::string> problems_;
+    std::size_t more_ = 0;
+};
 
 // The most of a video's description a prompt shows.
 inline constexpr std::size_t kDescriptionBytes = 1'500;

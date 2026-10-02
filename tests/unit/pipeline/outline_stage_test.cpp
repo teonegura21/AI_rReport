@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -25,7 +26,11 @@
 #include <rr/oracle/answers.hpp>
 #include <rr/oracle/oracle.hpp>
 #include <rr/pipeline/source.hpp>
+#include <rr/reason/tier.hpp>
 #include <rr/testkit/result.hpp>
+
+#include "oracle_army.hpp"
+#include "variant_tiers.hpp"
 
 namespace rr::pipeline {
 namespace {
@@ -38,8 +43,10 @@ using knowledge::SentenceId;
 using knowledge::Speaker;
 using ::testing::Contains;
 using ::testing::ElementsAre;
+using testing::engines;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
+using testing::OracleArmy;
 using testkit::unwrap;
 
 // --- The lecture -------------------------------------------------------------------
@@ -140,80 +147,11 @@ knowledge::Brief lecture_brief() {
         .gist = "A video in 4 sections, from Welcome back to the shed to Now, what the numbers mean."};
 }
 
-// --- The army ------------------------------------------------------------------------
-
-std::vector<agents::Engine> engines(int commander_holds = 32'768, int commander_slots = 4) {
-    const llm::SamplingPreset direct{.temperature = 1.0, .top_p = 0.95, .top_k = 64};
-    const llm::SamplingPreset thinking{
-        .temperature = 1.0,
-        .top_p = 0.95,
-        .top_k = 64,
-        .thinking = true,
-        .thinking_budget = llm::ThinkingBudget{.tokens = 500, .closing = "Answer now."}};
-    return {agents::Engine{.model = "qwen-commander",
-                           .checksum = "sha-q",
-                           .roles = {"commander"},
-                           .family = "qwen",
-                           .slots = commander_slots,
-                           .context = commander_holds * commander_slots,
-                           .ctx_per_slot = commander_holds,
-                           .direct = direct,
-                           .thinking = thinking},
-            agents::Engine{.model = "gemma-infantry",
-                           .checksum = "sha-g",
-                           .roles = {"infantry"},
-                           .family = "gemma",
-                           .slots = 4,
-                           .context = 4 * 32'768,
-                           .ctx_per_slot = 32'768,
-                           .direct = direct,
-                           .thinking = thinking}};
-}
-
-// An army whose models are the oracle, with `faults` made where they say.
-class Rig {
-public:
-    explicit Rig(std::vector<oracle::Fault> faults = {}, std::vector<agents::Engine> engines_used = engines(),
-                 agents::Ceilings ceilings = {})
-        : faulty_(oracle_, std::move(faults))
-        , recorder_(faulty_) {
-        oracle::teach_stages(oracle_);
-        army_.emplace(unwrap(agents::Army::create(
-            agents::Army::Options{.engines = std::move(engines_used), .job_id = "J1", .ceilings = ceilings},
-            recorder_, clock_)));
-    }
-
-    [[nodiscard]] RaiseArmy raise() {
-        return [this]() -> Result<agents::Army*> { return &*army_; };
-    }
-
-    // The requests of the missions of `kind`, by mission (a squad's missions
-    // run at once, in any order), each mission's in the order sent.
-    [[nodiscard]] std::vector<llm::ChatRequest> requests(std::string_view kind) const {
-        std::vector<llm::ChatRequest> found;
-        for (const llm::ChatRequest& request : recorder_.requests()) {
-            if (request.tag.purpose == kind) {
-                found.push_back(request);
-            }
-        }
-        std::ranges::stable_sort(found, {},
-                                 [](const llm::ChatRequest& request) { return request.tag.mission_id; });
-        return found;
-    }
-
-private:
-    oracle::Oracle oracle_;
-    oracle::FaultyProvider faulty_;
-    oracle::RequestLog recorder_;
-    FakeClock clock_;
-    std::optional<agents::Army> army_;
-};
-
 class OutlineStageTest : public ::testing::Test {
 protected:
     Result<StageOutput> run(RaiseArmy army, const Source& source = source_with(),
                             const knowledge::Transcript& transcript = lecture()) {
-        StageContext context{.job = &job_, .army = std::move(army), .prompts = &prompts_};
+        StageContext context{.job = &job_, .army = std::move(army), .prompts = &prompts_, .tiers = tiers_};
         context.inputs.emplace("source", to_json(source));
         context.inputs.emplace("transcript", knowledge::to_json(transcript));
         RR_TRY_ASSIGN(context.fingerprint, stage_.fingerprint(context));
@@ -226,19 +164,27 @@ protected:
     }
 
     void use_tier(std::string tier) { job_.tier = std::move(tier); }
+
+    // A tier of the test's own, named `name`: `max`, changed as `change` says.
+    void use_variant(std::string name, std::function<void(reason::Tier&)> change) {
+        tiers_ = testing::variant_of("max", std::move(change));
+        job_.tier = std::move(name);
+    }
+
     [[nodiscard]] const json::Json& fingerprint() const { return fingerprint_; }
 
 private:
     library::Job job_{.id = "J1", .tier = "max"};
     const prompt::Library prompts_ = unwrap(prompt::Library::embedded());
     const OutlineStage stage_;
+    FindTier tiers_;
     json::Json fingerprint_;
 };
 
 // --- Sections from the commander's outlines --------------------------------------
 
 TEST_F(OutlineStageTest, TheCommandersOutlinesCutTheVideoWhereTheTalkTurns) {
-    Rig rig;
+    OracleArmy rig;
     const StageOutput output = unwrap(run(rig.raise()));
     EXPECT_THAT(output.findings, IsEmpty());
     EXPECT_TRUE(output.reusable);
@@ -279,12 +225,13 @@ TEST_F(OutlineStageTest, ASectionStartsWhereEnoughSamplesAgree) {
     // One engine slot: the three samples are three calls. The first sample
     // starts the third section a sentence late and adds an aside the others
     // do not see.
-    Rig rig{{oracle::edit("disagree", oracle::When{.mission = "outline-1", .calls = 1},
-                          [](const std::string& answer) {
-                              return replace_all(answer, R"({"first":"S16")",
-                                                 R"({"first":"S12","title":"An aside"},{"first":"S17")");
-                          })},
-            engines(32'768, 1)};
+    OracleArmy rig{{oracle::edit("disagree", oracle::When{.mission = "outline-1", .calls = 1},
+                                 [](const std::string& answer) {
+                                     return replace_all(
+                                         answer, R"({"first":"S16")",
+                                         R"({"first":"S12","title":"An aside"},{"first":"S17")");
+                                 })},
+                   engines({.commander_slots = 1})};
     const StageOutput output = unwrap(run(rig.raise()));
     EXPECT_EQ(rig.requests("outline").size(), 3U);
     EXPECT_EQ(outline_of(output).sections, lecture_sections())
@@ -293,7 +240,7 @@ TEST_F(OutlineStageTest, ASectionStartsWhereEnoughSamplesAgree) {
 
 TEST_F(OutlineStageTest, AFasterTierOutlinesOnceWithASmallerBudget) {
     use_tier("fast");
-    Rig rig;
+    OracleArmy rig;
     const StageOutput output = unwrap(run(rig.raise()));
     EXPECT_EQ(outline_of(output).sections, lecture_sections());
     const std::vector<llm::ChatRequest> outlines = rig.requests("outline");
@@ -305,7 +252,7 @@ TEST_F(OutlineStageTest, AFasterTierOutlinesOnceWithASmallerBudget) {
 // --- Sections from chapters ----------------------------------------------------------
 
 TEST_F(OutlineStageTest, TheCreatorsChaptersAreTheSectionsWhenThereAreTwoOrMore) {
-    Rig rig;
+    OracleArmy rig;
     const Source source = source_with({chapter("Welcome", 0, 205), chapter("The scales", 205, 445),
                                        chapter("Samples and numbers", 445, 900)});
     const StageOutput output = unwrap(run(rig.raise(), source));
@@ -331,14 +278,25 @@ TEST_F(OutlineStageTest, TheCreatorsChaptersAreTheSectionsWhenThereAreTwoOrMore)
     EXPECT_EQ(outline.brief.speakers, (std::vector<Speaker>{Speaker{.name = "Ada"}}));
 
     // One chapter cuts nothing: the commander outlines.
-    Rig again;
+    OracleArmy again;
     EXPECT_EQ(
         outline_of(unwrap(run(again.raise(), source_with({chapter("Everything", 0, 900)})))).sections_from,
         SectionsFrom::models);
 }
 
+TEST_F(OutlineStageTest, ATierThatTakesNoChaptersHasTheCommanderOutlineAll) {
+    use_variant("max-outlined", [](reason::Tier& tier) { tier.outline.chapters = false; });
+    OracleArmy rig;
+    const Source source = source_with({chapter("Welcome", 0, 205), chapter("The scales", 205, 445),
+                                       chapter("Samples and numbers", 445, 900)});
+    const knowledge::Outline outline = outline_of(unwrap(run(rig.raise(), source)));
+    EXPECT_EQ(outline.sections_from, SectionsFrom::models);
+    EXPECT_EQ(outline.sections, lecture_sections()) << "where the talk turns, not where the chapters say";
+    EXPECT_EQ(rig.requests("outline").size(), 1U);
+}
+
 TEST_F(OutlineStageTest, AChapterLongerThanEightMinutesIsCutWhereTheSpeakerPausedLongest) {
-    Rig rig;
+    OracleArmy rig;
     const StageOutput output =
         unwrap(run(rig.raise(), source_with({chapter("All of it", 0, 600), chapter("The end", 600, 900)})));
     std::vector<std::string> titles;
@@ -381,16 +339,16 @@ TEST_F(OutlineStageTest, WithoutAPodTheVideoIsCutWhereTheSpeakerPausedAndItsBrie
 
 TEST_F(OutlineStageTest, ATranscriptTooLongForTheCommanderIsOutlinedInWindows) {
     use_tier("fast");
-    Rig whole;
+    OracleArmy whole;
     const knowledge::Outline at_once = outline_of(unwrap(run(whole.raise(), source_with(), long_lecture())));
-    const llm::ChatRequest read = whole.requests("outline").front();
+    const llm::ChatRequest read = whole.requests("outline").at(0);
     const agents::Footprint footprint = unwrap(agents::footprint_of(read, prompt::TokenEstimator{}));
 
     // A commander that holds one token less than reading it all at once
     // takes, and twice the tier's budget at least, so that it thinks as long.
     const auto holds = static_cast<int>(footprint.prompt + footprint.answer - 1);
     ASSERT_GE(holds / 2, 8'192);
-    Rig windowed{{}, engines(holds)};
+    OracleArmy windowed{{}, engines({.commander_holds = holds})};
     const StageOutput output = unwrap(run(windowed.raise(), source_with(), long_lecture()));
     EXPECT_THAT(output.findings, IsEmpty());
     EXPECT_EQ(outline_of(output), at_once) << "the talk turns where it turns, however it is read";
@@ -407,16 +365,16 @@ TEST_F(OutlineStageTest, ATranscriptTooLongForTheCommanderIsOutlinedInWindows) {
 }
 
 TEST_F(OutlineStageTest, AnOutlineThinksWithinHalfOfWhatTheCommanderHolds) {
-    Rig rig{{}, engines(16'384)};
+    OracleArmy rig{{}, engines({.commander_holds = 16'384})};
     const StageOutput output = unwrap(run(rig.raise()));
     EXPECT_EQ(outline_of(output).sections, lecture_sections());
-    EXPECT_EQ(rig.requests("outline").front().thinking_budget,
+    EXPECT_EQ(rig.requests("outline").at(0).thinking_budget,
               (llm::ThinkingBudget{.tokens = 8'192, .closing = "Answer now."}))
         << "the tier's 16,384 tokens would leave the transcript too little room";
 }
 
 TEST_F(OutlineStageTest, AnEngineThatHoldsNoSentenceLeavesTheVideoCutAtPauses) {
-    Rig rig{{}, engines(2'048)};
+    OracleArmy rig{{}, engines({.commander_holds = 2'048})};
     const StageOutput output = unwrap(run(rig.raise()));
     EXPECT_THAT(
         output.findings,
@@ -441,7 +399,7 @@ TEST_F(OutlineStageTest, ASentenceTooLongForTheCommanderEvenAloneStartsASection)
     }
     texts[11] = endless + ".";
     use_tier("fast");
-    Rig rig{{}, engines(16'384)};
+    OracleArmy rig{{}, engines({.commander_holds = 16'384})};
     const StageOutput output = unwrap(run(rig.raise(), source_with(), transcript_of(texts)));
     EXPECT_THAT(output.findings,
                 Contains("the sentence S12 (5:30 to 5:55) has no outline: even alone, it is more than "
@@ -528,7 +486,7 @@ TEST_F(OutlineStageTest, EveryRuleAnAnswerBreaksIsSentBackAndRepaired) {
                      "brief", "the gist has 157 words: tell the video in one paragraph, 150 words at most"});
     for (Case& test : cases) {
         SCOPED_TRACE(test.sent_back);
-        Rig rig{{std::move(test.fault)}};
+        OracleArmy rig{{std::move(test.fault)}};
         const StageOutput output = unwrap(run(rig.raise()));
         EXPECT_THAT(output.findings, IsEmpty());
         EXPECT_EQ(outline_of(output), (knowledge::Outline{.sections = lecture_sections(),
@@ -546,8 +504,8 @@ TEST_F(OutlineStageTest, EveryRuleAnAnswerBreaksIsSentBackAndRepaired) {
 TEST_F(OutlineStageTest, ASpeakerTheVideosDescriptionNamesIsTaken) {
     Source source = source_with();
     source.video.description = "With Ada Lovelace, from the shed.";
-    Rig rig{{rewrite("describe-2", R"("speakers":[])",
-                     R"("speakers":[{"name":"Ada Lovelace","role":"lecturer"}])")}};
+    OracleArmy rig{{rewrite("describe-2", R"("speakers":[])",
+                            R"("speakers":[{"name":"Ada Lovelace","role":"lecturer"}])")}};
     const StageOutput output = unwrap(run(rig.raise(), source));
     EXPECT_THAT(output.findings, IsEmpty());
     EXPECT_EQ(
@@ -560,7 +518,7 @@ TEST_F(OutlineStageTest, ASpeakerTheVideosDescriptionNamesIsTaken) {
 // --- What no model could do --------------------------------------------------------------
 
 TEST_F(OutlineStageTest, AStretchTheModelsDeclineToOutlineIsCutWhereTheSpeakerPaused) {
-    Rig rig{{oracle::refusal(oracle::When{.kind = "outline", .calls = 0})}};
+    OracleArmy rig{{oracle::refusal(oracle::When{.kind = "outline", .calls = 0})}};
     const StageOutput output = unwrap(run(rig.raise()));
     EXPECT_THAT(output.findings,
                 ElementsAre("the sentences S1\u2013S30 (0:00 to 14:55) have no outline: the models "
@@ -574,7 +532,7 @@ TEST_F(OutlineStageTest, AStretchTheModelsDeclineToOutlineIsCutWhereTheSpeakerPa
 }
 
 TEST_F(OutlineStageTest, ASectionTheModelsDeclineToDescribeHasNoGistAndTheBriefGoesOn) {
-    Rig rig{{oracle::refusal(oracle::When{.mission = "describe-1", .calls = 0})}};
+    OracleArmy rig{{oracle::refusal(oracle::When{.mission = "describe-1", .calls = 0})}};
     const StageOutput output = unwrap(run(rig.raise()));
     EXPECT_THAT(output.findings,
                 ElementsAre("section 1, \"Welcome back to the shed\" (0:00 to 3:25), has no gist: the models "
@@ -584,13 +542,13 @@ TEST_F(OutlineStageTest, ASectionTheModelsDeclineToDescribeHasNoGistAndTheBriefG
     EXPECT_EQ(outline.sections[1].gist, "Now, the scales we weigh it with.");
     EXPECT_THAT(outline.brief.speakers, IsEmpty()) << "Ada spoke in the section no one described";
     EXPECT_EQ(outline.brief.lexicon, (std::vector<LexiconTerm>{LexiconTerm{.term = "NRC"}}));
-    EXPECT_THAT(rig.requests("brief").front().messages.back().text(),
+    EXPECT_THAT(rig.requests("brief").at(0).messages.back().text(),
                 HasSubstr("1. [0:00] Welcome back to the shed\n2. [3:30]"))
         << "a section without a gist is listed by its title";
 }
 
 TEST_F(OutlineStageTest, AVideoGistTheModelsDeclineToWriteIsAFinding) {
-    Rig rig{{oracle::refusal(oracle::When{.kind = "brief", .calls = 0})}};
+    OracleArmy rig{{oracle::refusal(oracle::When{.kind = "brief", .calls = 0})}};
     const StageOutput output = unwrap(run(rig.raise()));
     EXPECT_THAT(output.findings, ElementsAre("the video has no gist: the models declined to write it"));
     knowledge::Brief brief = lecture_brief();
@@ -599,7 +557,7 @@ TEST_F(OutlineStageTest, AVideoGistTheModelsDeclineToWriteIsAFinding) {
 }
 
 TEST_F(OutlineStageTest, AJobCeilingMakesTheResultThisJobsAlone) {
-    Rig rig{{}, engines(), agents::Ceilings{.completion_tokens = 1}};
+    OracleArmy rig{{}, engines(), agents::Ceilings{.completion_tokens = 1}};
     const StageOutput output = unwrap(run(rig.raise()));
     EXPECT_FALSE(output.reusable) << "a job allowed more would have described them";
     EXPECT_THAT(
@@ -613,7 +571,7 @@ TEST_F(OutlineStageTest, AJobCeilingMakesTheResultThisJobsAlone) {
 // --- What is refused, and the key ----------------------------------------------------------
 
 TEST_F(OutlineStageTest, ATranscriptWithoutSentencesIsNothingToOutline) {
-    Rig rig;
+    OracleArmy rig;
     EXPECT_ERRC(run(rig.raise(), source_with(), knowledge::Transcript{}), Errc::invalid_argument);
 }
 
@@ -623,7 +581,7 @@ TEST_F(OutlineStageTest, ATierRReportDoesNotShipIsNotFound) {
 }
 
 TEST_F(OutlineStageTest, TheKeyHoldsTheTierThePromptsTheArmyAndWhatTheCommanderHolds) {
-    Rig rig;
+    OracleArmy rig;
     unwrap(run(rig.raise()));
     const json::Json max = fingerprint();
     EXPECT_EQ(max.at("longest_ms"), 480'000);
@@ -637,7 +595,7 @@ TEST_F(OutlineStageTest, TheKeyHoldsTheTierThePromptsTheArmyAndWhatTheCommanderH
     EXPECT_EQ(models.at("context"), (json::Json{{"sentences", 3}, {"bytes", 1'000}}));
 
     use_tier("fast");
-    Rig fast;
+    OracleArmy fast;
     unwrap(run(fast.raise()));
     EXPECT_NE(fingerprint().at("tier"), max.at("tier"));
     EXPECT_EQ(fingerprint().at("models"), max.at("models"));

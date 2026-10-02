@@ -50,6 +50,7 @@
 #include <rr/json/json.hpp>
 #include <rr/library/jobs.hpp>
 #include <rr/prompt/library.hpp>
+#include <rr/reason/tier.hpp>
 
 namespace rr::pipeline {
 
@@ -57,6 +58,10 @@ namespace rr::pipeline {
 // pod's: Errc::needs_user when it is not set up, Errc::unavailable when its
 // engines do not come up, Errc::cancelled on a stop.
 using RaiseArmy = std::function<Result<agents::Army*>()>;
+
+// Finds a tier by the name a job gives (rr/reason/tier.hpp). Errc::not_found
+// for a name that is no tier.
+using FindTier = std::function<Result<reason::Tier>(std::string_view name)>;
 
 // What a stage may use while it runs.
 struct StageContext {
@@ -74,6 +79,11 @@ struct StageContext {
     std::stop_token stop{};
     // How the stage is doing, a line at a time, for the user to read.
     std::function<void(std::string_view)> progress{};
+    // Where the job's tier is found: the tiers rReport ships
+    // (reason::builtin_tier()) when unset; a test's own, or an evaluation's
+    // variants of them, when set. A stage's key holds the tier's settings,
+    // never its name, so a variant never takes a shipped tier's results.
+    FindTier tiers{};
 };
 
 // What a stage made.
@@ -116,6 +126,9 @@ public:
 [[nodiscard]] std::string cache_key(const Stage& stage, const json::Json& fingerprint,
                                     const std::map<std::string, std::string, std::less<>>& inputs,
                                     std::int64_t salt);
+
+// The tier `context`'s job names, found as StageContext::tiers says.
+[[nodiscard]] Result<reason::Tier> job_tier(const StageContext& context);
 
 // What a stage's results owe to the army's models: each engine's model, the
 // checksum of the file it serves, its roles and how it samples, in the order

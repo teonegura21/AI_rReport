@@ -5,6 +5,7 @@
 #include <optional>
 #include <stop_token>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -14,6 +15,7 @@
 #include <rr/agents/army.hpp>
 #include <rr/library/library.hpp>
 #include <rr/llm/provider.hpp>
+#include <rr/reason/tier.hpp>
 #include <rr/testkit/result.hpp>
 #include <rr/testkit/temp_dir.hpp>
 
@@ -239,6 +241,23 @@ TEST(CacheKey, NamesEverythingTheResultDependsOn) {
     made->version = 1;
     made->samples = true;
     EXPECT_NE(cache_key(stage, fingerprint, inputs, 7), cache_key(stage, fingerprint, inputs, 0));
+}
+
+TEST(JobTier, IsAShippedTierUnlessTheContextFindsItsOwn) {
+    const library::Job job{.id = "J1", .tier = "thorough"};
+    EXPECT_EQ(unwrap(job_tier(StageContext{.job = &job})), unwrap(reason::builtin_tier("thorough")));
+    const library::Job unknown{.id = "J2", .tier = "turbo"};
+    EXPECT_ERRC(job_tier(StageContext{.job = &unknown}), Errc::not_found);
+
+    const FindTier variants = [](std::string_view name) -> Result<reason::Tier> {
+        RR_TRY_ASSIGN(reason::Tier tier, reason::builtin_tier("fast"));
+        tier.name = std::string{name};
+        tier.atomize.recall_pass = true;
+        return tier;
+    };
+    const reason::Tier found = unwrap(job_tier(StageContext{.job = &unknown, .tiers = variants}));
+    EXPECT_EQ(found.name, "turbo");
+    EXPECT_TRUE(found.atomize.recall_pass) << "the context's own";
 }
 
 TEST(StatusAfter, AStopOrAPassingFailureCanBeResumed) {

@@ -16,8 +16,8 @@
 #
 # The prompts arrive with their stages: punctuate with the transcript (plan
 # P15); annotate and annotate_more with the eval's silver drafts (P16);
-# outline, describe and brief with the outline (P17); atomize, plan and
-# write with theirs (P18–P20).
+# outline, describe and brief with the outline (P17); atomize with Ledger
+# A (P18); plan and write with theirs (P19, P20).
 
 [[prompt]]
 name = "punctuate"
@@ -108,4 +108,22 @@ failure_modes = [
   [[prompt.version]]
   number = 1
   hash = "12dbc256b3b0fadd4c3b49a36dc821252c51c46b9268508e786ae2a349d4f14f"
+  note = "first version"
+
+[[prompt]]
+name = "atomize"
+purpose = "Write down what each sentence of a window says, as atoms, or why it holds none (a filler label): Ledger A, every sentence accounted for (rr/pipeline/atomize_stage.hpp). Three modes share its rules: read a window; settle the sentences other readers disagreed on; recall what a sentence's atoms miss."
+schema = "schemas/missions/atomize.json"
+shared = ["title", "channel", "gist", "speakers", "lexicon"]
+failure_modes = [
+  "a sentence skipped, or written twice: the check sends it back",
+  "a number its sentence does not say, or a must-quote in its own words",
+  "a sentence with a number, a name or one of the video's words labelled filler",
+  "an atom that says more than its sentence: what the model knows of the subject",
+  "a hedge read as a plain statement, a joke or an aside as the main point",
+  "in recall, the atoms it already has written again",
+]
+  [[prompt.version]]
+  number = 1
+  hash = "255fa73307c738df3a32be35757c5bb6faf8d6acee9ff3f4d095e5152aeead54"
   note = "first version"

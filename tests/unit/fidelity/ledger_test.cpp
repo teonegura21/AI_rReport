@@ -125,6 +125,13 @@ TEST(Ledger, AFillerHoldsNoNumberNameOrTerm) {
     ASSERT_EQ(checks(report), std::vector<Check>{Check::filler_empty});
     EXPECT_NE(report.findings.front().message.find("the term \"radium\""), std::string::npos)
         << "a lexicon term, from the atoms' terms";
+    holding.sentences[5].text = "Um, polonium, you know.";
+    EXPECT_TRUE(check_ledger(holding, ledger()).findings.empty()) << "no atom uses the term";
+    const std::vector<std::string> lexicon{"polonium"};
+    report = check_ledger(holding, ledger(), lexicon);
+    ASSERT_EQ(checks(report), std::vector<Check>{Check::filler_empty});
+    EXPECT_NE(report.findings.front().message.find("the term \"polonium\""), std::string::npos)
+        << "a term of the video's lexicon, which no atom of the window uses";
 }
 
 TEST(Ledger, ABareOneIsNotHeld) {

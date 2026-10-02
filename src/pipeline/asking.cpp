@@ -41,6 +41,21 @@ const agents::Engine* engine_serving(const agents::Army& army, std::string_view 
     return found == army.engines().end() ? nullptr : &*found;
 }
 
+void Problems::note(std::string problem) {
+    if (problems_.size() < kMostProblems) {
+        problems_.push_back(std::move(problem));
+    } else {
+        ++more_;
+    }
+}
+
+std::vector<std::string> Problems::list() && {
+    if (more_ > 0) {
+        problems_.push_back(std::format("and {} more like them", more_));
+    }
+    return std::move(problems_);
+}
+
 std::string description_excerpt(std::string_view description) {
     if (description.size() <= kDescriptionBytes) {
         return std::string{description};

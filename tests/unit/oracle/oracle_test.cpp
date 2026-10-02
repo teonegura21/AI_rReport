@@ -208,6 +208,92 @@ TEST(OracleAnswers, BriefSaysHowManySectionsFromWhichToWhich) {
     EXPECT_ERRC(oracle.chat(asked("brief"), {}, {}), Errc::invalid_argument) << "no sections to sum up";
 }
 
+// An atom as the oracle writes it: the sentence itself, main and medium.
+std::string oracle_atom(std::string_view text, std::string_view kind, std::string_view modality,
+                        std::string_view also = "", std::string_view names = "", std::string_view terms = "",
+                        std::string_view quote = "null") {
+    return std::format(R"({{"also": [{}], "names": [{}], "terms": [{}], "text": "{}", "kind": "{}",
+        "modality": "{}", "register": "main", "intensity": "medium", "speaker": null,
+        "attributed_to": null, "must_quote": {}}})",
+                       also, names, terms, text, kind, modality, quote);
+}
+
+TEST(OracleAnswers, AtomizeLabelsFillerAndMakesEveryOtherSentenceAnAtom) {
+    Oracle oracle;
+    teach_stages(oracle);
+    const std::string_view sentences =
+        "S1 [0:00] Um, so.\nS2 [0:02] Hello and welcome back.\nS3 [0:05] I'm Ada Lovelace, and NASA lent us "
+        "3 "
+        "scales.\nS4 [0:10] Maybe the 'proof load' is higher.\nS5 [0:15] Then we added an arch, and the load "
+        "it held\nS6 [0:19] doubled.\nS7 [0:22] Why did it double?\nS8 [0:25] And then it";
+    const std::string expected = std::format(
+        R"({{"sentences": [
+        {{"sentence": "S1", "filler": "disfluency", "atoms": []}},
+        {{"sentence": "S2", "filler": "greeting", "atoms": []}},
+        {{"sentence": "S3", "filler": null, "atoms": [{}]}},
+        {{"sentence": "S4", "filler": null, "atoms": [{}]}},
+        {{"sentence": "S5", "filler": null, "atoms": [{}]}},
+        {{"sentence": "S6", "filler": null, "atoms": []}},
+        {{"sentence": "S7", "filler": null, "atoms": [{}]}},
+        {{"sentence": "S8", "filler": null, "atoms": [{}]}}]}})",
+        oracle_atom("I'm Ada Lovelace, and NASA lent us 3 scales.", "number", "asserted", "",
+                    R"("Ada Lovelace")", R"("NASA")"),
+        oracle_atom("Maybe the 'proof load' is higher.", "claim", "hedged"),
+        oracle_atom("Then we added an arch, and the load it held doubled.", "claim", "asserted", R"("S6")"),
+        oracle_atom("Why did it double?", "question", "question"),
+        oracle_atom("And then it", "claim", "asserted"));
+    EXPECT_EQ(unwrap(json::parse(
+                  unwrap(oracle.chat(holding("atomize", "sentences", sentences), {}, {})).first().content)),
+              unwrap(json::parse(expected)))
+        << "S5 runs on into S6, which has no atoms of its own; S8 runs on past the sentences to read";
+
+    // Closing quotes end a sentence too; a thought runs on only into the
+    // next sentence; greeting words greet only with a greeting; a comma ends
+    // a name.
+    const std::string_view more =
+        "S9 [0:30] She said \"never again.\"\nS10 [0:35] You and the show.\nS12 [0:40] Then Ada, Grace and "
+        "Linus met, and the weight it held\nS14 [0:45] doubled.";
+    const std::string rest = std::format(
+        R"({{"sentences": [
+        {{"sentence": "S9", "filler": null, "atoms": [{}]}},
+        {{"sentence": "S10", "filler": null, "atoms": [{}]}},
+        {{"sentence": "S12", "filler": null, "atoms": [{}]}},
+        {{"sentence": "S14", "filler": null, "atoms": [{}]}}]}})",
+        oracle_atom(R"(She said \"never again.\")", "claim", "asserted", "", "", "", R"("never again.")"),
+        oracle_atom("You and the show.", "claim", "asserted"),
+        oracle_atom("Then Ada, Grace and Linus met, and the weight it held", "claim", "asserted", "",
+                    R"("Ada", "Grace", "Linus")"),
+        oracle_atom("doubled.", "claim", "asserted"));
+    EXPECT_EQ(unwrap(json::parse(
+                  unwrap(oracle.chat(holding("atomize", "sentences", more), {}, {})).first().content)),
+              unwrap(json::parse(rest)))
+        << "S12 does not run on into S14, which is not the sentence after it";
+    EXPECT_ERRC(oracle.chat(asked("atomize"), {}, {}), Errc::invalid_argument) << "no sentences to read";
+}
+
+TEST(OracleAnswers, AtomizeAskedAgainWritesOnlyTheAtomsTheSentencesMiss) {
+    Oracle oracle;
+    teach_stages(oracle);
+    llm::ChatRequest request = asked("atomize");
+    request.messages = {
+        llm::Message::system("You read a video's transcript."),
+        llm::Message::user(
+            "The sentences to read:\n<sentences>\nS3 [0:05] Radium glows for years, and nobody "
+            "knew why.\nS4 [0:10] It glows.\nS5 [0:12] Um, so.\n</sentences>\n\nThe atoms read "
+            "from them so far:\n<atoms>\n- S3: claim (asserted): Radium glows.\n- S4: claim "
+            "(asserted): It glows.\n</atoms>\n")};
+    const std::string expected = std::format(
+        R"({{"sentences": [
+        {{"sentence": "S3", "filler": null, "atoms": [{}]}},
+        {{"sentence": "S4", "filler": null, "atoms": []}},
+        {{"sentence": "S5", "filler": null, "atoms": [{}]}}]}})",
+        oracle_atom("Radium glows for years, and nobody knew why.", "claim", "asserted"),
+        oracle_atom("Um, so.", "claim", "asserted"));
+    EXPECT_EQ(unwrap(json::parse(unwrap(oracle.chat(request, {}, {})).first().content)),
+              unwrap(json::parse(expected)))
+        << "S4's atom holds it already; a sentence asked again is never filler";
+}
+
 TEST(RequestLog, KeepsEveryRequestItPassesOn) {
     Oracle oracle;
     oracle.teach("label",

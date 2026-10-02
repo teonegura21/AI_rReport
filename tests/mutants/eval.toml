@@ -461,22 +461,6 @@ expect = "Drafts.ThatDoNotAreSentBackWithWhatToDoInstead"
         window_text += " " + transcript.sentences[index].text;'''
 
 [[mutant]]
-name = "every-problem-is-sent-back"
-file = "src/eval/annotate.cpp"
-expect = "Drafts.AreSentBackAFewProblemsAtATime"
-  [[mutant.edit]]
-  from = '''        if (problems.size() < kMostProblems) {'''
-  to = '''        if (true) {'''
-
-[[mutant]]
-name = "the-problems-left-out-are-not-counted"
-file = "src/eval/annotate.cpp"
-expect = "Drafts.AreSentBackAFewProblemsAtATime"
-  [[mutant.edit]]
-  from = '''    if (more > 0) {'''
-  to = '''    if (false) {'''
-
-[[mutant]]
 name = "a-fact-said-twice-is-one-fact"
 file = "src/eval/annotate.cpp"
 expect = "Joining.KeepsTwoThingsOneSentenceSaysAndAPhraseSaidTwice"

@@ -37,7 +37,6 @@ using pipeline::SentenceWindow;
 
 constexpr std::string_view kAnnotate = "annotate";
 constexpr std::string_view kAnnotateMore = "annotate_more";
-constexpr std::size_t kMostProblems = 8;  // sent back at once: enough to fix, few enough to read
 constexpr std::size_t kRecentJobs = 500;  // where an unfinished annotation is looked for
 
 // Sizing, in tokens as the army's estimator counts them by default: three
@@ -361,15 +360,8 @@ Draft draft_from_json(const json::Json& answer) {
 
 std::vector<std::string> draft_problems(const json::Json& answer, const Transcript& transcript,
                                         const SentenceWindow& window) {
-    std::vector<std::string> problems;
-    std::size_t more = 0;
-    const auto note = [&](std::string problem) {
-        if (problems.size() < kMostProblems) {
-            problems.push_back(std::move(problem));
-        } else {
-            ++more;
-        }
-    };
+    pipeline::Problems problems;
+    const auto note = [&](std::string problem) { problems.note(std::move(problem)); };
     const std::string own = sentence_range(window.begin, window.end);
     const auto check = [&](std::string_view what, std::size_t number, const json::Json& item) {
         const std::vector<SentenceId> ids = ids_of(item.at("sentences"));
@@ -401,10 +393,7 @@ std::vector<std::string> draft_problems(const json::Json& answer, const Transcri
             note(std::format("term \"{}\" is not said in {}: list only the video's own words", written, own));
         }
     }
-    if (more > 0) {
-        problems.push_back(std::format("and {} more like them", more));
-    }
-    return problems;
+    return std::move(problems).list();
 }
 
 Silver join_drafts(const std::vector<Draft>& drafts, const Transcript& transcript) {

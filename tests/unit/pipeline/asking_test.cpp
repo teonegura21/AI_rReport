@@ -2,7 +2,9 @@
 // prompt's shared part shows it, and why a mission ended without an answer.
 #include <rr/pipeline/asking.hpp>
 
+#include <format>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -64,6 +66,23 @@ TEST(Asking, TheEngineServingARoleIsFound) {
     ASSERT_NE(commander, nullptr);
     EXPECT_EQ(commander->model, "qwen-commander");
     EXPECT_EQ(engine_serving(idle.army(), "infantry"), nullptr) << "no engine serves it";
+}
+
+TEST(Asking, AnAnswersProblemsAreSentBackAFewAtATime) {
+    const auto noted = [](std::size_t count) {
+        Problems problems;
+        for (std::size_t problem = 1; problem <= count; ++problem) {
+            problems.note(std::format("problem {}", problem));
+        }
+        return std::move(problems).list();
+    };
+    EXPECT_TRUE(noted(0).empty());
+    EXPECT_EQ(noted(kMostProblems).size(), kMostProblems) << "all of them, and nothing more";
+    const std::vector<std::string> many = noted(kMostProblems + 3);
+    ASSERT_EQ(many.size(), kMostProblems + 1);
+    EXPECT_EQ(many.front(), "problem 1");
+    EXPECT_EQ(many[kMostProblems - 1], "problem 8") << "the first ones";
+    EXPECT_EQ(many.back(), "and 3 more like them");
 }
 
 TEST(Asking, AMissionWithoutAnAnswerSaysWhy) {

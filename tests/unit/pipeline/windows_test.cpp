@@ -252,6 +252,15 @@ TEST(SentenceWindows, BisectionFindsTheWindowsThatGivingUpOneSentenceAtATimeWoul
     EXPECT_GT(set_aside, 0U) << "and to set some aside";
 }
 
+TEST(SentenceWindows, AreReadWithTheContextAStageAsksFor) {
+    const knowledge::Transcript transcript = glowing();
+    const IdleArmy rig{8'192};
+    const WindowPlan plan = unwrap(plan_windows(transcript, 72, rig.army(), reader_of(transcript), 1));
+    ASSERT_EQ(plan.windows.size(), 4U);
+    EXPECT_EQ(plan.windows[1], (SentenceWindow{.begin = 3, .end = 6, .context_begin = 2, .context_end = 7}))
+        << "one sentence on either side";
+}
+
 TEST(SentenceWindows, SetAsideASentenceTooLongForItsEngineEvenAlone) {
     std::vector<std::string> texts(6, "Radium glows.");
     texts[2] = std::string(3'000, 'x');

@@ -67,6 +67,8 @@ An atom keeps what a retelling must not lose (ADR-0005):
 
 A sentence that holds no atom gets a filler label from the closed list: disfluency, greeting, repetition, sponsor, decorative. A filler that holds a number, a name or a lexicon term is re-examined, which is a fidelity check.
 
+The atomize stage writes the ledger (P18, [pipeline.md](pipeline.md#the-atomize-stage)). Models answer a row a sentence, and an atom names the later sentences it also draws on (`also`); the stage turns the rows into this form: the atom cites its row's sentence and those, in order, once each, and is numbered in the order said. Its `must_quote` words become the `quote`, and the flag is set exactly when there are some.
+
 ### What waits for its stage
 
 On-screen items (`V#`) arrive with frames (M4). Duplicates declared in Ledger B arrive with the plan (P19). Each schema is defined when the stage that writes it is, so no shape is guessed early. A schema's text enters the stage cache key ([pipeline.md](pipeline.md#the-cache-key)), so changing one invalidates exactly the artifacts written under it. The pipeline's first artifact, the `source` (`schemas/artifacts/source.json`), is registered here with the others, and so is the eval's `silver` (`schemas/artifacts/silver.json`: a video's annotation drafted by models, [eval.md](eval.md#silver-drafted-by-models)).
