@@ -4,6 +4,7 @@ rr_add_test_suite(knowledge
         atoms_test.cpp
         ids_test.cpp
         outline_test.cpp
+        plan_test.cpp
         transcript_test.cpp
     DEPS
         rr::knowledge)

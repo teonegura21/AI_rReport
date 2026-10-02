@@ -278,3 +278,101 @@ expect = "Ledger.AFillerHoldsNoNumberNameOrTerm"
   [[mutant.edit]]
   from = '''    std::set<std::string> lexicon(video.begin(), video.end());'''
   to = '''    std::set<std::string> lexicon(video.begin(), video.begin());'''
+
+# --- Duplicates (duplicates.cpp) ---------------------------------------------------------
+
+[[mutant]]
+name = "a-number-may-be-lost"
+file = "src/fidelity/duplicates.cpp"
+expect = "Duplicates.AreNotWhereTheAtomSaysMore"
+  [[mutant.edit]]
+  from = '''        if (!held::states(stated, number)) {'''
+  to = '''        if (!held::states(stated, number) && false) {'''
+
+[[mutant]]
+name = "a-name-may-be-lost"
+file = "src/fidelity/duplicates.cpp"
+expect = "Duplicates.AreNotWhereTheAtomSaysMore"
+  [[mutant.edit]]
+  from = '''        if (!held::names(told, name)) {'''
+  to = '''        if (!held::names(told, name) && false) {'''
+
+[[mutant]]
+name = "a-term-may-be-lost"
+file = "src/fidelity/duplicates.cpp"
+expect = "Duplicates.AreNotWhereTheAtomSaysMore"
+  [[mutant.edit]]
+  from = '''        if (!held::uses(told, term)) {'''
+  to = '''        if (!held::uses(told, term) && false) {'''
+
+[[mutant]]
+name = "the-others-names-are-not-told"
+file = "src/fidelity/duplicates.cpp"
+expect = "Duplicates.AreNotWhereTheAtomSaysMore"
+  [[mutant.edit]]
+  from = '''        told += "\n" + name;'''
+  to = '''        told += name.substr(0, 0);'''
+
+[[mutant]]
+name = "the-others-terms-are-not-told"
+file = "src/fidelity/duplicates.cpp"
+expect = "Duplicates.AreNotWhereTheAtomSaysMore"
+  [[mutant.edit]]
+  from = '''        told += "\n" + term;'''
+  to = '''        told += term.substr(0, 0);'''
+
+[[mutant]]
+name = "words-to-quote-may-be-lost"
+file = "src/fidelity/duplicates.cpp"
+expect = "Duplicates.AreNotWhereTheAtomsWordsAreToBeQuoted"
+  [[mutant.edit]]
+  from = '''    if (atom.quote.has_value() && !(of.quote.has_value() && text::align(*atom.quote, *of.quote).verbatim())) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "other-words-quoted-are-the-same"
+file = "src/fidelity/duplicates.cpp"
+expect = "Duplicates.AreNotWhereTheAtomsWordsAreToBeQuoted"
+  [[mutant.edit]]
+  from = '''!(of.quote.has_value() && text::align(*atom.quote, *of.quote).verbatim())'''
+  to = '''!(of.quote.has_value() && true)'''
+
+[[mutant]]
+name = "a-modality-may-be-lost"
+file = "src/fidelity/duplicates.cpp"
+expect = "Duplicates.AreNotWhereTheAtomIsSaidOtherwise"
+  [[mutant.edit]]
+  from = '''    if (atom.modality != of.modality) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-question-is-said-by-its-name"
+file = "src/fidelity/duplicates.cpp"
+expect = "Duplicates.AreNotWhereTheAtomIsSaidOtherwise"
+  [[mutant.edit]]
+  from = '''    return modality == Modality::question ? std::string{"a question"}'''
+  to = '''    return modality == Modality::hypothetical ? std::string{"a question"}'''
+
+[[mutant]]
+name = "a-speaker-may-be-lost"
+file = "src/fidelity/duplicates.cpp"
+expect = "Duplicates.AreNotWhereTheAtomIsSaidOtherwise"
+  [[mutant.edit]]
+  from = '''    if (folded(atom.speaker) != folded(of.speaker)) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "speakers-are-compared-as-written"
+file = "src/fidelity/duplicates.cpp"
+expect = "Duplicates.MayBeDeclaredWhenTellingTheOtherLosesNothing"
+  [[mutant.edit]]
+  from = '''    return text::fold(*text).value_or(*text);'''
+  to = '''    return *text;'''
+
+[[mutant]]
+name = "a-source-may-be-lost"
+file = "src/fidelity/duplicates.cpp"
+expect = "Duplicates.AreNotWhereTheAtomIsSaidOtherwise"
+  [[mutant.edit]]
+  from = '''    if (folded(atom.attributed_to) != folded(of.attributed_to)) {'''
+  to = '''    if (false) {'''

@@ -294,6 +294,42 @@ TEST(OracleAnswers, AtomizeAskedAgainWritesOnlyTheAtomsTheSentencesMiss) {
         << "S4's atom holds it already; a sentence asked again is never filler";
 }
 
+// A plan mission's request for the section "The samples", its atoms `atoms`.
+llm::ChatRequest planning(std::string_view atoms) {
+    llm::ChatRequest request = asked("plan");
+    request.messages = {llm::Message::system("You plan how one section of a video is retold."),
+                        llm::Message::user(std::format(
+                            "Plan section 2, \"The samples\", from 5:00 to 9:55\n\nIts atoms, in the "
+                            "order said:\n<atoms>\n{}\n</atoms>\n",
+                            atoms))};
+    return request;
+}
+
+TEST(OracleAnswers, PlanTellsThreeAtomsAParagraphAndDeclaresAnAtomShownAgain) {
+    Oracle oracle;
+    teach_stages(oracle);
+    const std::string_view atoms =
+        "A7 [5:00] number: Sample 7 glowed.\nA8 [5:30] claim: It glowed faintly.\nA9 [6:00] claim, hedged: "
+        "Maybe it is old.\nA10 [6:30] claim: It glowed faintly.\nA11 [7:00] number: Sample 8 glowed.\nA12 "
+        "[7:30] claim, said by Ada: It glowed faintly.";
+    EXPECT_EQ(unwrap(json::parse(unwrap(oracle.chat(planning(atoms), {}, {})).first().content)),
+              unwrap(json::parse(R"({"paragraphs": [
+        {"purpose": "Tells A7 to A9.", "atoms": ["A7", "A8", "A9"]},
+        {"purpose": "Tells A11 and A12.", "atoms": ["A11", "A12"]}],
+        "duplicates": [{"because": "It says again what A8 says.", "atom": "A10", "of": "A8"}],
+        "heading": "The samples"})")))
+        << "A12 says A8's words, but Ada says it: told";
+    EXPECT_EQ(
+        unwrap(json::parse(
+            unwrap(oracle.chat(planning("A7 [5:00] number: Sample 7 glowed."), {}, {})).first().content)),
+        unwrap(json::parse(R"({"paragraphs": [{"purpose": "Tells A7.", "atoms": ["A7"]}],
+        "duplicates": [], "heading": "The samples"})")));
+    EXPECT_ERRC(oracle.chat(holding("plan", "atoms", "A1 [0:00] claim: One."), {}, {}),
+                Errc::invalid_argument)
+        << "no section named";
+    EXPECT_ERRC(oracle.chat(asked("plan"), {}, {}), Errc::invalid_argument) << "no atoms";
+}
+
 TEST(RequestLog, KeepsEveryRequestItPassesOn) {
     Oracle oracle;
     oracle.teach("label",

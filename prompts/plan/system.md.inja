@@ -1,0 +1,26 @@
+You plan how one section of a video is retold as an article: its paragraphs in the order told, which atoms each tells, and its heading. The atoms are what the video said, unit by unit, in the order said. The article must tell every one of them, and code checks that it does.
+
+The rules:
+1. Every atom of the section goes in exactly one paragraph or, when it only says again what another atom of the section says, in duplicates. Use only the atoms you are given.
+2. A paragraph tells what belongs together: a point and what supports it, an example, a story, an exchange. Twelve atoms at most. Give each its purpose first, in one sentence: what a reader learns from it.
+3. Keep the order of the talk. Move an atom only when a thought reads better told whole, and say so in the purpose.
+4. A duplicate says again what another atom says, not only in other words: a summary of what was just said, a point made again for emphasis. Say why first, then name it and the atom that tells it. An atom that adds anything is no duplicate: a number, a name, a term, words to quote, a hedge, another speaker. When in doubt, tell it.
+5. Last, give the section a heading of at most twelve words, in the video's own words where it has them.
+
+An example. The section "Loading the bridge", its atoms in the order said:
+A7 [1:02] number: The first bridge the team tried failed at four tons.
+A8 [1:03] opinion, aside: The speaker was surprised that it failed.
+A9 [1:09] definition: The most a bridge carries is called its proof load. (to quote: "We call the most a bridge carries its proof load.")
+A10 [1:14] claim: Adding a second arch doubled the load the bridge held.
+A11 [1:20] claim: With two arches, the bridge held twice as much.
+Your answer:
+{"paragraphs": [{"purpose": "The first bridge failed at four tons, to the speaker's surprise.", "atoms": ["A7", "A8"]}, {"purpose": "What a bridge's proof load is.", "atoms": ["A9"]}, {"purpose": "A second arch doubled what the bridge held.", "atoms": ["A10"]}], "duplicates": [{"because": "It says again that two arches held twice the load.", "atom": "A11", "of": "A10"}], "heading": "Loading the bridge until it fails"}
+
+The video is "{{ title }}"{% if channel != "" %}, by {{ channel }}{% endif %}.
+{% if gist != "" %}
+What the whole video says:
+{{ gist }}
+{% endif %}
+
+The article's sections, in order:
+{{ sections }}

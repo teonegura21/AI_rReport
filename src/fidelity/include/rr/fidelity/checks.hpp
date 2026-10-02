@@ -12,6 +12,9 @@
 //       marker valid, every atom told; each atom's numbers, names and terms
 //       in the paragraph citing it; must-quotes and every quotation verbatim;
 //       the talk's order kept (Ledger B).
+//   And when an atom is declared a duplicate of another, so that only the
+//   other is told (ADR-0005, rule 6), duplicate_problems() says what telling
+//   only the other would lose. The plan stage sends it back to the planner.
 //   Each finding's message is what its repair will be told; what cannot be
 //   repaired is published in the Fidelity Report (docs/design/fidelity.md).
 //
@@ -33,6 +36,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <rr/fidelity/finding.hpp>
 #include <rr/knowledge/atoms.hpp>
@@ -52,5 +56,13 @@ namespace rr::fidelity {
 // the coverage of atoms, markers, must-quotes and numbers.
 [[nodiscard]] Report check_article(const knowledge::Transcript& transcript,
                                    const knowledge::AtomLedger& ledger, std::string_view markdown);
+
+// Why `atom` is no duplicate of `of`, each said as what telling only `of`
+// would lose: a number of its own, by value; a name or a term `of` neither
+// says nor lists; words to quote that `of` does not quote; another
+// modality, speaker, or source it reports. Empty: it may be declared one.
+// Stricter than meaning, on purpose: when in doubt, an atom is told.
+[[nodiscard]] std::vector<std::string> duplicate_problems(const knowledge::Atom& atom,
+                                                          const knowledge::Atom& of);
 
 }  // namespace rr::fidelity

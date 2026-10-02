@@ -408,3 +408,149 @@ expect = "Outline.NamesItsGenresAndWhereItsSectionsCameFrom"
   [[mutant.edit]]
   from = '''    return genre.has_value() ? std::optional<Genre>{*genre} : std::nullopt;'''
   to = '''    return genre.has_value() && false ? std::optional<Genre>{*genre} : std::nullopt;'''
+
+# --- The plan (plan.cpp) -----------------------------------------------------------------
+
+[[mutant]]
+name = "sections-may-run-in-any-order"
+file = "src/knowledge/plan.cpp"
+expect = "Plan.SectionsRunInTheOrderSaidEachOnce"
+  [[mutant.edit]]
+  from = '''        if (index > 0 && !(plan.sections[index - 1].first < section.first)) {'''
+  to = '''        if (index > 0 && false) {'''
+
+[[mutant]]
+name = "a-section-may-repeat"
+file = "src/knowledge/plan.cpp"
+expect = "Plan.SectionsRunInTheOrderSaidEachOnce"
+  [[mutant.edit]]
+  from = '''        if (index > 0 && !(plan.sections[index - 1].first < section.first)) {'''
+  to = '''        if (index > 0 && section.first < plan.sections[index - 1].first) {'''
+
+[[mutant]]
+name = "an-atom-may-be-told-twice"
+file = "src/knowledge/plan.cpp"
+expect = "Plan.AnAtomIsToldOnceOrDeclaredADuplicateNeverBoth"
+  [[mutant.edit]]
+  from = '''                if (!told.insert(id).second) {'''
+  to = '''                if (!told.insert(id).second && false) {'''
+
+[[mutant]]
+name = "a-duplicate-of-itself-is-read"
+file = "src/knowledge/plan.cpp"
+expect = "Plan.AnAtomIsToldOnceOrDeclaredADuplicateNeverBoth"
+  [[mutant.edit]]
+  from = '''        if (duplicate.atom == duplicate.of) {'''
+  to = '''        if (false) {'''
+
+[[mutant]]
+name = "a-told-atom-may-be-a-duplicate"
+file = "src/knowledge/plan.cpp"
+expect = "Plan.AnAtomIsToldOnceOrDeclaredADuplicateNeverBoth"
+  [[mutant.edit]]
+  from = '''        if (told.contains(duplicate.atom)) {'''
+  to = '''        if (false) {'''
+
+[[mutant]]
+name = "a-duplicate-may-be-declared-twice"
+file = "src/knowledge/plan.cpp"
+expect = "Plan.AnAtomIsToldOnceOrDeclaredADuplicateNeverBoth"
+  [[mutant.edit]]
+  from = '''        if (!declared.insert(duplicate.atom).second) {'''
+  to = '''        if (!declared.insert(duplicate.atom).second && false) {'''
+
+[[mutant]]
+name = "a-duplicate-of-an-untold-atom-is-read"
+file = "src/knowledge/plan.cpp"
+expect = "Plan.AnAtomIsToldOnceOrDeclaredADuplicateNeverBoth"
+  [[mutant.edit]]
+  from = '''        if (!told.contains(duplicate.of)) {'''
+  to = '''        if (false) {'''
+
+[[mutant]]
+name = "a-purpose-is-never-written"
+file = "src/knowledge/plan.cpp"
+expect = "Plan.RoundTripsThroughItsArtifact"
+  [[mutant.edit]]
+  from = '''json::Json{{"purpose", fields::json_or_null(paragraph.purpose)},'''
+  to = '''json::Json{{"purpose", nullptr},'''
+
+[[mutant]]
+name = "who-planned-is-never-written"
+file = "src/knowledge/plan.cpp"
+expect = "Plan.RoundTripsThroughItsArtifact"
+  [[mutant.edit]]
+  from = '''{"planned_by", std::string{to_string(section.planned_by)}}}'''
+  to = '''{"planned_by", "grouping"}}'''
+
+[[mutant]]
+name = "why-is-never-written"
+file = "src/knowledge/plan.cpp"
+expect = "Plan.RoundTripsThroughItsArtifact"
+  [[mutant.edit]]
+  from = '''{"because", fields::json_or_null(duplicate.because)}'''
+  to = '''{"because", nullptr}'''
+
+[[mutant]]
+name = "a-section-not-planned-is-not-said"
+file = "src/knowledge/plan.cpp"
+expect = "PlanProblems.SayWhatToCorrect"
+  [[mutant.edit]]
+  from = '''        if (!planned.contains(section.first)) {'''
+  to = '''        if (false) {'''
+
+[[mutant]]
+name = "a-section-not-outlined-is-not-said"
+file = "src/knowledge/plan.cpp"
+expect = "PlanProblems.SayWhatToCorrect"
+  [[mutant.edit]]
+  from = '''        if (!outlined.contains(section.first)) {'''
+  to = '''        if (false) {'''
+
+[[mutant]]
+name = "an-atom-told-elsewhere-is-not-said"
+file = "src/knowledge/plan.cpp"
+expect = "PlanProblems.SayWhatToCorrect"
+  [[mutant.edit]]
+  from = '''                if (holding != nullptr && holding->first != section.first) {'''
+  to = '''                if (holding != nullptr && holding->first != section.first && false) {'''
+
+[[mutant]]
+name = "a-section-holds-only-its-first-sentence"
+file = "src/knowledge/plan.cpp"
+expect = "PlanProblems.SayWhatToCorrect"
+  [[mutant.edit]]
+  from = '''        if (section.first <= sentence && sentence <= section.last) {'''
+  to = '''        if (section.first == sentence && sentence <= section.last) {'''
+
+[[mutant]]
+name = "an-unknown-duplicate-is-not-said"
+file = "src/knowledge/plan.cpp"
+expect = "PlanProblems.SayWhatToCorrect"
+  [[mutant.edit]]
+  from = '''        if (ledger.find(duplicate.atom) == nullptr) {'''
+  to = '''        if (false) {'''
+
+[[mutant]]
+name = "a-duplicate-is-not-placed"
+file = "src/knowledge/plan.cpp"
+expect = "PlanProblems.NoneWhenThePlanHoldsTheLedgerAsTheOutlineCutsIt"
+  [[mutant.edit]]
+  from = '''        placed.insert(duplicate.atom);'''
+  to = '''        placed.insert(duplicate.of);'''
+
+[[mutant]]
+name = "a-told-atom-is-not-placed"
+file = "src/knowledge/plan.cpp"
+expect = "PlanProblems.NoneWhenThePlanHoldsTheLedgerAsTheOutlineCutsIt"
+  [[mutant.edit]]
+  from = '''                placed.insert(id);'''
+  to = '''                placed.insert(AtomId{999});'''
+
+[[mutant]]
+name = "an-untold-atom-is-not-said"
+file = "src/knowledge/plan.cpp"
+expect = "PlanProblems.SayWhatToCorrect"
+  [[mutant.edit]]
+  from = '''        if (!placed.contains(atom.id)) {'''
+  to = '''        if (false) {'''

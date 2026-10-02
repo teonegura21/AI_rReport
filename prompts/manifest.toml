@@ -17,7 +17,7 @@
 # The prompts arrive with their stages: punctuate with the transcript (plan
 # P15); annotate and annotate_more with the eval's silver drafts (P16);
 # outline, describe and brief with the outline (P17); atomize with Ledger
-# A (P18); plan and write with theirs (P19, P20).
+# A (P18); plan with the plan (P19); write with the article (P20).
 
 [[prompt]]
 name = "punctuate"
@@ -126,4 +126,21 @@ failure_modes = [
   [[prompt.version]]
   number = 1
   hash = "255fa73307c738df3a32be35757c5bb6faf8d6acee9ff3f4d095e5152aeead54"
+  note = "first version"
+
+[[prompt]]
+name = "plan"
+purpose = "Plan how one section is retold: its paragraphs in the order told, the atoms each tells, the atoms that only say again what another says, and its heading; every atom placed, a closed world (rr/pipeline/plan_stage.hpp)."
+schema = "schemas/missions/plan.json"
+shared = ["title", "channel", "gist", "sections"]
+failure_modes = [
+  "an atom left out, told twice, or one of another section named: the check sends it back",
+  "a duplicate that adds something, a number, a name, a hedge, another speaker: the check sends it back",
+  "the talk reordered for a tidier story: only a warning on the article",
+  "paragraphs of one atom each, or one paragraph of the whole section",
+  "a heading that judges the section instead of naming it",
+]
+  [[prompt.version]]
+  number = 1
+  hash = "003821ecab151466458d3c2a134ba9d23b4fbfe521070ff3adb9ae1bb4bcfe2f"
   note = "first version"

@@ -1913,3 +1913,395 @@ expect = "Source.ItsVideoLastsAsTheSiteSaysElseAsItsCaptionsDo"
   [[mutant.edit]]
   from = '''inline constexpr std::int64_t kWordsPerMinute = 150;'''
   to = '''inline constexpr std::int64_t kWordsPerMinute = 160;'''
+
+# --- Grouping (grouping.cpp) -------------------------------------------------------------
+
+[[mutant]]
+name = "a-grouped-paragraph-has-no-most"
+file = "src/pipeline/grouping.cpp"
+expect = "Grouping.TellsSixAtomsAParagraphInTheOrderSaid"
+  [[mutant.edit]]
+  from = '''        if (paragraphs.empty() || turns || paragraphs.back().atoms.size() == kGroupedAtoms) {'''
+  to = '''        if (paragraphs.empty() || turns) {'''
+
+[[mutant]]
+name = "a-new-speaker-goes-on-the-paragraph"
+file = "src/pipeline/grouping.cpp"
+expect = "Grouping.StartsAParagraphWhereTheSpeakerOrTheRegisterChanges"
+  [[mutant.edit]]
+  from = '''(atom->speaker != previous->speaker ||'''
+  to = '''(false ||'''
+
+[[mutant]]
+name = "a-new-register-goes-on-the-paragraph"
+file = "src/pipeline/grouping.cpp"
+expect = "Grouping.StartsAParagraphWhereTheSpeakerOrTheRegisterChanges"
+  [[mutant.edit]]
+  from = '''                                                   atom->register_kind != previous->register_kind);'''
+  to = '''                                                   false);'''
+
+# --- The plan stage (plan_stage.cpp) -----------------------------------------------------
+
+[[mutant]]
+name = "a-paragraph-may-tell-any-number"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''        if (atoms.size() > kParagraphAtoms) {'''
+  to = '''        if (atoms.size() > kParagraphAtoms + 1) {'''
+
+[[mutant]]
+name = "a-purpose-may-run-on"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''words_in(paragraph.at("purpose")); words > kPurposeWords) {'''
+  to = '''words_in(paragraph.at("purpose")); words > kPurposeWords + 1) {'''
+
+[[mutant]]
+name = "a-heading-may-run-on"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''words_in(answer.at("heading")); words > kHeadingWords) {'''
+  to = '''words_in(answer.at("heading")); words > kHeadingWords + 2) {'''
+
+[[mutant]]
+name = "an-atom-of-another-section-may-be-told"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''            if (!own.contains(id)) {
+                problems.note(
+                    std::format("{} is not among the atoms to plan ({}): plan those only", id, asked.range));'''
+  to = '''            if (!own.contains(id) && false) {
+                problems.note(
+                    std::format("{} is not among the atoms to plan ({}): plan those only", id, asked.range));'''
+
+[[mutant]]
+name = "an-atom-may-be-told-twice-in-a-plan"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''            } else if (!told.insert(id).second) {'''
+  to = '''            } else if (!told.insert(id).second && false) {'''
+
+[[mutant]]
+name = "an-atom-of-another-section-may-be-declared"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''        if (!own.contains(id)) {
+            problems.note(
+                std::format("{} is not among the atoms to plan ({}): declare those only", id, asked.range));'''
+  to = '''        if (!own.contains(id) && !own.contains(of)) {
+            problems.note(
+                std::format("{} is not among the atoms to plan ({}): declare those only", id, asked.range));'''
+
+[[mutant]]
+name = "a-duplicate-of-itself-is-sent-back-otherwise"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''        } else if (id == of) {'''
+  to = '''        } else if (id == AtomId{999'999'999}) {'''
+
+[[mutant]]
+name = "a-told-atom-may-be-declared"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''        } else if (told.contains(id)) {'''
+  to = '''        } else if (told.contains(id) && false) {'''
+
+[[mutant]]
+name = "a-duplicate-may-be-declared-again"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''        } else if (!declared.insert(id).second) {'''
+  to = '''        } else if (!declared.insert(id).second && false) {'''
+
+[[mutant]]
+name = "a-duplicate-of-an-untold-atom-is-weighed"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''        } else if (!told.contains(of)) {'''
+  to = '''        } else if (!told.contains(of) && own.contains(of)) {'''
+
+[[mutant]]
+name = "a-duplicate-may-lose-anything"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.ADuplicateThatWouldLoseANumberOrATermIsSentBackForEach"
+  [[mutant.edit]]
+  from = '''                problems.note(std::format("{} is declared a duplicate of {}, yet {}: tell it", id, of, lost));'''
+  to = '''                (void)lost;'''
+
+[[mutant]]
+name = "an-atom-left-out-is-taken"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''        if (!told.contains(atom->id) && !declared.contains(atom->id)) {'''
+  to = '''        if (false) {'''
+
+[[mutant]]
+name = "a-duplicate-is-left-out"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.AnAtomSaidAgainIsDeclaredADuplicateWhereItLosesNothing"
+  [[mutant.edit]]
+  from = '''        if (!told.contains(atom->id) && !declared.contains(atom->id)) {'''
+  to = '''        if (!told.contains(atom->id)) {'''
+
+[[mutant]]
+name = "an-atom-shows-no-modality"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.TheCommanderIsShownTheArticlesSectionsAndTheSectionsAtomsInOrder"
+  [[mutant.edit]]
+  from = '''    if (atom.modality != knowledge::Modality::asserted) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-question-shows-twice"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.TheCommanderIsShownTheArticlesSectionsAndTheSectionsAtomsInOrder"
+  [[mutant.edit]]
+  from = '''        if (more != kind) {'''
+  to = '''        if (!more.empty()) {'''
+
+[[mutant]]
+name = "an-atom-shows-no-register"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.TheCommanderIsShownTheArticlesSectionsAndTheSectionsAtomsInOrder"
+  [[mutant.edit]]
+  from = '''    if (atom.register_kind != knowledge::Register::main) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "an-atom-shows-no-speaker"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.TheCommanderIsShownTheArticlesSectionsAndTheSectionsAtomsInOrder"
+  [[mutant.edit]]
+  from = '''    if (atom.speaker.has_value()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "an-atom-shows-no-source"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.TheCommanderIsShownTheArticlesSectionsAndTheSectionsAtomsInOrder"
+  [[mutant.edit]]
+  from = '''    if (atom.attributed_to.has_value()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "an-atom-shows-no-quote"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.TheCommanderIsShownTheArticlesSectionsAndTheSectionsAtomsInOrder"
+  [[mutant.edit]]
+  from = '''    if (atom.quote.has_value()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "the-shared-part-lists-no-section"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.TheCommanderIsShownTheArticlesSectionsAndTheSectionsAtomsInOrder"
+  [[mutant.edit]]
+  from = '''                      {"sections", std::move(sections)}};'''
+  to = '''                      {"sections", sections.substr(0, 0)}};'''
+
+[[mutant]]
+name = "the-shared-part-has-no-gist"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.TheCommanderIsShownTheArticlesSectionsAndTheSectionsAtomsInOrder"
+  [[mutant.edit]]
+  from = '''                      {"gist", outline.brief.gist.value_or("")},'''
+  to = '''                      {"gist", ""},'''
+
+[[mutant]]
+name = "the-commander-thinks-past-half"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.TheCommanderThinksWithinHalfOfWhatItHolds"
+  [[mutant.edit]]
+  from = '''std::min(compute.thinking_budget, commander->ctx_per_slot / 2)'''
+  to = '''std::min(compute.thinking_budget, commander->ctx_per_slot)'''
+
+[[mutant]]
+name = "the-commander-plans-without-thinking"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.EverySectionIsPlannedByTheCommanderThinking"
+  [[mutant.edit]]
+  from = '''                    .thinking = true,'''
+  to = '''                    .thinking = false,'''
+
+[[mutant]]
+name = "the-thinking-has-no-closing"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.EverySectionIsPlannedByTheCommanderThinking"
+  [[mutant.edit]]
+  from = '''.closing = closing_}},'''
+  to = '''.closing = closing_.substr(0, 0)}},'''
+
+[[mutant]]
+name = "an-answer-has-no-least"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.AnAnswerMayTakeFortyEightTokensAnAtom"
+  [[mutant.edit]]
+  from = '''std::clamp<std::int64_t>(tokens, kLeastAnswer, kMostAnswer)'''
+  to = '''std::clamp<std::int64_t>(tokens, 0, kMostAnswer)'''
+
+[[mutant]]
+name = "an-answer-takes-less-an-atom"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.AnAnswerMayTakeFortyEightTokensAnAtom"
+  [[mutant.edit]]
+  from = '''constexpr int kTokensPerAtom = 48;'''
+  to = '''constexpr int kTokensPerAtom = 40;'''
+
+[[mutant]]
+name = "a-section-to-plan-is-never-cut"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.ASectionTooLongForTheCommanderIsPlannedInParts"
+  [[mutant.edit]]
+  from = '''        if (army_->holds(whole)) {'''
+  to = '''        if (true) {'''
+
+[[mutant]]
+name = "bisection-keeps-what-is-refused"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.ASectionTooLongForTheCommanderIsPlannedInParts"
+  [[mutant.edit]]
+  from = '''            (army_->holds(trial) ? held : refused) = middle;'''
+  to = '''            (army_->holds(trial) ? refused : held) = middle;'''
+
+[[mutant]]
+name = "parts-are-numbered-from-zero"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.ASectionTooLongForTheCommanderIsPlannedInParts"
+  [[mutant.edit]]
+  from = '''            RR_TRY_ASSIGN(Held held, most_held(section, number, parts + 1, begin));'''
+  to = '''            RR_TRY_ASSIGN(Held held, most_held(section, number, parts, begin));'''
+
+[[mutant]]
+name = "a-part-does-not-say-so"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.ASectionTooLongForTheCommanderIsPlannedInParts"
+  [[mutant.edit]]
+  from = '''            {"part", whole
+'''
+  to = '''            {"part", whole || true
+'''
+
+[[mutant]]
+name = "the-last-parts-heading-names-the-section"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.ASectionTooLongForTheCommanderIsPlannedInParts"
+  [[mutant.edit]]
+  from = '''            if (!headed) {'''
+  to = '''            if (!headed || true) {'''
+
+[[mutant]]
+name = "the-progress-counts-no-parts"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.ASectionTooLongForTheCommanderIsPlannedInParts"
+  [[mutant.edit]]
+  from = '''missions.size() > planned ? std::format(", in {} parts", missions.size()) : ""'''
+  to = '''missions.size() > planned + 9 ? std::format(", in {} parts", missions.size()) : ""'''
+
+[[mutant]]
+name = "atoms-set-aside-are-said-one-by-one"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.ACommanderThatHoldsNoAtomEvenAloneTellsEachSectionInTheOrderSaid"
+  [[mutant.edit]]
+  from = '''                if (!stretches.empty() && !stretches.back().mission.has_value()) {'''
+  to = '''                if (false) {'''
+
+[[mutant]]
+name = "a-ceiling-leaves-the-plan-reusable"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.AJobCeilingMakesTheResultThisJobsAlone"
+  [[mutant.edit]]
+  from = '''                output_.reusable = false;  // a job allowed more would have planned it'''
+  to = '''                output_.reusable = true;  // a job allowed more would have planned it'''
+
+[[mutant]]
+name = "what-no-answer-planned-is-dropped"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.ASectionTheModelsDeclineIsToldInTheOrderSaidAndSaid"
+  [[mutant.edit]]
+  from = '''                std::ranges::move(grouped(atoms), std::back_inserter(plan.paragraphs));'''
+  to = '''                (void)grouped(atoms);'''
+
+[[mutant]]
+name = "the-commanders-heading-is-dropped"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.TheCommandersHeadingNamesItsSection"
+  [[mutant.edit]]
+  from = '''                plan.heading = std::move(planned.heading);'''
+  to = '''                (void)planned.heading;'''
+
+[[mutant]]
+name = "a-planned-section-is-said-grouped"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.EverySectionIsPlannedByTheCommanderThinking"
+  [[mutant.edit]]
+  from = '''            plan.planned_by = knowledge::PlannedBy::commander;'''
+  to = '''            plan.planned_by = knowledge::PlannedBy::grouping;'''
+
+[[mutant]]
+name = "duplicates-are-dropped"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.AnAtomSaidAgainIsDeclaredADuplicateWhereItLosesNothing"
+  [[mutant.edit]]
+  from = '''            std::ranges::move(planned.duplicates, std::back_inserter(duplicates));'''
+  to = '''            duplicates.clear();'''
+
+[[mutant]]
+name = "a-section-without-atoms-is-counted"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.ASectionWhoseSentencesAreAllFillerHasNoParagraph"
+  [[mutant.edit]]
+  from = '''            if (!sections[index].atoms.empty()) {'''
+  to = '''            if (true) {'''
+
+[[mutant]]
+name = "a-ledger-past-the-transcript-is-read"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.ALedgerThatSaysWhatTheTranscriptDoesNotIsABug"
+  [[mutant.edit]]
+  from = '''        if (atom.sentences.back().number() > said) {'''
+  to = '''        if (false) {'''
+
+[[mutant]]
+name = "the-fast-tier-needs-a-pod"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.AFastTierTellsTheAtomsInTheOrderSaidWithoutAModel"
+  [[mutant.edit]]
+  from = '''    if (tier.plan.mode == reason::PlanMode::group) {
+        return fingerprint;'''
+  to = '''    if (tier.plan.mode != reason::PlanMode::group && false) {
+        return fingerprint;'''
+
+[[mutant]]
+name = "the-key-forgets-what-the-planner-holds"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.TheKeyHoldsTheTierThePromptTheArmyAndWhatTheCommanderHolds"
+  [[mutant.edit]]
+  from = '''{"holds", commander == nullptr ? 0 : commander->ctx_per_slot}'''
+  to = '''{"holds", commander == nullptr ? 0 : 32'768}'''
+
+[[mutant]]
+name = "the-key-forgets-the-purposes-length"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.TheKeyHoldsTheTierThePromptTheArmyAndWhatTheCommanderHolds"
+  [[mutant.edit]]
+  from = '''{"purpose_words", kPurposeWords},'''
+  to = '''{"purpose_words", 0},'''
+
+[[mutant]]
+name = "the-key-holds-another-stages-tier"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.TheKeyHoldsTheTierThePromptTheArmyAndWhatTheCommanderHolds"
+  [[mutant.edit]]
+  from = '''{"tier", tier.canonical(reason::Stage::plan)}'''
+  to = '''{"tier", tier.canonical(reason::Stage::atomize)}'''

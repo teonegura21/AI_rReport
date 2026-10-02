@@ -458,3 +458,53 @@ expect = "OracleAnswers.AtomizeLabelsFillerAndMakesEveryOtherSentenceAnAtom"
   [[mutant.edit]]
   from = '''    oracle.teach("atomize", atomize());'''
   to = '''    (void)atomize;'''
+
+# --- Plans (answers.cpp: plan()) ---------------------------------------------------------
+
+[[mutant]]
+name = "a-plan-tells-an-atom-a-paragraph"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.PlanTellsThreeAtomsAParagraphAndDeclaresAnAtomShownAgain"
+  [[mutant.edit]]
+  from = '''            if (paragraph.size() == kPlannedAtoms) {'''
+  to = '''            if (true) {'''
+
+[[mutant]]
+name = "a-plan-declares-no-duplicate"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.PlanTellsThreeAtomsAParagraphAndDeclaresAnAtomShownAgain"
+  [[mutant.edit]]
+  from = '''            if (earlier != told.end()) {'''
+  to = '''            if (false) {'''
+
+[[mutant]]
+name = "a-duplicate-names-itself"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.PlanTellsThreeAtomsAParagraphAndDeclaresAnAtomShownAgain"
+  [[mutant.edit]]
+  from = '''                               {"of", earlier->id}});'''
+  to = '''                               {"of", atom.id}});'''
+
+[[mutant]]
+name = "a-heading-keeps-its-quote"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.PlanTellsThreeAtomsAParagraphAndDeclaresAnAtomShownAgain"
+  [[mutant.edit]]
+  from = '''            return text.substr(begin + 1, end - begin - 1);'''
+  to = '''            return text.substr(begin, end - begin);'''
+
+[[mutant]]
+name = "two-atoms-are-a-range"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.PlanTellsThreeAtomsAParagraphAndDeclaresAnAtomShownAgain"
+  [[mutant.edit]]
+  from = '''atoms.size() == 2 ? "and" : "to"'''
+  to = '''atoms.size() == 99 ? "and" : "to"'''
+
+[[mutant]]
+name = "plan-is-not-taught"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.PlanTellsThreeAtomsAParagraphAndDeclaresAnAtomShownAgain"
+  [[mutant.edit]]
+  from = '''    oracle.teach("plan", plan());'''
+  to = '''    (void)0;'''

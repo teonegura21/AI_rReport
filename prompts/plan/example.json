@@ -1,0 +1,12 @@
+{
+  "shared": {
+    "title": "How bridges stand up",
+    "channel": "Engineering Hour",
+    "gist": "Ada and Ben load a pine bridge until it breaks, then show why an arch carries more.",
+    "sections": "1. [0:00] Loading a bridge until it breaks: Ada and Ben load a pine bridge, ton by ton.\n2. [2:40] The bridge itself: Ada built it from pine, and says why."
+  },
+  "orders": [
+    {"number": 1, "section": "Loading a bridge until it breaks", "start": "0:00", "end": "2:39", "section_gist": "Ada and Ben load a pine bridge, ton by ton.", "part": "", "atoms": "A1 [0:03] claim, said by Ben: Ben and Ada load a bridge until it breaks.\nA2 [1:02] number: The first bridge the team tried failed at four tons.\nA3 [1:03] opinion, aside: The speaker was surprised that it failed."},
+    {"number": 2, "section": "The bridge itself", "start": "2:40", "end": "4:10", "section_gist": "", "part": "Its atoms are too many to plan at once: plan A4–A5 here; the others are planned apart.", "atoms": "A4 [2:44] claim, said by Ada: Ada built the bridge from pine.\nA5 [2:50] definition: The most a bridge carries is called its proof load. (to quote: \"We call the most a bridge carries its proof load.\")"}
+  ]
+}

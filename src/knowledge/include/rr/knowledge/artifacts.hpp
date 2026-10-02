@@ -21,8 +21,9 @@ namespace rr::knowledge {
 
 // The artifact schemas, compiled in: "artifacts/source" (written by the
 // pipeline's source stage, rr/pipeline/source.hpp), "artifacts/transcript",
-// "artifacts/outline", "artifacts/atoms", "artifacts/article", and
-// "artifacts/silver" (the eval's drafts, rr/eval/annotate.hpp).
+// "artifacts/outline", "artifacts/atoms", "artifacts/plan",
+// "artifacts/article", and "artifacts/silver" (the eval's drafts,
+// rr/eval/annotate.hpp).
 [[nodiscard]] const json::SchemaRegistry& artifact_schemas();
 
 }  // namespace rr::knowledge

@@ -24,6 +24,7 @@ namespace rr::oracle {
 namespace {
 
 constexpr std::size_t kWordsPerSentence = 12;
+constexpr std::size_t kPlannedAtoms = 3;  // a paragraph's, in a plan
 
 std::vector<std::string> words_of(std::string_view text) {
     std::vector<std::string> words;
@@ -322,6 +323,31 @@ json::Json row_of(const Said& sentence, json::Json filler, json::Json atoms) {
     return json::Json{{"sentence", sentence.id}, {"filler", std::move(filler)}, {"atoms", std::move(atoms)}};
 }
 
+// The title of the section a plan mission asks about: in 'Plan section 2,
+// "The samples", from 5:00 to 9:55', what stands between the quotes.
+Result<std::string> section_in(const llm::ChatRequest& request) {
+    constexpr std::string_view kOpen = "Plan section ";
+    constexpr std::string_view kClose = "\", from ";
+    for (const llm::Message& message : std::views::reverse(request.messages)) {
+        const std::string text = message.text();
+        const std::size_t at = text.find(kOpen);
+        const std::size_t begin = at == std::string::npos ? at : text.find('"', at);
+        const std::size_t end = begin == std::string::npos ? begin : text.find(kClose, begin);
+        if (end != std::string::npos) {
+            return text.substr(begin + 1, end - begin - 1);
+        }
+    }
+    return fail(Errc::invalid_argument, "no message of the mission names the section to plan");
+}
+
+// "Tells A12.", "Tells A12 and A13.", "Tells A12 to A14.".
+std::string purpose_of(const std::vector<std::string>& atoms) {
+    if (atoms.size() == 1) {
+        return std::format("Tells {}.", atoms.front());
+    }
+    return std::format("Tells {} {} {}.", atoms.front(), atoms.size() == 2 ? "and" : "to", atoms.back());
+}
+
 }  // namespace
 
 Answerer annotate() {
@@ -451,6 +477,48 @@ Answerer atomize() {
     };
 }
 
+Answerer plan() {
+    return [](const llm::ChatRequest& request) -> Result<std::string> {
+        RR_TRY_ASSIGN(const std::string lines, block_in(request, "atoms"));
+        RR_TRY_ASSIGN(std::string heading, section_in(request));
+        json::Json paragraphs = json::Json::array();
+        json::Json duplicates = json::Json::array();
+        std::vector<Said> told;  // the atoms a paragraph tells, as shown
+        std::vector<std::string> paragraph;
+        const auto close = [&] {
+            if (!paragraph.empty()) {
+                json::Json atoms = json::Json::array();
+                for (const std::string& id : paragraph) {
+                    atoms.push_back(id);
+                }
+                paragraphs.push_back(
+                    json::Json{{"purpose", purpose_of(paragraph)}, {"atoms", std::move(atoms)}});
+                paragraph.clear();
+            }
+        };
+        for (const Said& atom : said_in(lines)) {
+            const auto earlier =
+                std::ranges::find_if(told, [&](const Said& shown) { return shown.text == atom.text; });
+            if (earlier != told.end()) {
+                duplicates.push_back(
+                    json::Json{{"because", std::format("It says again what {} says.", earlier->id)},
+                               {"atom", atom.id},
+                               {"of", earlier->id}});
+                continue;
+            }
+            told.push_back(atom);
+            paragraph.push_back(atom.id);
+            if (paragraph.size() == kPlannedAtoms) {
+                close();
+            }
+        }
+        close();
+        return json::dump(json::Json{{"paragraphs", std::move(paragraphs)},
+                                     {"duplicates", std::move(duplicates)},
+                                     {"heading", std::move(heading)}});
+    };
+}
+
 Result<std::string> excerpt_in(const llm::ChatRequest& request) {
     // A repair's conversation ends with its instruction: the excerpt is in
     // the order's message, before it.
@@ -484,6 +552,7 @@ void teach_stages(Oracle& oracle, std::optional<std::string> script) {
     oracle.teach("describe", describe());
     oracle.teach("brief", brief());
     oracle.teach("atomize", atomize());
+    oracle.teach("plan", plan());
 }
 
 }  // namespace rr::oracle

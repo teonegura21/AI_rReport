@@ -48,6 +48,22 @@ Texts are compared as `rr_text` compares them ([text.md](text.md)):
 - **The paragraph citing an atom** is every block with a sentence that cites it, read without markers. A number, name or term is kept if any of them holds it.
 - **Closest words** are shown to a repair only when at least half the quote's words matched. Sharing a lone "the" with the transcript shows nothing, and the message says the quote is nowhere in the transcript.
 
+## Duplicates: what telling the other would lose
+
+Ledger B lets an atom go untold when it is declared a **duplicate** of one that is told (ADR-0005, rule 6): a speaker's summary of what they just said, a point made again for emphasis. The plan declares them (P19, [pipeline.md](pipeline.md#the-plan-stage)), and a duplicate declared wrongly is a promise broken silently: what only it said never reaches the article. So `duplicate_problems(atom, of)` says what telling only `of` would lose, and the plan stage sends each reason back to the planner:
+
+| What `atom` has | Lost when | Message, for example |
+|---|---|---|
+| a number | `of` does not state it, by value | it says "1902", which A12 does not |
+| a name | `of` neither gives it nor lists it, whole or by its last word | it names "Pierre", which A12 does not |
+| a lexicon term | `of` neither uses nor lists it | it uses "half-life", which A12 does not |
+| words to quote | `of` does not quote them, word for word | its words "the most precious thing" are to be quoted, and A12 does not quote them |
+| a modality | `of`'s differs | it is hedged, and A12 asserted |
+| a speaker | `of`'s differs, folded; a speaker unknown differs from one known | it is said by Pierre, and A12 by Ada |
+| a source it reports | `of`'s differs | it reports the NRC, and A12 reports no one |
+
+The rule is stricter than meaning, on purpose. Two atoms may mean the same and still differ here, and a duplicate refused costs a sentence of the article, while a duplicate wrongly accepted loses what was said. When in doubt, an atom is told. Kind, register and intensity are not compared: readers label them differently without either being wrong (the atomize stage does not vote on them either, [pipeline.md](pipeline.md#3-votes-and-what-they-do-not-settle)), and none is a fact a reader would miss.
+
 ## Order: the fewest to move
 
 A section's atoms should be told in the order they were said. A naive check, flagging every atom told after one said later, would flag a cascade: one atom pulled forward would make every atom after it look out of place. So the check finds a longest run of first citations whose positions in the talk never decrease (the longest non-decreasing subsequence, `O(n log n)`). The atoms outside that run are the fewest that must move, and only they are flagged. An atom's position is where it was first said, and only its first telling is placed: a recap that cites an atom again tells nothing out of order. Atoms first said in one sentence may be told in either order, which is why the run is non-decreasing rather than increasing. Headings start new sections, which may be ordered freely: an article may tell a talk's two halves in either order. Order is a warning, never an error. A writer may group related points, and M1's acceptance does not count it.
@@ -81,7 +97,7 @@ The remaining faults (refusal, truncation, broken JSON, running out while thinki
 
 ## What waits
 
-Judge-backed checks, those that need a model (softening without a quote, misattribution in paraphrase, unsupported sentences), arrive with the stages and the eval (P20, P24). Repair orchestration, which sends each finding to the mission that can fix it, arrives with the stages too.
+Judge-backed checks, those that need a model (softening without a quote, misattribution in paraphrase, unsupported sentences), arrive with the stages and the eval (P20, P24). Repair orchestration, which sends each finding to the mission that can fix it, arrives with the stages too. `check_article()` takes the plan's declared duplicates with the write stage (P20): until then, `atom-told` holds every atom.
 
 ## How the tests were validated
 
@@ -103,3 +119,5 @@ Judge-backed checks, those that need a model (softening without a quote, misattr
 4. **One rule was redundant.** `ArticleView` kept a code block's text empty. No check could see it, since code blocks cite nothing and their text is never read, so it is gone.
 
 The final run kills all 31 mutants, each by the test that claims it: 12 on Ledger A, 3 on what texts are held to, 16 on Ledger B. The two rr_knowledge mutants of the inline-code reader, rerun after the move, are still killed.
+
+P19 added `duplicate_problems()`, with four tests: a duplicate that loses nothing is taken, numbers by value, a name by its last word, words and speakers folded; one that says more (a number, a name, a term) is not, unless the other lists it; words to quote must be the other's, word for word; and how it is said (a modality, a question, a speaker, a speaker unknown, a source) must be the other's too. Its 12 mutants are all killed by the tests that claim them.

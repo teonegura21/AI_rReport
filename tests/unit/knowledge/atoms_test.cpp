@@ -145,7 +145,8 @@ TEST(Atoms, LabelsAreTheClosedList) {
 TEST(ArtifactSchemas, AreCompiledIn) {
     EXPECT_EQ(artifact_schemas().names(),
               (std::vector<std::string>{"artifacts/article", "artifacts/atoms", "artifacts/outline",
-                                        "artifacts/silver", "artifacts/source", "artifacts/transcript"}));
+                                        "artifacts/plan", "artifacts/silver", "artifacts/source",
+                                        "artifacts/transcript"}));
 }
 
 }  // namespace

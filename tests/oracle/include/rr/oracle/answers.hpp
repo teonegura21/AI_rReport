@@ -17,13 +17,14 @@
 //   that keeps every word and passes the checks, so a pipeline runs end to
 //   end on any captions.
 //
-// Annotation, outlines, descriptions and atoms
+// Annotation, outlines, descriptions, atoms and plans
 //   The eval's silver drafts (rr/eval/annotate.hpp), a video's outline and
-//   its sections' descriptions (rr/pipeline/outline_stage.hpp), and what each
-//   sentence says (rr/pipeline/atomize_stage.hpp) have no single right
-//   answer either. The oracle answers each by a rule a test can predict, and
-//   that keeps every check: see annotate(), outline(), describe(), brief()
-//   and atomize(). A synthetic video is written for the rule: its talk turns
+//   its sections' descriptions (rr/pipeline/outline_stage.hpp), what each
+//   sentence says (rr/pipeline/atomize_stage.hpp), and how a section is
+//   told (rr/pipeline/plan_stage.hpp) have no single right answer either.
+//   The oracle answers each by a rule a test can predict, and that keeps
+//   every check: see annotate(), outline(), describe(), brief(), atomize()
+//   and plan(). A synthetic video is written for the rule: its talk turns
 //   at a sentence that opens with "Now," or "Next,"; a speaker says "I'm
 //   Ada"; its words for things are acronyms; "Um, so." is a disfluency and
 //   "Hello and welcome back." a greeting.
@@ -94,6 +95,13 @@ namespace rr::oracle {
 // what a sentence's atoms miss (recall), it writes the atom it would have
 // read, never a filler, unless an atom shown holds that atom's text already.
 [[nodiscard]] Answerer atomize();
+
+// Answers plan missions (prompts/plan): the atoms shown, in order, three a
+// paragraph, each paragraph's purpose "Tells A12 to A14."; an atom shown
+// exactly as an earlier one (its labels and its words) is declared that
+// one's duplicate, "It says again what A12 says."; the section's title as
+// its heading.
+[[nodiscard]] Answerer plan();
 
 // Teaches `oracle` every mission kind the pipeline's stages send, punctuating
 // from `script` when there is one.

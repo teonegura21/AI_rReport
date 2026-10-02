@@ -3,9 +3,11 @@ rr_add_test_suite(pipeline
         asking_test.cpp
         atomize_stage_test.cpp
         executor_test.cpp
+        grouping_test.cpp
         job_run_test.cpp
         outline_stage_test.cpp
         outline_test.cpp
+        plan_stage_test.cpp
         punctuation_test.cpp
         readings_test.cpp
         source_test.cpp

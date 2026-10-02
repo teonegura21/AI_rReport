@@ -1,6 +1,6 @@
 # The pipeline: jobs, stages, and the stage cache
 
-A **job** takes one video through the **stages**: today `source`, `transcript`, `outline` and `atomize`, then `plan` and `write` as they land (P19–P20). The eval's annotation jobs run `source`, `transcript` and `annotate` ([eval.md](eval.md#silver-drafted-by-models)). Each stage turns the artifacts of the stages before it into one artifact of its own, an immutable JSON document that follows its schema (ADR-0004). This note is about what runs them, `rr_pipeline`, and the first four stages.
+A **job** takes one video through the **stages**: today `source`, `transcript`, `outline`, `atomize` and `plan`, then `write` as it lands (P20). The eval's annotation jobs run `source`, `transcript` and `annotate` ([eval.md](eval.md#silver-drafted-by-models)). Each stage turns the artifacts of the stages before it into one artifact of its own, an immutable JSON document that follows its schema (ADR-0004). This note is about what runs them, `rr_pipeline`, and the first five stages.
 
 | Piece | Where | What |
 |---|---|---|
@@ -13,9 +13,11 @@ A **job** takes one video through the **stages**: today `source`, `transcript`, 
 | `TranscriptStage` | `rr/pipeline/transcript_stage.hpp` | Captions into numbered sentences; punctuated by the infantry when they are not |
 | `OutlineStage` | `rr/pipeline/outline_stage.hpp` | The video's sections, and the brief every later mission is given |
 | `AtomizeStage` | `rr/pipeline/atomize_stage.hpp` | Ledger A: what became of every sentence, atoms or a filler label |
+| `PlanStage` | `rr/pipeline/plan_stage.hpp` | The plan: which paragraph of each section tells which atoms, and which atoms only another tells |
 | windows | `rr/pipeline/windows.hpp` | A transcript cut into windows of whole sentences, each as large as its engine holds |
 | sections | `rr/pipeline/outline.hpp` | Sections from chapters, from pauses, from outlines agreed on; long ones cut; briefs joined |
 | readings | `rr/pipeline/readings.hpp` | What models made of a window, voted on sentence by sentence and reduced to one reading |
+| grouping | `rr/pipeline/grouping.hpp` | A section's atoms told in the order said, a paragraph at a time, where no model planned them |
 | asking | `rr/pipeline/asking.hpp` | What every stage that asks models says the same way: the video, a prompt's fingerprint, an answer's problems a few at a time, why a mission went unanswered |
 
 ## The cache key
@@ -301,6 +303,62 @@ The windows join into one ledger, atoms renumbered `A1…An` in the order said, 
 
 **The oracle** answers every mode by a rule a test can predict (`rr/oracle/answers.hpp`): filler words alone are a disfluency, greeting words a greeting; any other sentence is one atom, the sentence itself, running on into the next when it ends without a full stop; a digit makes a number, "?" a question, "maybe" or "I think" a hedge; runs of capitalized words are names, acronyms terms, and the words between double quotes are to be quoted. Asked again, it writes the atom it would have read, unless an atom shown holds it already.
 
+## The plan stage
+
+**Why plan apart from writing.** Ledger A holds what every sentence said; the article must tell all of it (Ledger B). A writer that decided what to tell as it wrote would drop an atom unseen, and the drop would surface only in the article's check, after the prose, with a repair rewriting prose to fit it in. Deciding first, in a plan that code checks, catches it before any prose exists: the writer is handed each paragraph's atoms as a closed list (P20). Planning is also where thinking pays (plan §5): grouping what belongs together and finding what is only said again is judgment over many atoms, every answer of it checkable. Drafting, where reasoning models invent more (the Vectara figures above), comes after and thinks less.
+
+The stage takes four steps (`rr/pipeline/plan_stage.hpp`):
+
+### 1. A section at a time, a closed world
+
+Each section of the outline is planned on its own, from its atoms: those whose first sentence it holds, in the order said. The commander plans it **thinking**, within the tier's budget (16,384 tokens at `max`, 8,192 at `thorough`) and never more than half of what it holds, the outline's rule. Sections are planned side by side, on the commander's slots.
+
+The prompt's shared part shows the video (its title, channel and gist) and **the article's sections in order**, each with its start and gist: every section is planned knowing what the others cover, and the part is the same for every section, so the engine's cache serves it. The task shows the section and its atoms, a line each, their labels before their words:
+
+```
+A3 [2:00] claim, hedged: Maybe the scales are older than the lab.
+A6 [4:00] number: In 1902 Marie Curie called radium "the most precious thing". (to quote: "the most precious thing")
+A26 [14:00] claim, hedged, aside, said by Ada Lovelace, reporting Pierre: I think the numbers mean we need better scales, Pierre.
+```
+
+Only what planning needs is shown: the kind; the modality and the register where they are not plain (a question's modality is its kind, said once); who says it and whom it reports; the words to quote. Names and terms are the writer's concern.
+
+**The answer comes in the order a planner works:** each paragraph's purpose (what a reader learns from it) before its atoms, each duplicate's reason before its atoms, and the heading last, once the section is planned. A paragraph tells twelve atoms at most, a purpose is a sentence of thirty words at most, a heading twelve words.
+
+### 2. What is sent back
+
+| The answer | What it is told |
+|---|---|
+| names an atom of another section | `A8 is not among the atoms to plan (A1–A7): plan those only` |
+| tells an atom twice | `A1 is told twice: tell each atom once, in one paragraph` |
+| leaves an atom out | `A7 is in no paragraph: tell it, or declare it a duplicate of the atom that says all it says` |
+| declares an atom a duplicate of itself, or of one no paragraph tells | `A7 is declared a duplicate of A9, which no paragraph tells: name an atom a paragraph tells, or tell it` |
+| tells an atom and declares it a duplicate | `A1 is told and declared a duplicate: it is one or the other` |
+| declares a duplicate that would lose what it says | `A2 is declared a duplicate of A1, yet it says "3", which A1 does not: tell it` |
+| writes a paragraph of more than twelve atoms, a purpose of more than thirty words, a heading of more than twelve | `paragraph 1 tells 13 atoms: split it, 12 at most` |
+
+**A duplicate must lose nothing.** Declaring one is the only way an atom goes untold, so each is held to `fidelity::duplicate_problems()` ([fidelity.md](fidelity.md#duplicates-what-telling-the-other-would-lose)): a number, a name, a term or words to quote that the other lacks, or another modality, speaker or source, each sent back. When in doubt, an atom is told: a duplicate refused costs a sentence of the article, one wrongly accepted loses what was said.
+
+**The order of the talk is asked for, not checked.** An atom may move within its section where a thought reads better whole, and the purpose says why. The article's order check warns where one did ([fidelity.md](fidelity.md#order-the-fewest-to-move)).
+
+### 3. A section too long, in parts
+
+A section the commander does not hold is planned in **parts**, each the most atoms it holds from where the last one ended, found by bisection as windows are. Each part's task says which atoms it plans and that the others are planned apart; the parts' paragraphs are joined in order, and the first part names the heading. An atom more than the commander holds even alone is told in the order said, with a finding. On the 48 GB profile the commander holds 32,768 tokens and thinks with half of them. A section runs eight minutes at most, about a hundred atoms, and an atom takes some 85 tokens, its line and its share of the answer: under 10,000 tokens with the prompt's rules, so parts are for smaller commanders.
+
+### 4. What no answer planned
+
+A section, or a part, that no answer planned (the models declined, a ceiling came first, or no answer passed the checks) is **told in the order said**, a paragraph at a time (`rr/pipeline/grouping.hpp`), with a finding that says why: `section 2, "The samples": its atoms are told in the order said, a paragraph at a time: the models declined to plan it`. Grouping keeps every atom and the talk's order: a new paragraph after six atoms, and wherever the speaker or the register changes. A grouped paragraph has no purpose, and a section no answer planned is `planned_by: grouping`.
+
+**At `fast`** every section is grouped (`plan.mode = "group"`): no model is asked and no pod is needed, and no finding is published, since that is the tier's choice. A section whose sentences are all filler has no paragraph, and nothing to ask.
+
+**What the stage says while it works**: `plan: the commander plans 3 sections` (`, in 4 parts` where it took more missions than sections); `plan: the atoms are told in the order said, a paragraph at a time`.
+
+**The key.** Its fingerprint holds the tier's plan settings and the limits (atoms a paragraph, words a heading and a purpose, atoms a grouped paragraph), and, where the commander plans, the prompt's label and hash, the army and what the commander holds. It samples: the job's salt is in its key.
+
+**What it refuses.** Without a pod, at a tier that plans with the commander, its fingerprint is `Errc::needs_user`. An outline that does not cover its transcript, or a ledger with an atom said past the transcript's end, is a bug of an earlier stage: `internal`.
+
+**The oracle** plans by a rule a test can predict (`rr/oracle/answers.hpp`): three atoms a paragraph, in order, each purpose naming its atoms ("Tells A1 to A3."); an atom shown exactly as an earlier one, labels and words, declared that one's duplicate; the section's title as its heading.
+
 ## The commands
 
 | Command | What |
@@ -314,6 +372,8 @@ Each stage says how it is doing on stderr. At the end, the command says what the
 
 ## What waits
 
+- **An article-wide plan.** Each section is planned alone, so an atom that repeats one of another section (a closing summary of the whole talk) is told again where it was said, and the writer may refer back. A pass over the whole article that finds such duplicates, and the article's title and lead, wait for the write stage and the eval (P20, P26).
+- **Plans compared.** One plan is drawn a section, checked by code; whether drawing several and keeping the best pays is the eval's to say (P26).
 - **More waves of samples** where the first disagree (a tier's `atomize.step`): refused until the eval shows adaptive waves pay (P28).
 - **Thinking while describing**, and a brief from more than gists: the eval decides (P26).
 - **The token estimator** is not yet calibrated from the call log: the default, which errs high, sizes every request.
@@ -325,7 +385,7 @@ Each stage says how it is doing on stderr. At the end, the command says what the
 
 | Suite | What it holds |
 |---|---|
-| `tests/unit/pipeline/` (131) | the executor on scripted stages: found done, run again only where an input changed, a failure recorded and resumed, a stop, an artifact that breaks its schema, the salt, a result kept for one job, the cache key and the army's fingerprint; `run_job()`, and a video's length once its source is read; punctuation's windows and answer checks; the source stage on a fake yt-dlp and on files; the transcript stage on an army of oracles, with faults injected; sentence windows, planned against engines of many sizes, bisection against giving up one sentence at a time; what asking stages share; sections from chapters, pauses and agreement, long ones cut, briefs joined; the outline stage on a synthetic lecture: outlines, chapters, no pod, windows, a sentence too long, an engine too small, every check sent back and repaired, every failure a finding; a job's tier found through its context; readings voted on, grown and replaced, and what atoms hold of a sentence; the atomize stage on a synthetic lecture: every sentence accounted for, every rule sent back and repaired, votes and the commander's settling, sentences asked again, windows, ceilings, no pod, every failure a finding |
+| `tests/unit/pipeline/` (151) | the executor on scripted stages: found done, run again only where an input changed, a failure recorded and resumed, a stop, an artifact that breaks its schema, the salt, a result kept for one job, the cache key and the army's fingerprint; `run_job()`, and a video's length once its source is read; punctuation's windows and answer checks; the source stage on a fake yt-dlp and on files; the transcript stage on an army of oracles, with faults injected; sentence windows, planned against engines of many sizes, bisection against giving up one sentence at a time; what asking stages share; sections from chapters, pauses and agreement, long ones cut, briefs joined; the outline stage on a synthetic lecture: outlines, chapters, no pod, windows, a sentence too long, an engine too small, every check sent back and repaired, every failure a finding; a job's tier found through its context; readings voted on, grown and replaced, and what atoms hold of a sentence; the atomize stage on a synthetic lecture: every sentence accounted for, every rule sent back and repaired, votes and the commander's settling, sentences asked again, windows, ceilings, no pod, every failure a finding; atoms grouped in the order said; the plan stage on the same lecture: every section planned thinking, in a closed world, every rule sent back and repaired, duplicates that lose nothing, parts, what no answer planned told in order, ceilings, no pod |
 | `tests/unit/library/` | jobs, and the stage store: one commit or none, an artifact kept once, a damaged one refused, findings per run |
 | `tests/unit/hub/` | `JobArmy`: raised once, recorded engines replayed, what needs the user, the job's ceilings per hour of its video, asked when it is raised; the configured yt-dlp, and `[jobs]` |
 | `tests/component/hub_cli_test.cpp` | `rreport ingest / resume / jobs` through the real executable: a caption file done without a pod, the outline's finding said, then every stage found done; no pod, a finding; a missing file; an unknown tier |
@@ -387,3 +447,22 @@ clang-tidy found `unsettled()` too complex to read (it is four named steps now),
 The final run kills all 120, each by the test that claims it, and the 18, the 1 and the 3.
 
 **The job's ceilings.** Their tests hold them per hour of video, a short video counted as a quarter hour and the tokens rounded up (`JobCeilings`); the length the site gives, else where timed captions end (a sound too), else words at 150 a minute; the length asked once, when the army is raised, and a length not found failing the raise; the army given the ceilings, not only told of them (`Army::ceilings()`); `[jobs]` read and refused at zero. Writing them found a search for the newest source run that a job cannot have: a job keeps one run a stage (`stage_runs` is keyed by job and stage), so it is a plain search now. The mutants (`hub.toml`, 12; `pipeline.toml`, 5) are all killed, each by the test that claims it.
+
+**The plan stage (P19).** Its tests run it on the atomize stage's lecture and the ledger the oracle makes of it, now shared (`tests/unit/pipeline/lecture.hpp`): seven atoms in the first section, ten in the second, nine in the third. The faults are made on the commander's answers, as JSON. The plan's own rules have their tests (`plan_test.cpp`), and so do duplicates (`duplicates_test.cpp`) and grouping (`grouping_test.cpp`), as pure functions.
+
+What the tests found before any mutant ran:
+1. **A part's task ran into its section's line.** A probe of commander sizes, written to find one that splits a section, showed the task as "…from 5:00 to 9:55Its atoms are too many…": inja's `trim_blocks` takes the newline after a block tag, and the section's line ended with one (its gist's `{% endif %}`). Every block of the task has lines of its own now, the gist one of them.
+2. The prompt check refused `gist` as both the video's (shared) and the section's (the order's): which one a template meant would depend on the order of rendering. The section's is `section_gist`.
+3. Clang refused a field GCC let pass: the planner kept the outline and never read it.
+4. A test expected an answer's room without the thinking's closing words, which the army counts too (`rr/agents/army.hpp`): the test says so now.
+
+**Writing the mutants found behaviour no test held, now tested**: a heading of the commander's own (the oracle's is always the section's title); a later part's heading not replacing the first's; a commander that holds no atom even alone, which leaves one finding a section, not one an atom.
+
+clang-tidy found `stretches_of()` too complex to read (its bisection is `most_held()` now), a result that could be ignored, a `push_back` that is an `emplace_back`, and three using-declarations the lecture's move left unused.
+
+**The mutants** (`tests/mutants/pipeline.toml`, 279 now): 3 of grouping and 44 of the plan stage, and with them 18 of the plan (`knowledge.toml`), 12 of duplicates (`fidelity.toml`) and 6 of the oracle's plans (`oracle.toml`). The first run killed 81 of the 83:
+- two did not build: each left a variable or a parameter unused, which `-Werror` refuses, and was written another way;
+- `the-commander-thinks-past-half` was killed, but not by the test that claims it. That test checked the thinking of every mission asked, and a commander that thinks with all it holds holds no mission: there was none to check, and it passed. It asserts the three missions first now;
+- `plan-is-not-taught` was claimed by a stage test, which the oracle's suite does not run; the oracle's own test of plans claims it now.
+
+The final run kills all 83, each by the test that claims it.

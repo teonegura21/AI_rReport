@@ -97,7 +97,7 @@ Then **[docs/runbooks/m1-m2.md](docs/runbooks/m1-m2.md)** lists what only the po
 
 ## Using it
 
-So far a job reads its source, makes its transcript, outlines the video and writes Ledger A, what became of every sentence ([docs/design/pipeline.md](docs/design/pipeline.md)); the stages that write the article arrive next. What needs no model runs without a pod: the source and the transcript of a video with its creator's captions, or of a caption file. The atoms need the pod: without one, a job stops there and says so, and `rreport resume` takes it up once a pod is set up.
+So far a job reads its source, makes its transcript, outlines the video, writes Ledger A, what became of every sentence, and plans the article: which paragraph tells which atoms ([docs/design/pipeline.md](docs/design/pipeline.md)); the stage that writes it arrives next. What needs no model runs without a pod: the source and the transcript of a video with its creator's captions, or of a caption file. The atoms need the pod: without one, a job stops there and says so, and `rreport resume` takes it up once a pod is set up.
 
 ```bash
 rreport ingest 'https://www.youtube.com/watch?v=…'   # or a caption file: .vtt, .srt, .json3, .txt

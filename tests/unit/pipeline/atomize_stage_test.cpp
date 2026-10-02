@@ -28,6 +28,7 @@
 #include <rr/reason/tier.hpp>
 #include <rr/testkit/result.hpp>
 
+#include "lecture.hpp"
 #include "oracle_army.hpp"
 #include "variant_tiers.hpp"
 
@@ -38,67 +39,27 @@ using knowledge::Atom;
 using knowledge::AtomId;
 using knowledge::AtomKind;
 using knowledge::AtomLedger;
-using knowledge::Filler;
-using knowledge::FillerLabel;
-using knowledge::Modality;
 using knowledge::SentenceId;
 using ::testing::Contains;
 using ::testing::ElementsAre;
 using testing::engines;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
+using testing::lecture;
+using testing::lecture_ledger;
+using testing::lecture_outline;
+using testing::lecture_texts;
+using testing::ledger_of;
 using ::testing::Not;
 using testing::OracleArmy;
+using testing::renumbered;
+using testing::reworded;
+using testing::source;
+using testing::transcript_of;
+using testing::without;
 using testkit::unwrap;
 
-// --- The lecture -------------------------------------------------------------------
-
-// Thirty sentences, one every 30 s, each said for 25 s: fifteen minutes,
-// written for the oracle's rule (rr/oracle/answers.hpp). A greeting at either
-// end and a disfluency at S3; the NRC lends 3 scales at S4; hedges at S5 and
-// S29, which names Pierre; one of the video's words at S6; S7 runs on into
-// S8; a name, a year and words to quote at S9; a question at S10; samples
-// weighed in between.
-std::vector<std::string> lecture_texts() {
-    std::vector<std::string> texts;
-    texts.reserve(30);
-    for (int number = 1; number <= 30; ++number) {
-        texts.push_back(std::format(
-            "Sample {} glowed faintly in the dark of the shed, and Ada wrote down carefully what the old "
-            "scales said.",
-            number));
-    }
-    texts[0] = "Hello and welcome back.";
-    texts[1] = "I'm Ada, and today we weigh radium.";
-    texts[2] = "Um, so.";
-    texts[3] = "The NRC lent us 3 scales for it.";
-    texts[4] = "Maybe the scales are older than the lab.";
-    texts[5] = "Its half-life is long.";
-    texts[6] = "Then we added a second pan, and the weight it held";
-    texts[7] = "doubled.";
-    texts[8] = "In 1902 Marie Curie called radium \"the most precious thing\".";
-    texts[9] = "Why does it glow?";
-    texts[28] = "I think the numbers mean we need better scales, Pierre.";
-    texts[29] = "Thanks for watching.";
-    return texts;
-}
-
-knowledge::Transcript transcript_of(const std::vector<std::string>& texts) {
-    knowledge::Transcript transcript;
-    transcript.sentences.reserve(texts.size());
-    for (std::size_t index = 0; index < texts.size(); ++index) {
-        const Millis start{static_cast<std::int64_t>(index) * 30'000};
-        transcript.sentences.push_back(
-            knowledge::Sentence{.id = SentenceId{static_cast<std::uint32_t>(index + 1)},
-                                .text = texts[index],
-                                .span = unwrap(TimeSpan::make(start, start + Millis{25'000}))});
-    }
-    return transcript;
-}
-
-knowledge::Transcript lecture() {
-    return transcript_of(lecture_texts());
-}
+// --- The lecture (lecture.hpp), its sentences all ended ---------------------------------
 
 // The lecture with every sentence ended: however it is cut into windows, no
 // thought runs on from one into the next.
@@ -109,107 +70,7 @@ knowledge::Transcript ended_lecture() {
     return transcript_of(texts);
 }
 
-Source source() {
-    return Source{.origin = Origin::web,
-                  .video = media::Video{.id = "abc123XYZ_0",
-                                        .title = "Weighing radium",
-                                        .description = "A lecture from the shed.",
-                                        .channel = "Science Hour"},
-                  .captions = SourceCaptions{.language = "en",
-                                             .kind = media::CaptionKind::manual,
-                                             .format = transcript::CaptionFormat::vtt,
-                                             .content = "WEBVTT\n"}};
-}
-
-// The outline stage's artifact for the lecture: three sections, and its brief.
-knowledge::Outline lecture_outline() {
-    return knowledge::Outline{
-        .sections =
-            {knowledge::Section{.first = SentenceId{1}, .last = SentenceId{10}, .title = "Weighing radium"},
-             knowledge::Section{.first = SentenceId{11}, .last = SentenceId{20}, .title = "The samples"},
-             knowledge::Section{.first = SentenceId{21}, .last = SentenceId{30}, .title = "What they mean"}},
-        .brief =
-            knowledge::Brief{.genre = knowledge::Genre::talk,
-                             .speakers = {knowledge::Speaker{.name = "Ada Lovelace", .role = "lecturer"}},
-                             .lexicon = {knowledge::LexiconTerm{.term = "NRC"},
-                                         knowledge::LexiconTerm{.term = "half-life",
-                                                                .meaning = "how long it takes to lose half"}},
-                             .gist = "Ada weighs radium, sample by sample."},
-        .sections_from = knowledge::SectionsFrom::models};
-}
-
-// Renumbers `ledger`'s atoms A1, A2, … in the order they are.
-AtomLedger renumbered(AtomLedger ledger) {
-    for (std::size_t index = 0; index < ledger.atoms.size(); ++index) {
-        ledger.atoms[index].id = AtomId{static_cast<std::uint32_t>(index + 1)};
-    }
-    return ledger;
-}
-
-// What the oracle makes of `transcript`, the lecture or one like it: an atom
-// a sentence, the sentence itself, but for the fillers; S8 told with S7 when
-// S7 runs on.
-AtomLedger ledger_of(const knowledge::Transcript& transcript) {
-    AtomLedger ledger;
-    const auto add = [&](const std::vector<std::uint32_t>& sentences, AtomKind kind, Modality modality) {
-        Atom atom{.id = AtomId{1}, .kind = kind, .modality = modality};  // numbered at the end
-        for (const std::uint32_t number : sentences) {
-            atom.sentences.emplace_back(number);
-            atom.text += (atom.text.empty() ? "" : " ") + transcript.sentences[number - 1].text;
-        }
-        ledger.atoms.push_back(std::move(atom));
-        return ledger.atoms.size() - 1;
-    };
-    ledger.atoms.reserve(transcript.sentences.size());
-    ledger.atoms[add({2}, AtomKind::claim, Modality::asserted)].names = {"Ada"};
-    ledger.atoms[add({4}, AtomKind::number, Modality::asserted)].terms = {"NRC"};
-    add({5}, AtomKind::claim, Modality::hedged);
-    add({6}, AtomKind::claim, Modality::asserted);
-    if (transcript.sentences[6].text.ends_with('.')) {
-        add({7}, AtomKind::claim, Modality::asserted);
-        add({8}, AtomKind::claim, Modality::asserted);
-    } else {
-        add({7, 8}, AtomKind::claim, Modality::asserted);
-    }
-    Atom& quoting = ledger.atoms[add({9}, AtomKind::number, Modality::asserted)];
-    quoting.names = {"Marie Curie"};
-    quoting.must_quote = true;
-    quoting.quote = "the most precious thing";
-    add({10}, AtomKind::question, Modality::question);
-    for (std::uint32_t number = 11; number <= 28; ++number) {
-        ledger.atoms[add({number}, AtomKind::number, Modality::asserted)].names = {"Ada"};
-    }
-    ledger.atoms[add({29}, AtomKind::claim, Modality::hedged)].names = {"Pierre"};
-    ledger.fillers = {Filler{.sentence = SentenceId{1}, .label = FillerLabel::greeting},
-                      Filler{.sentence = SentenceId{3}, .label = FillerLabel::disfluency},
-                      Filler{.sentence = SentenceId{30}, .label = FillerLabel::greeting}};
-    return renumbered(std::move(ledger));
-}
-
-AtomLedger lecture_ledger() {
-    return ledger_of(lecture());
-}
-
-// `ledger` without what it made of the sentences `numbers`.
-AtomLedger without(AtomLedger ledger, const std::vector<std::uint32_t>& numbers) {
-    const auto among = [&](SentenceId id) { return std::ranges::contains(numbers, id.number()); };
-    std::erase_if(ledger.atoms, [&](const Atom& atom) { return among(atom.sentences.front()); });
-    std::erase_if(ledger.fillers, [&](const Filler& filler) { return among(filler.sentence); });
-    return renumbered(std::move(ledger));
-}
-
 // --- Faults, and what was asked ------------------------------------------------------
-
-// A fault that changes the answer to the first call of `mission` as `change`
-// says, the answer read as JSON.
-oracle::Fault reworded(std::string mission, std::function<void(json::Json&)> change, int calls = 1) {
-    return oracle::edit("reworded", oracle::When{.mission = std::move(mission), .calls = calls},
-                        [change = std::move(change)](const std::string& answer) {
-                            json::Json read = unwrap(json::parse(answer));
-                            change(read);
-                            return json::dump(read);
-                        });
-}
 
 // The row of the `number`th sentence an answer was asked about: S4's in the
 // first window's.

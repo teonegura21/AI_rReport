@@ -1,0 +1,13 @@
+Answer with JSON: {"paragraphs": [{"purpose": "...", "atoms": ["A12", ...]}, ...], "duplicates": [...], "heading": "..."}.
+Plan section {{ number }}, "{{ section }}", from {{ start }} to {{ end }}.
+{% if section_gist != "" %}
+What it says: {{ section_gist }}
+{% endif %}
+{% if part != "" %}
+{{ part }}
+{% endif %}
+
+Its atoms, in the order said:
+<atoms>
+{{ atoms }}
+</atoms>
