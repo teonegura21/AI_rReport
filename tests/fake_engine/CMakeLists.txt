@@ -14,3 +14,10 @@ rr_add_executable(rr_fake_engine
         rr::fake_engine_stream
         rr::net
         rr::json)
+
+# Where the hub is built, the engine can answer as the oracle (--fake-oracle):
+# the end-to-end tests run the real pipeline against it (plan P22).
+if(TARGET rr_oracle)
+    target_link_libraries(rr_fake_engine PRIVATE rr::oracle rr::llm)
+    target_compile_definitions(rr_fake_engine PRIVATE RR_FAKE_ENGINE_ORACLE)
+endif()

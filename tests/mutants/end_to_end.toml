@@ -1,0 +1,41 @@
+# Mutants the end-to-end test must catch (plan P22): each breaks what a job
+# killed with SIGKILL relies on to resume, or the means the test kills it
+# by, and the test must fail without it. The test runs the real executables,
+# which its target builds, so a mutant in the hub reaches them.
+# Run: scripts/mutate.py tests/mutants/end_to_end.toml
+
+target = "rr_end_to_end_tests"
+binary = "build/dev/tests/component/rr_end_to_end_tests"
+timeout = 900
+
+[[mutant]]
+name = "a-kept-answer-is-asked-again"
+file = "src/llm/memo.cpp"
+expect = "EndToEnd.AJobKilledAnywhereResumesAskingOnlyWhatItsMemoDidNotKeep"
+  [[mutant.edit]]
+  from = '''    if (kept.has_value()) {'''
+  to = '''    if (kept.has_value() && false) {'''
+
+[[mutant]]
+name = "no-answer-is-kept"
+file = "src/llm/memo.cpp"
+expect = "EndToEnd.AJobKilledAnywhereResumesAskingOnlyWhatItsMemoDidNotKeep"
+  [[mutant.edit]]
+  from = '''    if (auto stored = store_->keep(key, response); !stored.has_value()) {'''
+  to = '''    if (auto stored = Result<void>{}; !stored.has_value()) {'''
+
+[[mutant]]
+name = "a-done-job-keeps-its-memo"
+file = "src/library/call_memo.cpp"
+expect = "EndToEnd.AJobKilledAnywhereResumesAskingOnlyWhatItsMemoDidNotKeep"
+  [[mutant.edit]]
+  from = '''"DELETE FROM llm_memo WHERE job_id = ?1"'''
+  to = '''"DELETE FROM llm_memo WHERE job_id = ?1 AND 0"'''
+
+[[mutant]]
+name = "the-hang-never-comes"
+file = "tests/fake_engine/main.cpp"
+expect = "EndToEnd.AJobKilledAnywhereResumesAskingOnlyWhatItsMemoDidNotKeep"
+  [[mutant.edit]]
+  from = '''        if (options.hang_after >= 0 && call > options.hang_after) {'''
+  to = '''        if (options.hang_after >= 0 && call > options.hang_after && false) {'''

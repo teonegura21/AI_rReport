@@ -3,14 +3,9 @@
 // slots) and a fake RunPod API: what an operator runs before the first video.
 #include <algorithm>
 #include <chrono>
-#include <csignal>
 #include <filesystem>
 #include <format>
-#include <functional>
-#include <mutex>
-#include <optional>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -23,9 +18,10 @@
 #include <rr/library/call_log.hpp>
 #include <rr/library/library.hpp>
 #include <rr/proc/process.hpp>
-#include <rr/testkit/ports.hpp>
 #include <rr/testkit/result.hpp>
 #include <rr/testkit/temp_dir.hpp>
+
+#include "runtime_process.hpp"
 
 namespace rr {
 namespace {
@@ -37,30 +33,20 @@ using ::testing::Not;
 using testkit::unwrap;
 using Clock = std::chrono::steady_clock;
 
-constexpr std::string_view kToken = "hub-cli-token";
-constexpr std::string_view kWeights = "pretend these are gigabytes of weights";
-
-// rreport-runtime serving a commander ("chat", two slots sharing one pool,
-// for answers drawn two at a time, and a prompt cache) and infantry
-// ("squad", four slots with a share each, and no prompt cache), both fake,
-// on free ports.
-class Runtime {
-public:
-    Runtime() {
-        const std::string sha = sha256(kWeights).hex();
-        (void)dir_.write_file("models/chat.gguf", kWeights);
-        (void)dir_.write_file("models/squad.gguf", kWeights);
-        (void)dir_.write_file("catalog.toml", std::format(R"toml(
+// rreport-runtime's catalog: a commander ("chat", two slots sharing one
+// pool, for answers drawn two at a time, and a prompt cache) and infantry
+// ("squad", four slots with a share each, and no prompt cache), both fake.
+constexpr std::string_view kCatalog = R"toml(
 [[model]]
 id = "chat"
 role = "commander"
 file = "chat.gguf"
-sha256 = "{0}"
+sha256 = "{sha}"
 [[model]]
 id = "squad"
 role = "infantry"
 file = "squad.gguf"
-sha256 = "{0}"
+sha256 = "{sha}"
 
 [[profile]]
 name = "test"
@@ -74,62 +60,7 @@ name = "test"
   model = "squad"
   slots = 4
   extra_args = ["--fake-token-ms", "2"]
-)toml",
-                                                          sha));
-        std::vector<std::string> argv{RR_RUNTIME_BINARY, "serve"};
-        for (const std::string& setting :
-             {std::string{"server.host=127.0.0.1"}, std::string{"server.port=0"},
-              std::format("models.catalog={}", (dir_ / "catalog.toml").string()),
-              std::format("models.dir={}", (dir_ / "models").string()), std::string{"models.profile=test"},
-              std::format("blobs.dir={}", (dir_ / "blobs").string()),
-              std::format("engines.llama_server={}", RR_FAKE_ENGINE),
-              std::format("engines.first_port={}", testkit::free_port_range(2)),
-              std::string{"idle.stop_after=0s"}, std::string{"log.level=warn"}}) {
-            argv.emplace_back("--set");
-            argv.push_back(setting);
-        }
-        process_.emplace(unwrap(proc::ChildProcess::start(
-            proc::Command{.argv = std::move(argv),
-                          .environment = {{"RR_RUNTIME_TOKEN", std::string{kToken}}},
-                          .inherit_environment = false},
-            proc::ChildProcess::Options{.on_output = [this](std::string_view line) {
-                constexpr std::string_view kListening = "listening on 127.0.0.1:";
-                if (line.starts_with(kListening)) {
-                    const std::lock_guard lock(mutex_);
-                    port_ = std::stoi(std::string{line.substr(kListening.size())});
-                }
-            }})));
-        const auto deadline = Clock::now() + 20s;
-        while (port() == 0 && Clock::now() < deadline) {
-            std::this_thread::sleep_for(20ms);
-        }
-        if (port() == 0) {
-            throw std::runtime_error("the runtime did not start");
-        }
-    }
-    Runtime(const Runtime&) = delete;
-    Runtime& operator=(const Runtime&) = delete;
-    Runtime(Runtime&&) = delete;
-    Runtime& operator=(Runtime&&) = delete;
-    ~Runtime() {
-        if (process_.has_value()) {
-            (void)::kill(process_->pid(), SIGTERM);
-            (void)process_->wait(15s);
-        }
-    }
-
-    [[nodiscard]] int port() const {
-        const std::lock_guard lock(mutex_);
-        return port_;
-    }
-    [[nodiscard]] std::string url() const { return std::format("http://127.0.0.1:{}", port()); }
-
-private:
-    testkit::TempDir dir_{"rr_hub_cli_runtime"};
-    mutable std::mutex mutex_;
-    int port_ = 0;
-    std::optional<proc::ChildProcess> process_;
-};
+)toml";
 
 // The hub's side: a data directory, a pod at RunPod (faked), and the runtime.
 class Hub : public ::testing::Test {
@@ -157,7 +88,7 @@ protected:
             argv.push_back(setting);
         }
         environment.emplace_back("HOME", home_.path().string());
-        environment.emplace_back("RREPORT_RUNTIME__TOKEN", std::string{kToken});
+        environment.emplace_back("RREPORT_RUNTIME__TOKEN", std::string{component::kRuntimeToken});
         environment.emplace_back("RREPORT_RUNPOD__API_KEY", std::string{FakeRunpod::kAccountKey});
         environment.emplace_back("PATH", "/usr/bin:/bin");
         return unwrap(proc::run(
@@ -169,7 +100,7 @@ protected:
 private:
     testkit::TempDir home_{"rr_hub_cli_home"};
     FakeRunpod runpod_;
-    Runtime runtime_;
+    component::RuntimeProcess runtime_{kCatalog, {"chat.gguf", "squad.gguf"}};
 };
 
 TEST_F(Hub, DoctorChecksEverythingAndSaysSo) {
@@ -297,7 +228,8 @@ TEST_F(Hub, BenchWeighsTheCommandersSlotsAndThePromptCache) {
     json::Json saved = unwrap(json::parse(unwrap(read_file(out))));
     EXPECT_EQ(saved["engines"][0]["ctx_per_slot"], 4096);
     EXPECT_EQ(saved["engines"][0]["kv_unified"], true);
-    EXPECT_EQ(saved["engines"][0]["model_sha256"], sha256(kWeights).hex()) << "which file was measured";
+    EXPECT_EQ(saved["engines"][0]["model_sha256"], sha256(component::kModelWeights).hex())
+        << "which file was measured";
     ASSERT_EQ(saved["commander"]["parallel"].size(), 3U);
     EXPECT_EQ(saved["commander"]["parallel"][1]["tokens"], 16) << "two answers of exactly eight tokens";
     ASSERT_EQ(saved["cache"].size(), 2U);
@@ -364,9 +296,9 @@ std::string job_in(const std::string& output) {
     return at == std::string::npos ? std::string{} : output.substr(at + 4, 26);
 }
 
-// Without a pod: the fake engines do not answer as the oracle does yet
-// (plan P22). The stages that can do without models do, and say what they
-// could not do; the atomize stage cannot, and the job waits for a pod.
+// Without a pod, the stages that can do without models do, and say what
+// they could not do; the atomize stage cannot, and the job waits for a pod.
+// With one, every stage runs (end_to_end_test.cpp).
 TEST_F(Hub, IngestsACaptionFileWithoutAPodUntilItNeedsOne) {
     const std::vector<std::string> no_pod{"runtime.url=", "runpod.pod_id="};
     const std::filesystem::path captions = home().write_file("On radium.vtt", kCaptions);
@@ -590,7 +522,8 @@ TEST_F(Hub, ConfigurationMistakesAndSecrets) {
     const proc::RunResult shown = rreport({"config", "show", "--origin"});
     EXPECT_EQ(shown.status.code, 0);
     EXPECT_THAT(shown.stdout_text, HasSubstr("RREPORT_RUNTIME__TOKEN")) << "where the token came from";
-    EXPECT_THAT(shown.stdout_text, Not(HasSubstr(std::string{kToken}))) << "never the token itself";
+    EXPECT_THAT(shown.stdout_text, Not(HasSubstr(std::string{component::kRuntimeToken})))
+        << "never the token itself";
     EXPECT_THAT(shown.stdout_text, Not(HasSubstr(std::string{FakeRunpod::kAccountKey})));
 
     const proc::RunResult version = rreport({"version"});

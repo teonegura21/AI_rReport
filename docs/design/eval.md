@@ -145,7 +145,7 @@ Every eval command takes `--eval-dir` (default `eval`) and `--eval-set` (default
 
 - **Scoring against gold** (key-fact recall, supported sentences): P23–P24, on the gold that R2 produces.
 - **Real drafts.** The oracle writes no must-quote and no term; real models will. The joining of both is tested directly.
-- **End to end through the real executables**, the oracle answering on the wire (`--fake-oracle`): P22.
+- **Annotation end to end through the real executables.** Articles run so since P22, the oracle answering on the wire ([testing.md](testing.md#end-to-end-killed-and-resumed)). An annotation does not yet: its two missions share one answer schema, which names both prompts, so the fake engine cannot tell them apart.
 - **Candidates with CC BY.** None could be confirmed from here: YouTube shows the licence only on the watch page, which this environment cannot reach (`eval/sets/candidates.toml`).
 
 ## How the tests were validated

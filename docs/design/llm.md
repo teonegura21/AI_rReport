@@ -216,7 +216,7 @@ A job makes thousands of calls over an hour or more, and a pod stop, a crash or 
 | A memo that cannot be read fails the call | An unreadable store is a fault to report, not a reason to pay for the call again unnoticed |
 | A remembered answer reaches the sink whole, choice by choice, and is not accounted again | It was accounted when it was made |
 
-`CallMemo` keeps the answers in the library database (`migrations/0002_call_memo.sql`: `llm_memo`, keyed by job and memo key, one row per answer, committed as it arrives), next to the job's artifacts and as durable as they are. `forget()` deletes a job's rows once its results are committed. The derivation of seeds is pinned by a test against values computed independently (Python's `blake3` over the same canonical JSON): changing it would orphan every memo, and break the eval's common random numbers between versions.
+`CallMemo` keeps the answers in the library database (`migrations/0002_call_memo.sql`: `llm_memo`, keyed by job and memo key, one row per answer, committed as it arrives), next to the job's artifacts and as durable as they are. `forget()` deletes a job's rows once its results are committed. That a resumed job asks again only what its memo did not keep is proven through the real executables, a job killed with SIGKILL and resumed ([testing.md](testing.md#end-to-end-killed-and-resumed)). The derivation of seeds is pinned by a test against values computed independently (Python's `blake3` over the same canonical JSON): changing it would orphan every memo, and break the eval's common random numbers between versions.
 
 ## Accounting
 

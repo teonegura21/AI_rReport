@@ -459,6 +459,7 @@ Each stage says how it is doing on stderr. At the end, the command says what the
 | `tests/unit/library/` | jobs, and the stage store: one commit or none, an artifact kept once, a damaged one refused, findings per run |
 | `tests/unit/hub/` | `JobArmy`: raised once, recorded engines replayed, what needs the user, the job's ceilings per hour of its video, asked when it is raised; the configured yt-dlp, and `[jobs]` |
 | `tests/component/hub_cli_test.cpp` | `rreport ingest / resume / jobs / report` through the real executable: a caption file done without a pod, the outline's finding said, then every stage found done; no pod, a finding; a missing file; an unknown tier; a job's page where it stopped, the same wherever it is written, and an unknown job refused |
+| `tests/component/end_to_end_test.cpp` | every stage at `max` through the real executables, the engines answering as the oracle; a job killed with SIGKILL at six points and resumed, asking again only what its memo did not keep, to the same article ([testing.md](testing.md#end-to-end-killed-and-resumed)) |
 
 They pass under ASan and UBSan, and the pipeline, hub and library suites under TSan (the transcript stage's missions run on the army's threads). clang-tidy found what a reader might miss: an `optional` read without a check in `JobArmy` (now a `unique_ptr` that cannot be empty once raised), a `std::move` into a conditional that copied anyway, and fixtures with public state.
 

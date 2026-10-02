@@ -13,7 +13,7 @@
 //                                refuses it ("exceed_context_size_error")
 //   POST /v1/embeddings          a fixed vector
 //   GET  /stats                  {"completions": N, "abandoned_streams": M,
-//                                 "abandoned_requests": K}
+//                                 "abandoned_requests": K, "hung": H}
 //
 // Process switches script the engine's life, passed like any other engine
 // flag (the catalog's extra_args):
@@ -33,6 +33,22 @@
 //                           cache_n), at least its last token read again;
 //                           "cache_prompt": false in a request opts out.
 //                           Off by default, so other tests see no cache
+//   --fake-oracle           answer every chat call as the oracle does
+//                           (rr/oracle/answers.hpp), which knows each of the
+//                           pipeline's missions and its right answer from the
+//                           request alone: the end-to-end tests run the real
+//                           pipeline on it (plan P22). A mission is known by
+//                           its answer schema's description, which names its
+//                           prompt ("… (prompts/atomize)"), or, answered in
+//                           prose, by its task's first line; one the oracle
+//                           does not know is refused with 400. Every choice
+//                           answers the same: an oracle has one right answer.
+//                           Only where the hub is built, with the oracle
+//   --fake-hang-after N     answer N chat calls, then hang every later one:
+//                           its head sent, nothing more, its client probed
+//                           every 10 ms until it leaves (counted in /stats'
+//                           "hung"). A job killed while waiting on one has
+//                           nothing in progress on this engine
 //
 // A streamed answer is shaped as llama-server shapes it (rr/fake_engine/stream.hpp):
 // a role chunk, reasoning then content pieces, a finish chunk, the usage when
@@ -98,6 +114,14 @@
 #include <rr/net/http_server.hpp>
 #include <rr/net/sse.hpp>
 
+#if defined(RR_FAKE_ENGINE_ORACLE)
+#include <memory>
+
+#include <rr/llm/chat.hpp>
+#include <rr/oracle/answers.hpp>
+#include <rr/oracle/oracle.hpp>
+#endif
+
 namespace {
 
 using namespace std::chrono_literals;
@@ -119,6 +143,8 @@ struct Options {
     bool no_props = false;
     int props_ms = 0;
     bool prompt_cache = false;
+    bool oracle = false;
+    int hang_after = -1;  // -1: never
 };
 
 Options parse(const std::vector<std::string_view>& args) {
@@ -152,6 +178,10 @@ Options parse(const std::vector<std::string_view>& args) {
             options.props_ms = std::stoi(std::string{next()});
         } else if (arg == "--fake-prompt-cache") {
             options.prompt_cache = true;
+        } else if (arg == "--fake-oracle") {
+            options.oracle = true;
+        } else if (arg == "--fake-hang-after") {
+            options.hang_after = std::stoi(std::string{next()});
         }
     }
     return options;
@@ -284,6 +314,26 @@ rr::fake_engine::ChoicePlan choice_plan(const std::optional<std::string>& reply,
     return choice;
 }
 
+// A message's text: its content, or its text parts joined.
+std::string message_text(const rr::json::Json& message) {
+    const auto content = message.find("content");
+    if (content == message.end()) {
+        return {};
+    }
+    if (content->is_string()) {
+        return content->get<std::string>();
+    }
+    std::string text;
+    if (content->is_array()) {
+        for (const rr::json::Json& part : *content) {
+            if (part.is_object() && part.value("type", "") == "text") {
+                text += part.value("text", "");
+            }
+        }
+    }
+    return text;
+}
+
 // The prompt, as far as the fake reads it.
 struct Prompt {
     std::string text;            // each message's role and text, in order: what a prompt cache compares
@@ -305,26 +355,84 @@ Prompt read_prompt(const rr::json::Json& body) {
         if (role == "assistant") {
             ++prompt.assistant_turns;
         }
-        prompt.text += std::format("<{}>\n", role);
-        const auto content = message.find("content");
-        if (content == message.end()) {
-            continue;
-        }
-        if (content->is_string()) {
-            prompt.text += content->get<std::string>();
-            prompt.characters += content->get<std::string>().size();
-        } else if (content->is_array()) {
-            for (const rr::json::Json& part : *content) {
-                if (part.is_object() && part.value("type", "") == "text") {
-                    prompt.text += part.value("text", "");
-                    prompt.characters += part.value("text", "").size();
-                }
-            }
-        }
-        prompt.text += '\n';
+        const std::string text = message_text(message);
+        prompt.text += std::format("<{}>\n{}\n", role, text);
+        prompt.characters += text.size();
     }
     return prompt;
 }
+
+#if defined(RR_FAKE_ENGINE_ORACLE)
+// `body` as the oracle reads a request: its messages, in order.
+rr::llm::ChatRequest oracle_request(const rr::json::Json& body) {
+    rr::llm::ChatRequest request;
+    const auto messages = body.find("messages");
+    if (messages == body.end() || !messages->is_array()) {
+        return request;
+    }
+    for (const rr::json::Json& message : *messages) {
+        if (!message.is_object()) {
+            continue;
+        }
+        const std::string role = message.value("role", "");
+        std::string text = message_text(message);
+        if (role == "system") {
+            request.messages.push_back(rr::llm::Message::system(std::move(text)));
+        } else if (role == "assistant") {
+            request.messages.push_back(rr::llm::Message::assistant(std::move(text)));
+        } else {
+            request.messages.push_back(rr::llm::Message::user(std::move(text)));
+        }
+    }
+    return request;
+}
+
+// The kind of mission `request` (from `body`) is, as the oracle knows kinds
+// (rr/oracle/answers.hpp): its answer schema's description names its prompt
+// ("… (prompts/atomize)"); an answer in prose has no schema, and its task,
+// the first user message, opens with a line that says which.
+rr::Result<std::string> mission_kind(const rr::json::Json& body, const rr::llm::ChatRequest& request) {
+    if (const auto format = body.find("response_format"); format != body.end() && format->is_object()) {
+        const rr::json::Json* schema = nullptr;
+        if (const auto described = format->find("json_schema");
+            described != format->end() && described->is_object()) {
+            if (const auto found = described->find("schema");
+                found != described->end() && found->is_object()) {
+                schema = &*found;
+            }
+        }
+        const std::string description = schema == nullptr ? std::string{} : schema->value("description", "");
+        constexpr std::string_view kOpen = "(prompts/";
+        const std::size_t open = description.find(kOpen);
+        const std::size_t close = open == std::string::npos ? open : description.find(')', open);
+        if (close == std::string::npos) {
+            return rr::fail(rr::Errc::invalid_argument,
+                            "the answer's schema names no prompt: the oracle knows a mission by its prompt");
+        }
+        return description.substr(open + kOpen.size(), close - open - kOpen.size());
+    }
+    const auto task =
+        std::ranges::find(request.messages, rr::llm::MessageRole::user, &rr::llm::Message::role);
+    const std::string opening = task == request.messages.end() ? std::string{} : task->text();
+    if (opening.starts_with("Answer with the section's paragraphs only")) {
+        return std::string{"write"};
+    }
+    if (opening.starts_with("Answer with the two paragraphs only")) {
+        return std::string{"seam"};
+    }
+    return rr::fail(rr::Errc::invalid_argument,
+                    std::format("the oracle knows no mission answered in prose whose task opens \"{}\"",
+                                opening.substr(0, opening.find('\n'))));
+}
+
+// What the oracle answers `body`: every choice the same.
+rr::Result<std::string> oracle_answer(const rr::oracle::Oracle& oracle, const rr::json::Json& body) {
+    rr::llm::ChatRequest request = oracle_request(body);
+    RR_TRY_ASSIGN(request.tag.purpose, mission_kind(body, request));
+    RR_TRY_ASSIGN(const rr::llm::ChatResponse answered, oracle.chat(request, {}, {}));
+    return answered.first().content;
+}
+#endif
 
 // What to stream for `body` (see the knobs above).
 rr::fake_engine::StreamPlan plan_for(const rr::json::Json& body, const Prompt& prompt,
@@ -443,7 +551,20 @@ int main(int argc, char** argv) {
     std::atomic<int> completions{0};
     std::atomic<int> abandoned_streams{0};
     std::atomic<int> abandoned_requests{0};
+    std::atomic<int> hung{0};
     PromptCache cache;
+#if defined(RR_FAKE_ENGINE_ORACLE)
+    std::unique_ptr<rr::oracle::Oracle> oracle;
+    if (options.oracle) {
+        oracle = std::make_unique<rr::oracle::Oracle>();
+        rr::oracle::teach_stages(*oracle);
+    }
+#else
+    if (options.oracle) {
+        (void)std::fprintf(stderr, "fake engine: --fake-oracle needs the oracle, built with the hub\n");
+        return 2;
+    }
+#endif
 
     HttpServer server{HttpServer::Options{.port = options.port}};
     server.route(rr::net::Method::get, "/health", [&](const auto&) {
@@ -462,15 +583,25 @@ int main(int argc, char** argv) {
     }
     server.route(rr::net::Method::get, "/stats", [&](const auto&) {
         return Response::json(
-            200, std::format(R"({{"completions":{},"abandoned_streams":{},"abandoned_requests":{}}})",
-                             completions.load(), abandoned_streams.load(), abandoned_requests.load()));
+            200, std::format(
+                     R"({{"completions":{},"abandoned_streams":{},"abandoned_requests":{},"hung":{}}})",
+                     completions.load(), abandoned_streams.load(), abandoned_requests.load(), hung.load()));
     });
     server.route(rr::net::Method::post, "/v1/chat/completions", [&](const HttpServer::Request& request) {
-        ++completions;
-        const auto body = rr::json::parse(request.body);
+        const int call = ++completions;
+        auto body = rr::json::parse(request.body);
         if (!body.has_value() || !body->is_object()) {
             return Response::json(
                 400, R"({"error":{"code":400,"message":"invalid JSON","type":"invalid_request_error"}})");
+        }
+        if (options.hang_after >= 0 && call > options.hang_after) {
+            ++hung;
+            return Response::event_stream([](HttpServer::ChunkWriter& writer) -> rr::Result<void> {
+                while (writer.write({})) {  // nothing but probes, until the client leaves
+                    std::this_thread::sleep_for(10ms);
+                }
+                return rr::fail(rr::Errc::cancelled, "the client went away");
+            });
         }
         if (const int delay = knob(*body, "head_delay_ms", 0); delay > 0) {
             std::this_thread::sleep_for(std::chrono::milliseconds{delay});
@@ -504,6 +635,19 @@ int main(int argc, char** argv) {
                                   .split_pause_ms = knob(*body, "split_pause_ms", 0),
                                   .error_after = knob(*body, "error_after", -1)};
         const Prompt prompt = read_prompt(*body);
+#if defined(RR_FAKE_ENGINE_ORACLE)
+        if (oracle != nullptr) {
+            auto answered = oracle_answer(*oracle, *body);
+            if (!answered.has_value()) {
+                return Response::json(400,
+                                      rr::json::dump(rr::json::Json{{"error",
+                                                                     {{"code", 400},
+                                                                      {"message", answered.error().message()},
+                                                                      {"type", "invalid_request_error"}}}}));
+            }
+            (*body)["reply"] = *std::move(answered);  // every choice's (see plan_for())
+        }
+#endif
         rr::fake_engine::StreamPlan plan = plan_for(*body, prompt, options);
         // As llama-server does, a prompt its slot cannot hold is refused before
         // any token.

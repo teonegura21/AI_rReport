@@ -257,7 +257,9 @@ Any failure stops the pod through RunPod's API instead of exiting, because RunPo
 - `/props` reports the context per slot as llama-server computes it from `--parallel`, `--ctx-size` and `--kv-unified`;
 - chat completions, JSON or SSE. A prompt of a slot's context or more is refused with `400 exceed_context_size_error`, before any token, as llama-server refuses it;
 - embeddings;
-- `/stats` counts the streams and requests its clients abandoned.
+- `/stats` counts its chat calls, the streams and requests its clients abandoned, and the calls it hung.
+
+**For the end-to-end test, it can answer as the oracle does** (`--fake-oracle`, where the hub is built): each chat call gets the oracle's right answer to its mission (`rr/oracle/answers.hpp`), known by the prompt its answer schema names, or by its task's first line when it is answered in prose. **And it can hang on cue** (`--fake-hang-after N`): it answers its first N chat calls, then sends every later one's head and nothing more, probing its client every 10 ms until it leaves. A test can then kill the hub while a call waits ([testing.md](testing.md#end-to-end-killed-and-resumed)).
 
 **Its streams are shaped as llama-server's** (checked against llama.cpp `db00347`, 2026-09-30): a role chunk whose content is null, `reasoning_content` then `content` deltas, a finish chunk with `"delta": {}`, the usage chunk (`"choices": []`) when `stream_options.include_usage` asks for it, `timings` on the last JSON chunk, and `[DONE]`. `tests/fake_engine/include/rr/fake_engine/stream.hpp` builds them; the fake and the tests that check what arrives share it, so they cannot drift apart.
 
