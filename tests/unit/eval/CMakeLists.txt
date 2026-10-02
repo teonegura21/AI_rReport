@@ -2,6 +2,8 @@ rr_add_test_suite(eval
     SOURCES
         annotate_stage_test.cpp
         annotate_test.cpp
+        calibrate_test.cpp
+        calibration_test.cpp
         compare_test.cpp
         export_test.cpp
         flow_test.cpp
@@ -9,6 +11,7 @@ rr_add_test_suite(eval
         gold_test.cpp
         history_test.cpp
         judgement_test.cpp
+        labels_test.cpp
         metrics_test.cpp
         panel_test.cpp
         run_test.cpp

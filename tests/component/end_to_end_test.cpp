@@ -47,6 +47,8 @@
 #include <rr/core/result.hpp>
 #include <rr/db/database.hpp>
 #include <rr/eval/gold.hpp>
+#include <rr/eval/judgement.hpp>
+#include <rr/eval/labels.hpp>
 #include <rr/eval/panel.hpp>
 #include <rr/eval/set.hpp>
 #include <rr/eval/snapshot.hpp>
@@ -54,8 +56,10 @@
 #include <rr/library/library.hpp>
 #include <rr/library/stage_store.hpp>
 #include <rr/net/http_client.hpp>
+#include <rr/pipeline/judging.hpp>
 #include <rr/proc/process.hpp>
 #include <rr/prompt/library.hpp>
+#include <rr/reason/pairwise.hpp>
 #include <rr/testkit/result.hpp>
 #include <rr/testkit/temp_dir.hpp>
 
@@ -664,6 +668,62 @@ TEST_F(EndToEnd, TwoRunsOfOnePipelineAreComparedAndGatedAndAnAaRunHoldsTheGatesM
     const proc::RunResult shared =
         eval({"gate", "base", "cand", "--aa", "--gate", "e2e", "--panel", "e2e-v1"});
     EXPECT_EQ(shared.status.code, 2) << "cand draws under base's salts: no A/A run";
+
+    // Labels (P27): a reviewed gold of one fact for one video, the baseline
+    // judged; then what the judges read of it drawn for a person, with the
+    // parts its articles were read against cand's.
+    const eval::EvalVideo weighing = unwrap(eval::read_set(eval_dir, "m2")).videos.front();
+    ASSERT_EQ(weighing.id, "weighing-radium");
+    const eval::Gold gold{.video = weighing.id,
+                          .snapshot = unwrap(eval::read_snapshot(eval_dir, weighing))->hash,
+                          .status = eval::GoldStatus::gold,
+                          .reviewer = "Ada",
+                          .facts = {eval::Fact{.id = "F1",
+                                               .start = 90s,
+                                               .end = 115s,
+                                               .importance = eval::Importance::core,
+                                               .quote = "The NRC lent us 3 scales",
+                                               .claim = "The NRC lent them three scales."}}};
+    (void)home().write_file("eval/gold/weighing-radium.toml", eval::to_toml(gold));
+    ASSERT_EQ(eval({"judge", "--label", "base", "--panel", "e2e-v1"}).status.code, 0);
+    const proc::RunResult labelled =
+        eval({"label", "r5", "--label", "base", "--against", "cand", "--panel", "e2e-v1"});
+    ASSERT_EQ(labelled.status.code, 0) << labelled.stdout_text << labelled.stderr_text;
+    EXPECT_THAT(labelled.stdout_text,
+                HasSubstr("give each item its verdict, set labeller to your name, then: "
+                          "rreport eval calibrate r5\n"));
+    eval::Labels labels = unwrap(eval::read_labels(eval_dir, "r5"));
+    EXPECT_EQ(labels.facts.size(), 2U) << "F1, in each of its video's two replicates";
+    EXPECT_EQ(labels.sentences.size(), 15U);
+    EXPECT_EQ(labels.parts.size(), 8U)
+        << "every part read, fewer than ten: two videos, two pairs, two parts each";
+    EXPECT_THAT(labelled.stdout_text, HasSubstr("and 8 of the 8 parts the panel read\n"));
+
+    // A person who reads as the oracle does: the fact told, every sentence
+    // supported, every part alike in both runs. One class a kind: κ cannot
+    // tell such a person from a coin, and the panel does not pass.
+    for (eval::FactLabel& label : labels.facts) {
+        label.verdict = eval::FactVerdict::told;
+    }
+    for (eval::SentenceLabel& label : labels.sentences) {
+        label.verdict = pipeline::Issue::none;
+    }
+    for (eval::PartLabel& label : labels.parts) {
+        label.verdict = reason::Preference::tie;
+    }
+    EXPECT_EQ(eval({"calibrate", "r5"}).status.code, 2) << "no labeller yet";
+    labels.labeller = "Ada";
+    unwrap(write_file_atomically(eval::labels_file(eval_dir, "r5"), eval::to_toml(labels)));
+    const proc::RunResult calibrated = eval({"calibrate", "r5"});
+    EXPECT_EQ(calibrated.status.code, 1) << calibrated.stdout_text << calibrated.stderr_text;
+    EXPECT_THAT(calibrated.stdout_text,
+                HasSubstr("labels r5, by Ada: run base against cand, panel e2e-v1\n"));
+    EXPECT_THAT(calibrated.stdout_text, HasSubstr("\nfacts: 2 labelled, 0 skipped\n"));
+    EXPECT_THAT(calibrated.stdout_text, HasSubstr("facts, commander: one class only"));
+    EXPECT_THAT(calibrated.stdout_text, HasSubstr("the panel e2e-v1 does not pass yet:\n"));
+    EXPECT_EQ(eval({"label", "r5", "--label", "base", "--against", "cand", "--panel", "e2e-v1"}).status.code,
+              2)
+        << "a person's verdicts are never written over";
 }
 
 // A sweep of one variant: one draft instead of four. The variant shares

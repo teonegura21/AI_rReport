@@ -89,3 +89,21 @@ expect = "Hub.ASweepAPageOrATierAskedWronglyIsRefusedSayingWhy"
   [[mutant.edit]]
   from = '''    if (auto tier = reason::find_tier(flags.tier); !tier.has_value()) {'''
   to = '''    if (auto tier = reason::builtin_tier(flags.tier); !tier.has_value()) {'''
+
+# P27: labels and a calibration asked wrongly, as the real executable reads them.
+
+[[mutant]]
+name = "a-persons-verdicts-are-written-over"
+file = "apps/rreport/eval_commands.cpp"
+expect = "Hub.LabelsOrACalibrationAskedWronglyAreRefusedSayingWhy"
+  [[mutant.edit]]
+  from = '''        if (kept->any_verdict()) {'''
+  to = '''        if (kept->any_verdict() && false) {'''
+
+[[mutant]]
+name = "calibrated-without-a-labeller"
+file = "apps/rreport/eval_commands.cpp"
+expect = "Hub.LabelsOrACalibrationAskedWronglyAreRefusedSayingWhy"
+  [[mutant.edit]]
+  from = '''    if (labels->labeller.empty()) {'''
+  to = '''    if (labels->labeller.empty() && false) {'''

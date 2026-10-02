@@ -8,7 +8,7 @@ This directory is the data behind `rreport eval`. ADR-0019 says how it is measur
 | `sets/<set>.toml` | Approved videos: licence and attribution, type, caption kind, split (`dev` or `test`), the pinned snapshot | After approval |
 | `data/<id>/` | Each video's source (captions and description) as `rreport eval fetch` read it once, pinned by hash, so a change on YouTube changes nothing here | `rreport eval fetch`, after approval |
 | `gold/<id>.toml` | Facts anchored to the timeline (start, end, quote), must-quotes, terms. Models draft silver (`rreport eval annotate`); a person corrects it into gold with its review sheet (`rreport eval sheet`) | Runbook R2 |
-| `labels/` | 30–50 human verdicts and pairwise preferences that calibrate the judges | Runbook R5 |
+| `labels/` | A person's verdicts on items the judges read, drawn by `rreport eval label`: they calibrate the judges (`rreport eval calibrate`) | Runbook R5 |
 | `judges/` | The frozen judge panels (`eval-v1.toml`) | Runbook R5 |
 | `gates/` | Each gated metric and the regression it tolerates | Plan P25 |
 | `sweeps/` | Variants of the pipeline run against a baseline, each with why (`r6.toml`: what each step of `max` buys) | Runbook R6 |

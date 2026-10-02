@@ -545,6 +545,53 @@ TEST_F(Hub, ASweepAPageOrATierAskedWronglyIsRefusedSayingWhy) {
                 HasSubstr("tier 'max+write.colour=red', [write]: unknown key 'colour'"));
 }
 
+// A label file a person has begun: a verdict given, no labeller yet.
+constexpr std::string_view kBegunLabels = R"toml(name = "r5"
+panel = "eval-v1"
+run = "base"
+against = ""
+labeller = ""
+
+[[fact]]
+job = "01J"
+video = "lecture"
+replicate = 0
+fact = "F1"
+core = true
+said = "1:30 to 1:55"
+claim = "The NRC lent them three scales."
+quote = "The NRC lent us 3 scales"
+shown = ["1. The NRC lent us 3 scales for it."]
+verdict = "told"
+)toml";
+
+TEST_F(Hub, LabelsOrACalibrationAskedWronglyAreRefusedSayingWhy) {
+    const std::filesystem::path eval_dir = home() / "eval";
+    const auto eval = [&](std::vector<std::string> command) {
+        command.insert(command.begin(), {"eval", "--eval-dir", eval_dir.string()});
+        return rreport(command);
+    };
+    EXPECT_EQ(eval({"label", "../r5", "--label", "base"}).status.code, 2) << "a name, never a path";
+    (void)home().write_file("eval/labels/r5.toml", kBegunLabels);
+    const proc::RunResult kept = eval({"label", "r5", "--label", "base"});
+    EXPECT_EQ(kept.status.code, 2);
+    EXPECT_THAT(kept.stderr_text, HasSubstr("holds a person's verdicts: label under another name"));
+
+    const proc::RunResult nameless = eval({"calibrate", "r5"});
+    EXPECT_EQ(nameless.status.code, 2);
+    EXPECT_THAT(nameless.stderr_text,
+                HasSubstr("no labeller: once you have given the verdicts, set labeller to your name"));
+    std::string misread{kBegunLabels};
+    misread.replace(misread.find("\"r5\""), 4, "\"r6\"");
+    misread.replace(misread.find("\"told\""), 6, "\"yes\"");
+    (void)home().write_file("eval/labels/r6.toml", misread);
+    const proc::RunResult wrong = eval({"calibrate", "r6"});
+    EXPECT_EQ(wrong.status.code, 2);
+    EXPECT_THAT(wrong.stderr_text,
+                HasSubstr("fact 1: 'verdict' must be empty or one of: told, partly, not_told"));
+    EXPECT_EQ(eval({"calibrate", "r7"}).status.code, 2) << "no such labels";
+}
+
 TEST_F(Hub, APairingIsTakenUpByEvalCompareAndHasNoPageOfItsOwn) {
     std::string pairing;
     {

@@ -38,6 +38,11 @@ namespace rr::eval {
 namespace {
 
 using namespace std::chrono_literals;
+using fixtures::lecture_facts;
+using fixtures::panel;
+using fixtures::prompts;
+using fixtures::said_from;
+using fixtures::said_until;
 using knowledge::AtomId;
 using knowledge::SentenceId;
 using ::testing::AllOf;
@@ -47,18 +52,6 @@ using ::testing::ElementsAre;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
 using testkit::unwrap;
-
-const prompt::Library& prompts() {
-    static const prompt::Library library = unwrap(prompt::Library::embedded());
-    return library;
-}
-
-Millis said_from(int sentence) {
-    return Millis{(sentence - 1) * 30'000};
-}
-Millis said_until(int sentence) {
-    return said_from(sentence) + 25s;
-}
 
 // Three atoms of the lecture: S4, S7 with S8, and S10.
 knowledge::AtomLedger lecture_atoms() {
@@ -83,41 +76,6 @@ constexpr std::string_view kArticle =
     "## The glow\n\n"
     "Why does it glow? [A3]\n";
 
-// Five facts: three the article tells; one only its BM25 neighbours could,
-// and do not; one no sentence of it comes near.
-std::vector<Fact> lecture_facts() {
-    return {Fact{.id = "F1",
-                 .start = said_from(4),
-                 .end = said_until(4),
-                 .importance = Importance::core,
-                 .quote = "The NRC lent us 3 scales",
-                 .claim = "The NRC lent them three scales."},
-            Fact{.id = "F2",
-                 .start = said_from(7),
-                 .end = said_until(8),
-                 .importance = Importance::detail,
-                 .quote = "the weight it held doubled",
-                 .claim = "A second pan doubled the weight held."},
-            Fact{.id = "F3",
-                 .start = said_from(10),
-                 .end = said_until(10),
-                 .importance = Importance::core,
-                 .quote = "Why does it glow",
-                 .claim = "Ada asks why radium glows."},
-            Fact{.id = "F4",
-                 .start = said_from(29),
-                 .end = said_until(29),
-                 .importance = Importance::core,
-                 .quote = "we need better scales",
-                 .claim = "Ada thinks they need better scales."},
-            Fact{.id = "F5",
-                 .start = said_from(6),
-                 .end = said_until(6),
-                 .importance = Importance::detail,
-                 .quote = "Its half-life is long",
-                 .claim = "Its half-life is long."}};
-}
-
 ArticleToJudge lecture_article() {
     return ArticleToJudge{.title = "Weighing radium",
                           .channel = "Science Hour",
@@ -125,22 +83,6 @@ ArticleToJudge lecture_article() {
                           .ledger = lecture_atoms(),
                           .article = knowledge::Article{.markdown = std::string{kArticle}},
                           .facts = lecture_facts()};
-}
-
-// A panel of the fixtures' two engines, pinning this rreport's prompts.
-Panel panel() {
-    Panel made{.name = "eval-v9", .procedure = kJudgingProcedure};
-    for (const std::string_view name : kJudgePrompts) {
-        const prompt::Version& current = prompts().find(name)->current();
-        made.prompts.push_back(
-            PanelPrompt{.name = std::string{name}, .version = current.number, .hash = current.hash});
-    }
-    made.judges = {
-        PanelJudge{
-            .role = "commander", .model = "qwen-commander", .sha256 = std::string{fixtures::kQwenFile}},
-        PanelJudge{
-            .role = "infantry", .model = "gemma-infantry", .sha256 = std::string{fixtures::kGemmaFile}}};
-    return made;
 }
 
 const library::Job kJob{

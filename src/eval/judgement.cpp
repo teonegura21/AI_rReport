@@ -87,13 +87,6 @@ std::vector<std::string_view> quoted_passages(std::string_view text) {
     return passages;
 }
 
-// The line a judge is shown for a sentence of the video: "S12 [1:02, Ada] The words."
-std::string video_line(const knowledge::Sentence& sentence) {
-    return std::format("{} [{}{}] {}", sentence.id.str(), format_timestamp(sentence.span.start()),
-                       sentence.speaker.has_value() ? std::format(", {}", *sentence.speaker) : std::string{},
-                       sentence.text);
-}
-
 // What the judges' answers rest on: everything that changes them.
 json::Json reading_fingerprint(const ArticleToJudge& article) {
     json::Json facts = json::Json::array();
@@ -604,6 +597,12 @@ Result<JudgedSentence> sentence_from_json(const json::Json& sentence) {
 }
 
 }  // namespace
+
+std::string video_line(const knowledge::Sentence& sentence) {
+    return std::format("{} [{}{}] {}", sentence.id.str(), format_timestamp(sentence.span.start()),
+                       sentence.speaker.has_value() ? std::format(", {}", *sentence.speaker) : std::string{},
+                       sentence.text);
+}
 
 std::vector<ArticleSentence> article_sentences(const knowledge::Article& article,
                                                const knowledge::AtomLedger& ledger) {

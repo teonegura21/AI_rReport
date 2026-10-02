@@ -121,6 +121,8 @@ rreport eval compare baseline candidate --flow   # and which reads better, read 
 rreport eval gate baseline candidate      # may the candidate replace the baseline? (eval/gates/default.toml)
 rreport eval sweep r6                     # each variant of eval/sweeps/r6.toml run, and compared with its baseline
 rreport eval report                       # every run on one page: quality against GPU-minutes
+rreport eval label r5 --label baseline    # items the judges read, drawn for you to label (eval/labels/)
+rreport eval calibrate r5                 # do the judges read as you do? (Cohen's κ, per class)
 ```
 
 ## Repository map

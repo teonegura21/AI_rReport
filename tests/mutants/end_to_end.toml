@@ -89,3 +89,13 @@ expect = "EndToEnd.ASweepRunsEachVariantUnderTheBaselinesSaltsAndThePageShowsEve
   [[mutant.edit]]
   from = '''    (void)std::printf("\n%s", eval::to_text(*sweep, *found).c_str());'''
   to = '''    (void)found;'''
+
+# P27: labels drawn and the panel calibrated, end to end.
+
+[[mutant]]
+name = "a-calibration-always-passes"
+file = "apps/rreport/eval_commands.cpp"
+expect = "EndToEnd.TwoRunsOfOnePipelineAreComparedAndGatedAndAnAaRunHoldsTheGatesMargins"
+  [[mutant.edit]]
+  from = '''    return calibration->passes() ? kOk : kFailure;'''
+  to = '''    return kOk;'''

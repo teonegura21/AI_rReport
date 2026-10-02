@@ -19,6 +19,7 @@
 #include <rr/core/file_io.hpp>
 #include <rr/db/database.hpp>
 #include <rr/eval/annotate.hpp>
+#include <rr/eval/calibrate.hpp>
 #include <rr/eval/compare.hpp>
 #include <rr/eval/export.hpp>
 #include <rr/eval/flow.hpp>
@@ -26,6 +27,7 @@
 #include <rr/eval/gold.hpp>
 #include <rr/eval/history.hpp>
 #include <rr/eval/judgement.hpp>
+#include <rr/eval/labels.hpp>
 #include <rr/eval/metrics.hpp>
 #include <rr/eval/panel.hpp>
 #include <rr/eval/run.hpp>
@@ -79,6 +81,11 @@ struct EvalFlags {
     bool aa = false;                           // gate: B is A run again: check the gate's margins
     std::string sweep;                         // sweep: eval/sweeps/<sweep>.toml
     bool no_judge = false;                     // sweep: score by code alone
+    std::string labels;                        // label, calibrate: eval/labels/<labels>.toml
+    std::string against;                       // label: the run whose articles flow was read against
+    std::size_t facts = 15;                    // label: how many of each kind to draw: 40 items,
+    std::size_t sentences = 15;                // about an hour (ADR-0019)
+    std::size_t parts = 10;
 };
 
 // The command that does `verb` to `video`, with the flags that differ from
@@ -1059,6 +1066,173 @@ int eval_report(const Global& global, const EvalFlags& flags) {
     return kOk;
 }
 
+// ---------------------------------------------------------------------------------------
+// eval label, calibrate
+// ---------------------------------------------------------------------------------------
+// The panel `name`, checked against this rreport's prompts: a panel frozen
+// for other prompts judged something else.
+Result<eval::Panel> frozen_panel(const EvalFlags& flags, std::string_view name) {
+    RR_TRY_ASSIGN(eval::Panel panel, eval::read_panel(flags.root, name));
+    RR_TRY_ASSIGN(const prompt::Library prompts, prompt::Library::embedded());
+    RR_TRY(eval::check_panel(panel, prompts));
+    return panel;
+}
+
+// The pairs of `run`'s entries and `against`'s, read side by side for flow;
+// none when `against` is empty.
+Result<std::vector<eval::VideoPairs>> pairs_of(const eval::Runs& runs, std::string_view run,
+                                               std::string_view against) {
+    if (against.empty()) {
+        return std::vector<eval::VideoPairs>{};
+    }
+    RR_TRY_ASSIGN(const eval::EvalRun a, runs.find(run));
+    RR_TRY_ASSIGN(const eval::EvalRun b, runs.find(against));
+    RR_TRY_ASSIGN(const std::vector<eval::ScoredEntry> a_scores, runs.scores(a.id));
+    RR_TRY_ASSIGN(const std::vector<eval::ScoredEntry> b_scores, runs.scores(b.id));
+    return eval::pairs_to_read(a_scores, b_scores);
+}
+
+int eval_label(const Global& global, const EvalFlags& flags) {
+    auto hub = load(global);
+    if (!hub.has_value()) {
+        return failed(kBadConfiguration, hub.error());
+    }
+    if (!eval::valid_video_id(flags.labels)) {
+        return failed(kBadConfiguration,
+                      Error{Errc::invalid_argument,
+                            std::format("'{}' is no labels' name: lowercase letters, digits and hyphens",
+                                        flags.labels)});
+    }
+    const std::filesystem::path file = eval::labels_file(flags.root, flags.labels);
+    if (std::error_code missing; std::filesystem::exists(file, missing)) {
+        // A person's verdicts are an hour's work: never written over.
+        auto kept = eval::read_labels(flags.root, flags.labels);
+        if (!kept.has_value()) {
+            return failed(kBadConfiguration, kept.error());
+        }
+        if (kept->any_verdict()) {
+            return failed(
+                kBadConfiguration,
+                Error{Errc::conflict,
+                      std::format("{} holds a person's verdicts: label under another name", file.string())});
+        }
+    }
+    auto set = eval_set(flags);
+    if (!set.has_value()) {
+        return failed(kBadConfiguration, set.error());
+    }
+    auto panel = frozen_panel(flags, flags.panel);
+    if (!panel.has_value()) {
+        return failed(kBadConfiguration, panel.error());
+    }
+    auto database = library::open_database(hub->settings.library_database());
+    if (!database.has_value()) {
+        return failed(kFailure, database.error());
+    }
+    const eval::Runs runs{*database, SystemClock::instance()};
+    auto run = runs.find(flags.label);
+    if (!run.has_value()) {
+        return pair_failed(run.error());
+    }
+    auto entries = runs.entries(run->id);
+    if (!entries.has_value()) {
+        return failed(kFailure, entries.error());
+    }
+    auto pairs = pairs_of(runs, flags.label, flags.against);
+    if (!pairs.has_value()) {
+        return pair_failed(pairs.error());
+    }
+    // Each video's facts, by its reviewed gold, as the judges read them.
+    eval::FactsByVideo facts;
+    std::vector<std::string> notes;
+    for (const eval::RunEntry& entry : *entries) {
+        const auto video = std::ranges::find(set->videos, entry.video, &eval::EvalVideo::id);
+        if (video == set->videos.end() || facts.contains(entry.video)) {
+            continue;
+        }
+        auto gold = eval::reviewed_gold(flags.root, *video, notes);
+        if (!gold.has_value()) {
+            return failed(kFailure, gold.error());
+        }
+        if (gold->has_value()) {
+            facts.emplace(entry.video, (*gold)->facts);
+        }
+    }
+    auto pool =
+        eval::label_pool(*database, SystemClock::instance(), facts, *entries, *pairs, *panel, flags.labels);
+    if (!pool.has_value()) {
+        return failed(kFailure, pool.error());
+    }
+    notes.insert(notes.end(), pool->notes.begin(), pool->notes.end());
+    for (const std::string& note : notes) {
+        (void)std::printf("%s\n", note.c_str());
+    }
+    const eval::Labels labels = eval::draw_labels(
+        flags.labels, panel->name, flags.label, flags.against, *pool,
+        eval::LabelCounts{.facts = flags.facts, .sentences = flags.sentences, .parts = flags.parts});
+    if (std::error_code error; !std::filesystem::create_directories(file.parent_path(), error) && error) {
+        return failed(kFailure,
+                      Error{Errc::io, std::format("{}: {}", file.parent_path().string(), error.message())});
+    }
+    if (auto written = write_file_atomically(file, eval::to_toml(labels)); !written.has_value()) {
+        return failed(kFailure, written.error());
+    }
+    (void)std::printf(
+        "wrote %s: %zu of the %zu facts, %zu of the %zu sentences and %zu of the %zu parts the "
+        "panel read\n",
+        file.string().c_str(), labels.facts.size(), pool->facts.size(), labels.sentences.size(),
+        pool->sentences.size(), labels.parts.size(), pool->parts.size());
+    if (labels.facts.empty() || labels.sentences.empty() || labels.parts.empty()) {
+        (void)std::printf("  calibration needs labels of every kind: %s\n",
+                          flags.against.empty()
+                              ? "parts come from two runs read side by side: --against, after "
+                                "rreport eval compare --flow"
+                              : "judge or pair what the lines above name, then label again");
+        return kFailure;
+    }
+    (void)std::printf(
+        "  give each item its verdict, set labeller to your name, then: rreport eval calibrate %s\n",
+        flags.labels.c_str());
+    return kOk;
+}
+
+int eval_calibrate(const Global& global, const EvalFlags& flags) {
+    auto hub = load(global);
+    if (!hub.has_value()) {
+        return failed(kBadConfiguration, hub.error());
+    }
+    auto labels = eval::read_labels(flags.root, flags.labels);
+    if (!labels.has_value()) {
+        return failed(kBadConfiguration, labels.error());
+    }
+    if (labels->labeller.empty()) {
+        return failed(kBadConfiguration,
+                      Error{Errc::invalid_argument,
+                            std::format("{}: no labeller: once you have given the verdicts, set labeller to "
+                                        "your name",
+                                        eval::labels_file(flags.root, flags.labels).string())});
+    }
+    auto panel = frozen_panel(flags, labels->panel);
+    if (!panel.has_value()) {
+        return failed(kBadConfiguration, panel.error());
+    }
+    auto database = library::open_database(hub->settings.library_database());
+    if (!database.has_value()) {
+        return failed(kFailure, database.error());
+    }
+    const eval::Runs runs{*database, SystemClock::instance()};
+    auto pairs = pairs_of(runs, labels->run, labels->against);
+    if (!pairs.has_value()) {
+        return pair_failed(pairs.error());
+    }
+    auto calibration = eval::calibrate(*database, SystemClock::instance(), *labels, *panel, *pairs);
+    if (!calibration.has_value()) {
+        return failed(kFailure, calibration.error());
+    }
+    (void)std::fputs(eval::to_text(*calibration, *labels, *panel).c_str(), stdout);
+    return calibration->passes() ? kOk : kFailure;
+}
+
 }  // namespace
 
 struct EvalCommands::Commands {
@@ -1075,6 +1249,8 @@ struct EvalCommands::Commands {
     CLI::App* gate_command = nullptr;
     CLI::App* sweep_command = nullptr;
     CLI::App* report_command = nullptr;
+    CLI::App* label_command = nullptr;
+    CLI::App* calibrate_command = nullptr;
 };
 
 EvalCommands::EvalCommands(CLI::App& app) : commands_(std::make_unique<Commands>()) {
@@ -1159,6 +1335,22 @@ EvalCommands::EvalCommands(CLI::App& app) : commands_(std::make_unique<Commands>
     commands.report_command->add_option(
         "--metric", flags.metric,
         "The chart's quality (default: facts_told once a run is judged, else atoms_told)");
+    commands.label_command = group->add_subcommand(
+        "label", "Draw items the frozen judges read of a run, for a person to label (runbook R5)");
+    commands.label_command->add_option("name", flags.labels, "The labels: <eval-dir>/labels/<name>.toml")
+        ->required();
+    commands.label_command->add_option("--label", flags.label, "The run its judges read")->required();
+    commands.label_command->add_option(
+        "--against", flags.against,
+        "The run its articles were read against (eval compare --flow): their parts are drawn too");
+    commands.label_command->add_option("--panel", flags.panel, "The frozen panel (default: eval-v1)");
+    commands.label_command->add_option("--facts", flags.facts, "How many facts to draw (default: 15)");
+    commands.label_command->add_option("--sentences", flags.sentences, "How many sentences (default: 15)");
+    commands.label_command->add_option("--parts", flags.parts, "How many parts (default: 10)");
+    commands.calibrate_command = group->add_subcommand(
+        "calibrate", "Whether the frozen judges read as a person's labels do (ADR-0019)");
+    commands.calibrate_command->add_option("name", flags.labels, "The labels: <eval-dir>/labels/<name>.toml")
+        ->required();
 }
 
 EvalCommands::~EvalCommands() = default;
@@ -1199,6 +1391,12 @@ std::optional<int> EvalCommands::run(const Global& global, const proc::Terminati
     }
     if (*commands.report_command) {
         return eval_report(global, commands.flags);
+    }
+    if (*commands.label_command) {
+        return eval_label(global, commands.flags);
+    }
+    if (*commands.calibrate_command) {
+        return eval_calibrate(global, commands.flags);
     }
     return std::nullopt;
 }

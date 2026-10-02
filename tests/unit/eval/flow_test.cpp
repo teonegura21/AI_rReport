@@ -38,6 +38,8 @@ namespace rr::eval {
 namespace {
 
 using namespace std::chrono_literals;
+using fixtures::panel;
+using fixtures::prompts;
 using knowledge::AtomId;
 using knowledge::SentenceId;
 using reason::Preference;
@@ -49,11 +51,6 @@ using ::testing::Not;
 using ::testing::Optional;
 using ::testing::Pair;
 using testkit::unwrap;
-
-const prompt::Library& prompts() {
-    static const prompt::Library library = unwrap(prompt::Library::embedded());
-    return library;
-}
 
 // Three atoms of the lecture: S4, S7 with S8, and S10.
 knowledge::AtomLedger lecture_atoms() {
@@ -231,22 +228,6 @@ TEST(PairsToRead, AreReplicateKOfAWithReplicateKOfBOfEachVideoBothRunsHave) {
     EXPECT_THAT(videos[1].pairs, ElementsAre(std::pair{a[3].entry, b[0].entry})) << "the first of each";
     EXPECT_EQ(videos[1].a_replicates, 2U);
     EXPECT_EQ(videos[1].b_replicates, 1U);
-}
-
-// A panel of the fixtures' two engines, pinning this rreport's prompts.
-Panel panel() {
-    Panel made{.name = "eval-v9", .procedure = kJudgingProcedure};
-    for (const std::string_view name : kJudgePrompts) {
-        const prompt::Version& current = prompts().find(name)->current();
-        made.prompts.push_back(
-            PanelPrompt{.name = std::string{name}, .version = current.number, .hash = current.hash});
-    }
-    made.judges = {
-        PanelJudge{
-            .role = "commander", .model = "qwen-commander", .sha256 = std::string{fixtures::kQwenFile}},
-        PanelJudge{
-            .role = "infantry", .model = "gemma-infantry", .sha256 = std::string{fixtures::kGemmaFile}}};
-    return made;
 }
 
 TEST(FlowComparison, IsEachVideosMeanOverItsPairsReadUnderThePanel) {

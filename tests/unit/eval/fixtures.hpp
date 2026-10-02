@@ -15,12 +15,15 @@
 #include <rr/agents/army.hpp>
 #include <rr/core/clock.hpp>
 #include <rr/core/time_span.hpp>
+#include <rr/eval/gold.hpp>
+#include <rr/eval/panel.hpp>
 #include <rr/eval/set.hpp>
 #include <rr/knowledge/transcript.hpp>
 #include <rr/oracle/answers.hpp>
 #include <rr/oracle/oracle.hpp>
 #include <rr/pipeline/source.hpp>
 #include <rr/pipeline/stage.hpp>
+#include <rr/prompt/library.hpp>
 #include <rr/testkit/result.hpp>
 
 namespace rr::eval::fixtures {
@@ -171,5 +174,70 @@ struct Rig {
     FakeClock clock;
     std::optional<agents::Army> army;
 };
+
+// The prompts this rreport ships, read once.
+inline const prompt::Library& prompts() {
+    static const prompt::Library library = testkit::unwrap(prompt::Library::embedded());
+    return library;
+}
+
+// A panel of the two engines below (engines_serving()), pinning this
+// rreport's prompts.
+inline Panel panel() {
+    Panel made{.name = "eval-v9", .procedure = kJudgingProcedure};
+    for (const std::string_view name : kJudgePrompts) {
+        const prompt::Version& current = prompts().find(name)->current();
+        made.prompts.push_back(
+            PanelPrompt{.name = std::string{name}, .version = current.number, .hash = current.hash});
+    }
+    made.judges = {
+        PanelJudge{.role = "commander", .model = "qwen-commander", .sha256 = std::string{kQwenFile}},
+        PanelJudge{.role = "infantry", .model = "gemma-infantry", .sha256 = std::string{kGemmaFile}}};
+    return made;
+}
+
+// When the lecture (pipeline::testing::lecture()) says its sentence
+// `sentence`: one every 30 seconds, for 25.
+inline Millis said_from(int sentence) {
+    return Millis{(sentence - 1) * 30'000};
+}
+inline Millis said_until(int sentence) {
+    return said_from(sentence) + std::chrono::seconds{25};
+}
+
+// Five facts of the lecture: three its articles tell; one only BM25 neighbours could,
+// and do not; one no sentence of them comes near.
+inline std::vector<Fact> lecture_facts() {
+    return {Fact{.id = "F1",
+                 .start = said_from(4),
+                 .end = said_until(4),
+                 .importance = Importance::core,
+                 .quote = "The NRC lent us 3 scales",
+                 .claim = "The NRC lent them three scales."},
+            Fact{.id = "F2",
+                 .start = said_from(7),
+                 .end = said_until(8),
+                 .importance = Importance::detail,
+                 .quote = "the weight it held doubled",
+                 .claim = "A second pan doubled the weight held."},
+            Fact{.id = "F3",
+                 .start = said_from(10),
+                 .end = said_until(10),
+                 .importance = Importance::core,
+                 .quote = "Why does it glow",
+                 .claim = "Ada asks why radium glows."},
+            Fact{.id = "F4",
+                 .start = said_from(29),
+                 .end = said_until(29),
+                 .importance = Importance::core,
+                 .quote = "we need better scales",
+                 .claim = "Ada thinks they need better scales."},
+            Fact{.id = "F5",
+                 .start = said_from(6),
+                 .end = said_until(6),
+                 .importance = Importance::detail,
+                 .quote = "Its half-life is long",
+                 .claim = "Its half-life is long."}};
+}
 
 }  // namespace rr::eval::fixtures

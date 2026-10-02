@@ -107,6 +107,10 @@ struct ArticleSentence {
 [[nodiscard]] std::vector<ArticleSentence> article_sentences(const knowledge::Article& article,
                                                              const knowledge::AtomLedger& ledger);
 
+// The line a judge is shown for a sentence of the video: "S12 [1:02, Ada]
+// The words." A label shows a person the same (rr/eval/labels.hpp).
+[[nodiscard]] std::string video_line(const knowledge::Sentence& sentence);
+
 // The most sentences a fact's judge is shown.
 inline constexpr std::size_t kMostCandidates = 12;
 

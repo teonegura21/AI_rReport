@@ -2475,3 +2475,224 @@ expect = "RunsTest.AllAreTheRunsNewestFirst"
   [[mutant.edit]]
   from = '''ORDER BY created_at_ms DESC, id DESC", kRunColumns), {},'''
   to = '''ORDER BY created_at_ms, id", kRunColumns), {},'''
+
+# P27: labels, and the panel calibrated against them (rr/eval/labels.hpp,
+# rr/eval/calibration.hpp, rr/eval/calibrate.hpp).
+
+[[mutant]]
+name = "wilson-is-centred-on-the-share"
+file = "src/eval/calibration.cpp"
+expect = "Wilson.IsTheScoreIntervalAtNinetyFivePercent"
+  [[mutant.edit]]
+  from = '''    const double centre = (p + (z2 / (2 * n))) / denominator;'''
+  to = '''    const double centre = p + (0 * denominator);'''
+
+[[mutant]]
+name = "kappa-is-raw-agreement"
+file = "src/eval/calibration.cpp"
+expect = "Agree.IsCohensKappaOverTheKindsClasses"
+  [[mutant.edit]]
+  from = '''        agreement.kappa = (*agreement.observed - chance) / (1 - chance);'''
+  to = '''        agreement.kappa = *agreement.observed;'''
+
+[[mutant]]
+name = "one-class-has-a-kappa"
+file = "src/eval/calibration.cpp"
+expect = "Agree.SaysNothingOfOneClassOnlyNorOfNoItem"
+  [[mutant.edit]]
+  from = '''    if (chance < 1) {'''
+  to = '''    if (chance <= 1) {'''
+
+[[mutant]]
+name = "kappa-at-the-bar-falls-under-it"
+file = "src/eval/calibration.cpp"
+expect = "Agree.NeedsKappaAtTheBarEvenWithEveryClassClear"
+  [[mutant.edit]]
+  from = '''*kappa + kKappaSlack >= kKappaBar'''
+  to = '''*kappa + (0 * kKappaSlack) >= kKappaBar'''
+
+[[mutant]]
+name = "kappa-has-no-bar"
+file = "src/eval/calibration.cpp"
+expect = "Agree.NeedsKappaAtTheBarEvenWithEveryClassClear"
+  [[mutant.edit]]
+  from = '''*kappa + kKappaSlack >= kKappaBar'''
+  to = '''(*kappa + kKappaSlack >= kKappaBar || true)'''
+
+[[mutant]]
+name = "precision-bar-is-the-judges-rate"
+file = "src/eval/calibration.cpp"
+expect = "Agree.EachClassClearsTheBarsOfARandomJudgeWeightedAsThisOneIs"
+  [[mutant.edit]]
+  from = '''        one.precision_bar = person_share;'''
+  to = '''        one.precision_bar = judge_share;'''
+
+[[mutant]]
+name = "recall-bar-is-the-persons-share"
+file = "src/eval/calibration.cpp"
+expect = "Agree.EachClassClearsTheBarsOfARandomJudgeWeightedAsThisOneIs"
+  [[mutant.edit]]
+  from = '''        one.recall_bar = judge_share;'''
+  to = '''        one.recall_bar = person_share;'''
+
+[[mutant]]
+name = "a-class-neither-used-is-checked"
+file = "src/eval/calibration.cpp"
+expect = "Agree.AClassOnlyOneOfThemUsedCannotClear"
+  [[mutant.edit]]
+  from = '''        if (one.person == 0 && one.judge == 0) {'''
+  to = '''        if (one.person == 0 && one.judge == 0 && false) {'''
+
+[[mutant]]
+name = "precision-alone-clears"
+file = "src/eval/calibration.cpp"
+expect = "Agree.EachClassClearsTheBarsOfARandomJudgeWeightedAsThisOneIs"
+  [[mutant.edit]]
+  from = '''precision->low > precision_bar &&
+           recall->low > recall_bar;'''
+  to = '''precision->low > precision_bar;'''
+
+[[mutant]]
+name = "recall-alone-clears"
+file = "src/eval/calibration.cpp"
+expect = "Agree.EachClassClearsTheBarsOfARandomJudgeWeightedAsThisOneIs"
+  [[mutant.edit]]
+  from = '''precision->low > precision_bar &&
+           recall->low > recall_bar;'''
+  to = '''recall->low > recall_bar;'''
+
+[[mutant]]
+name = "lengths-differ-at-a-quarter"
+file = "src/eval/calibration.cpp"
+expect = "LengthsDiffer.AtAFifthOrMore"
+  [[mutant.edit]]
+  from = '''    return longer > 0 && shorter * 5 <= longer * 4;'''
+  to = '''    return longer > 0 && shorter * 4 <= longer * 3;'''
+
+[[mutant]]
+name = "two-empty-versions-differ"
+file = "src/eval/calibration.cpp"
+expect = "LengthsDiffer.AtAFifthOrMore"
+  [[mutant.edit]]
+  from = '''    return longer > 0 && shorter * 5 <= longer * 4;'''
+  to = '''    return shorter * 5 <= longer * 4;'''
+
+[[mutant]]
+name = "flips-are-not-counted"
+file = "src/eval/calibration.cpp"
+expect = "Biases.CountFlipsAndPreferencesForTheLongerVersion"
+  [[mutant.edit]]
+  from = '''            ++found.flipped;'''
+  to = '''            (void)found.flipped;'''
+
+[[mutant]]
+name = "labels-may-name-another-file"
+file = "src/eval/labels.cpp"
+expect = "Labels.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (labels.name != name) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-part-is-won-as-shown"
+file = "src/eval/labels.cpp"
+expect = "PartLabel.ItsVerdictIsTheSideTheVersionShownIsFrom"
+  [[mutant.edit]]
+  from = '''    return first_preferred != b_first ? reason::Winner::a : reason::Winner::b;'''
+  to = '''    return first_preferred ? reason::Winner::a : reason::Winner::b;'''
+
+[[mutant]]
+name = "a-parts-verdict-is-no-work"
+file = "src/eval/labels.cpp"
+expect = "Labels.AnyVerdictIsAPersonsWorkNeverWrittenOver"
+  [[mutant.edit]]
+  from = '''std::ranges::any_of(parts, [](const PartLabel& label) { return label.verdict.has_value(); });'''
+  to = '''std::ranges::any_of(parts, [](const PartLabel& label) { return label.verdict.has_value() && false; });'''
+
+[[mutant]]
+name = "the-labeller-is-lost"
+file = "src/eval/labels.cpp"
+expect = "Labels.AreWrittenForAPersonAndReadBackAsTheyWere"
+  [[mutant.edit]]
+  from = '''    labels.labeller = labeller.value_or(std::string{});'''
+  to = '''    labels.labeller = labeller.value_or(std::string{}).substr(0, 0);'''
+
+[[mutant]]
+name = "drawn-items-out-of-order"
+file = "src/eval/labels.cpp"
+expect = "Draw.IsUniformWithoutReplacementTheSameEverywhere"
+  [[mutant.edit]]
+  from = '''    std::ranges::sort(indices);'''
+  to = '''    (void)indices;'''
+
+[[mutant]]
+name = "every-name-draws-alike"
+file = "src/eval/labels.cpp"
+expect = "Draw.IsUniformWithoutReplacementTheSameEverywhere"
+  [[mutant.edit]]
+  from = '''    std::mt19937_64 generator{seed_of(name)};'''
+  to = '''    std::mt19937_64 generator{seed_of(name.substr(0, 0))};'''
+
+[[mutant]]
+name = "a-part-is-never-shown-b-first"
+file = "src/eval/labels.cpp"
+expect = "BFirst.IsACoinPerPartUnderItsOwnSeed"
+  [[mutant.edit]]
+  from = '''    return (generator() >> 63U) == 1;'''
+  to = '''    return (generator() >> 63U) == 2;'''
+
+[[mutant]]
+name = "a-judgement-not-done-is-read"
+file = "src/eval/calibrate.cpp"
+expect = "Calibrating.WhatThePanelHasNotReadIsLeftOutAndSaid"
+  [[mutant.edit]]
+  from = '''    if (job.status != library::JobStatus::done) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "an-item-no-judge-read-is-drawn"
+file = "src/eval/calibrate.cpp"
+expect = "Calibrating.AnItemNoJudgeReadIsNeverDrawn"
+  [[mutant.edit]]
+  from = '''        if (!read_by_any(judged.readings) || fact == article.facts.end()) {'''
+  to = '''        if ((!read_by_any(judged.readings) && false) || fact == article.facts.end()) {'''
+
+[[mutant]]
+name = "a-version-is-shown-as-the-runs"
+file = "src/eval/calibrate.cpp"
+expect = "Calibrating.ALabelShowsWhatTheJudgesWereShownNeverWhatTheySaid"
+  [[mutant.edit]]
+  from = '''.first = b_shown_first ? b_version : a_version,'''
+  to = '''.first = a_version,'''
+
+[[mutant]]
+name = "unread-is-not-counted"
+file = "src/eval/calibrate.cpp"
+expect = "Calibrating.EachJudgesReadingsAreSetAgainstThePersonsVerdicts"
+  [[mutant.edit]]
+  from = '''                ++unread_[index];'''
+  to = '''                (void)unread_[index];'''
+
+[[mutant]]
+name = "a-flip-is-no-flip"
+file = "src/eval/calibrate.cpp"
+expect = "Calibrating.BiasesAreEachJudgesFlipsAndItsPreferencesForTheLongerVersion"
+  [[mutant.edit]]
+  from = '''OrderedReading one{.flipped = tally.inconsistent > 0};'''
+  to = '''OrderedReading one{.flipped = false};'''
+
+[[mutant]]
+name = "a-tie-prefers-the-longer"
+file = "src/eval/calibrate.cpp"
+expect = "Calibrating.BiasesAreEachJudgesFlipsAndItsPreferencesForTheLongerVersion"
+  [[mutant.edit]]
+  from = '''if (!one.flipped && tally.ties == 0 && lengths_differ(a_words, b_words)) {'''
+  to = '''if (!one.flipped && lengths_differ(a_words, b_words)) {'''
+
+[[mutant]]
+name = "why-not-reads-kappa-without-its-slack"
+file = "src/eval/calibrate.cpp"
+expect = "CalibrationText.SaysWhyAPanelDoesNotPassByTheRulesThatDecide"
+  [[mutant.edit]]
+  from = '''            } else if (!judge.kappa_clears()) {'''
+  to = '''            } else if (*judge.kappa < kKappaBar) {'''

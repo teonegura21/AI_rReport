@@ -6,10 +6,13 @@
 # the article stages, scored by code and by the eval's frozen panel of judges,
 # and exported; two runs compared video by video, their articles read side
 # by side by the panel, and a candidate gated against its baseline; variants
-# swept against a baseline, and every run on one page. Hub only.
+# swept against a baseline, and every run on one page; a person's labels,
+# and the panel calibrated against them. Hub only.
 rr_add_module(eval
     SOURCES
         annotate.cpp
+        calibrate.cpp
+        calibration.cpp
         compare.cpp
         export.cpp
         flow.cpp
@@ -17,6 +20,7 @@ rr_add_module(eval
         gold.cpp
         history.cpp
         judgement.cpp
+        labels.cpp
         metrics.cpp
         panel.cpp
         run.cpp

@@ -69,6 +69,24 @@ public:
         return value;
     }
 
+    // A list of texts, which must be there; it may be empty.
+    [[nodiscard]] Result<std::vector<std::string>> texts(std::string_view key) {
+        const toml::node* value = node(key);
+        const auto* array = value == nullptr ? nullptr : value->as_array();
+        if (array == nullptr) {
+            return wrong(key, "a list of texts in quotes");
+        }
+        std::vector<std::string> texts;
+        for (const toml::node& entry : *array) {
+            const auto* text = entry.as_string();
+            if (text == nullptr) {
+                return wrong(key, "a list of texts in quotes");
+            }
+            texts.push_back(text->get());
+        }
+        return texts;
+    }
+
     // A whole number in [least, most], which must be there.
     [[nodiscard]] Result<std::int64_t> integer(std::string_view key, std::int64_t least, std::int64_t most) {
         const toml::node* value = node(key);

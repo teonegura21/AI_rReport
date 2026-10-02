@@ -42,6 +42,11 @@
 //                     judged, then compared with the sweep's baseline (P26)
 //   eval report       every eval run on one page: quality against cost, the
 //                     runs, each run's videos (eval/report.html)
+//   eval label NAME --label L [--against B]
+//                     draw items the frozen judges read of a run, for a person
+//                     to label: eval/labels/<name>.toml (P27, runbook R5)
+//   eval calibrate NAME
+//                     whether the judges read as the labels do (ADR-0019)
 //   doctor            check the data directory, the library, the capture tools,
 //                     RunPod and the runtime, and say what to do about problems
 //   bench             measure the pod: its engines, the commander's and the
