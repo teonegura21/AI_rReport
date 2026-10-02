@@ -32,6 +32,8 @@
 #include <rr/text/align.hpp>
 #include <rr/text/bm25.hpp>
 
+#include "markdown.hpp"
+
 namespace rr::eval {
 
 namespace {
@@ -83,17 +85,6 @@ std::vector<std::string_view> quoted_passages(std::string_view text) {
         at = close == std::string_view::npos ? text.size() : close + (is_curly ? kCurlyClose.size() : 1);
     }
     return passages;
-}
-
-// A heading's words, without the marks that make it one: "## Weighing radium"
-// gives "Weighing radium".
-std::string heading_text(std::string_view line) {
-    const std::size_t words = line.find_first_not_of("# \t");
-    std::string_view text = words == std::string_view::npos ? std::string_view{} : line.substr(words);
-    while (!text.empty() && (text.back() == ' ' || text.back() == '\n' || text.back() == '\r')) {
-        text.remove_suffix(1);
-    }
-    return std::string{text};
 }
 
 // The line a judge is shown for a sentence of the video: "S12 [1:02, Ada] The words."
@@ -622,8 +613,8 @@ std::vector<ArticleSentence> article_sentences(const knowledge::Article& article
     std::size_t paragraph = 0;
     for (const knowledge::Block& block : parsed.blocks) {
         if (block.kind == knowledge::BlockKind::heading) {
-            section =
-                heading_text(std::string_view{article.markdown}.substr(block.span.begin, block.span.size()));
+            section = detail::heading_text(
+                std::string_view{article.markdown}.substr(block.span.begin, block.span.size()));
             continue;
         }
         if (block.kind == knowledge::BlockKind::code || block.sentences.empty()) {

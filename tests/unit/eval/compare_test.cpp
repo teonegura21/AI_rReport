@@ -58,6 +58,30 @@ TEST(CompareRuns, MakesARowForEachMetricEitherRunHasInTheRegistrysOrder) {
     EXPECT_EQ(rows[1].comparison->scorer, "judges@eval-v9");
 }
 
+TEST(CompareRuns, PutsAMetricReadPairwiseWhereTheRegistryHasItWithNoAAndNoB) {
+    const std::vector<Comparison> flow{
+        compare_pairwise("flow", "judges@eval-v9", {{"lecture", 0.5}, {"podcast", 0.0}})};
+    const std::vector<MetricRow> rows = compare_runs(run(0.9, 0.8), run(0.95, 0.8), {}, flow);
+    EXPECT_THAT(names(rows), ElementsAre("atoms_told", "facts_told", "length_ratio", "flow"));
+    EXPECT_EQ(rows[3].comparison, flow[0]);
+    const std::string text = to_text("A", "B", rows);
+    EXPECT_THAT(text,
+                HasSubstr("  flow                          2         -         -    +0.250   +0.000 to +0.500"
+                          "       0.250   0.700       -   no difference\n"))
+        << "B's preference over A: no A, no B";
+    EXPECT_LT(text.find("\njudges@eval-v9\n"), text.find("  flow ")) << "with the judges' rows";
+}
+
+TEST(CompareText, ARowNoVideoBothRunsScoredShowsNoDifference) {
+    std::vector<ScoredEntry> b = run(0.95, 0.8);
+    for (ScoredEntry& entry : b) {
+        entry.entry.video += "-other";  // the same metrics, of other videos
+    }
+    const std::string text = to_text("A", "B", compare_runs(run(0.9, 0.8), b));
+    EXPECT_THAT(text, HasSubstr("  atoms_told                    0         -         -         -   -"))
+        << "never +0.000, a difference no video measured";
+}
+
 TEST(CompareRuns, ARowTheRunsCannotBeComparedOnSaysWhy) {
     std::vector<ScoredEntry> rescored = run(0.9, 0.8);
     for (ScoredEntry& entry : rescored) {
@@ -123,6 +147,16 @@ TEST(ByVideoText, ListsEachVideoOfEitherRun) {
     EXPECT_THAT(text, HasSubstr("  podcast                          0.900         -         -\n"));
     EXPECT_ERRC(by_video_text("A", "B", {}, {}, "atoms_tolt"), Errc::not_found);
     EXPECT_THAT(unwrap(by_video_text("A", "B", {}, {}, "atoms_told")), HasSubstr("neither run has it"));
+}
+
+TEST(ByVideoText, OfAMetricReadPairwiseListsEachVideosPreference) {
+    const std::string text = by_video_text(
+        "A", "B", compare_pairwise("flow", "judges@eval-v9", {{"lecture", 0.5}, {"podcast", -1.0}}));
+    EXPECT_THAT(text, HasSubstr("flow, video by video, read pairwise: B against A"));
+    EXPECT_THAT(text, HasSubstr("  lecture                         +0.500\n"));
+    EXPECT_THAT(text, HasSubstr("  podcast                         -1.000\n"));
+    EXPECT_THAT(by_video_text("A", "B", compare_pairwise("flow", "judges@eval-v9", {})),
+                HasSubstr("no video read"));
 }
 
 }  // namespace

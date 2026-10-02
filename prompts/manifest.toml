@@ -249,7 +249,7 @@ failure_modes = [
 
 [[prompt]]
 name = "eval_flow"
-purpose = "Say which of two versions of a section a reader who has not seen the video would rather read, the reasons first: the eval's pairwise flow, asked in both orders (rr/eval/judgement.hpp)."
+purpose = "Say which of two versions of a section a reader who has not seen the video would rather read, the reasons first: the eval's pairwise flow, asked in both orders (rr/eval/flow.hpp)."
 schema = "schemas/missions/eval_flow.json"
 shared = ["title", "channel"]
 failure_modes = [

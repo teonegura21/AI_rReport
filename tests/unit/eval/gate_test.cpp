@@ -83,6 +83,8 @@ TEST(Gate, EveryMistakeIsRefusedNamingItAndWhereItIs) {
             "better neither higher nor lower: it is shown, never gated");
     refused("name = \"g\"\n[[invariant]]\nmetric = \"minutes\"\nevery_entry = 60\n",
             "'minutes' is a cost: costs are shown, never gated");
+    refused("name = \"g\"\n[[gated]]\nmetric = \"flow\"\nmargin = 0.1\n",
+            "'flow' is read pairwise, by `rreport eval compare --flow`, and no run scores it");
     refused(std::format("name = \"g\"\n{}{}", kGated, kGated), "gated 2: 'atoms_told' a second time");
     refused(
         "name = \"g\"\n[[invariant]]\nmetric = \"invalid_markers\"\nevery_entry = 0\n[[invariant]]\n"

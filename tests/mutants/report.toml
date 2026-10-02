@@ -191,3 +191,14 @@ expect = "ContentsTest.TheArticleIsTheSeamsStagesWhereItRanElseTheWriteStages"
   [[mutant.edit]]
   from = '''    } else if (stage == pipeline::WriteStage::kName) {'''
   to = '''    } else if (stage == "writing") {'''
+
+[[mutant]]
+name = "a-pairing-is-a-page"
+file = "src/report/contents.cpp"
+expect = "ContentsTest.AnEvalPairingHasNoArticleOfItsOwnButTheTwoItCompares"
+  [[mutant.edit]]
+  from = '''        case library::JobKind::pairing:
+            return fail('''
+  to = '''        case library::JobKind::pairing:
+            break;
+            return fail('''

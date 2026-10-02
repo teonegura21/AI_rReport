@@ -15,6 +15,9 @@
 //   faithfully, its form, the judges' agreement, and what it cost. A test
 //   checks that every metric the scorers compute is in it, and only those.
 //   What may be gated follows: a metric better one way, and not a cost.
+//   One metric is no run's own: flow, how an article reads beside another
+//   (rr/eval/flow.hpp), is read pairwise, between two runs' articles, when
+//   they are compared; it is shown, and a gate cannot hold it yet.
 //
 // Thread-safety: constant data.
 #pragma once
@@ -27,7 +30,7 @@ namespace rr::eval {
 
 // Which way a metric is better.
 enum class Better : std::uint8_t {
-    higher,  // a share accounted for, kept, told, cited or supported
+    higher,  // a share accounted for, kept, told, cited or supported; the candidate's flow preferred
     lower,   // invalid markers, a judged issue's share, minutes, calls, tokens, escalations
     neither  // shown, never better or worse: the length ratio, the judges' agreement
 };
@@ -39,7 +42,8 @@ struct Metric {
     std::string_view family{};  // the scorer family computing it: "code" (rr/eval/score.hpp) or
                                 // "judges" (rr/eval/judgement.hpp)
     Better better = Better::neither;
-    bool cost = false;  // what an article cost: reported, never gated, as quality comes first (ADR-0019)
+    bool cost = false;      // what an article cost: reported, never gated, as quality comes first (ADR-0019)
+    bool pairwise = false;  // read between two runs' articles, B against A: no run's own score
 
     friend bool operator==(const Metric&, const Metric&) = default;
 };

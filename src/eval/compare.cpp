@@ -34,8 +34,10 @@ std::string row_text(const MetricRow& row, const Comparison& compared) {
                                      ? std::format("{} to {}", detail::signed_shown(compared.interval->low),
                                                    detail::signed_shown(compared.interval->high))
                                      : std::string{"-"};
-    return table_line(row.metric.name, std::to_string(compared.videos), detail::shown(compared.a),
-                      detail::shown(compared.b), detail::signed_shown(compared.difference), interval,
+    // No video scored by both: no difference to show, not one of zero.
+    const std::string difference = compared.videos == 0 ? "-" : detail::signed_shown(compared.difference);
+    return table_line(row.metric.name, std::to_string(compared.videos), optional_shown(compared.a),
+                      optional_shown(compared.b), difference, interval,
                       optional_shown(compared.standard_error), optional_shown(compared.detectable()),
                       optional_shown(row.margin), to_string(seen_in(row)));
 }
@@ -44,6 +46,11 @@ std::string row_text(const MetricRow& row, const Comparison& compared) {
 std::string video_line(std::string_view video, std::string_view a, std::string_view b,
                        std::string_view difference) {
     return std::format("  {:<28}{:>10}{:>10}{:>10}\n", video, a, b, difference);
+}
+
+// A line of a metric read pairwise, video by video: no A, no B.
+std::string pairwise_line(std::string_view video, std::string_view difference) {
+    return std::format("  {:<28}{:>10}\n", video, difference);
 }
 
 }  // namespace
@@ -87,15 +94,23 @@ Seen seen_in(const MetricRow& row) noexcept {
 }
 
 std::vector<MetricRow> compare_runs(std::span<const ScoredEntry> a, std::span<const ScoredEntry> b,
-                                    std::span<const Gated> gated) {
+                                    std::span<const Gated> gated, std::span<const Comparison> read_pairwise) {
     std::vector<MetricRow> rows;
     for (const Metric& metric : metrics()) {
-        if (per_video(a, metric.name).means.empty() && per_video(b, metric.name).means.empty()) {
-            continue;  // neither run has it
-        }
         MetricRow row{.metric = metric};
         if (const auto held = std::ranges::find(gated, metric.name, &Gated::metric); held != gated.end()) {
             row.margin = held->margin;
+        }
+        if (metric.pairwise) {
+            const auto read = std::ranges::find(read_pairwise, metric.name, &Comparison::metric);
+            if (read != read_pairwise.end()) {
+                row.comparison = *read;
+                rows.push_back(std::move(row));
+            }
+            continue;  // no run's own score
+        }
+        if (per_video(a, metric.name).means.empty() && per_video(b, metric.name).means.empty()) {
+            continue;  // neither run has it
         }
         if (Result<Comparison> compared = compare(a, b, metric.name); compared.has_value()) {
             row.comparison = *std::move(compared);
@@ -184,6 +199,21 @@ Result<std::string> by_video_text(std::string_view a, std::string_view b,
         text += video_line(video, found_a != in_a.means.end() ? detail::shown(found_a->second) : "-",
                            found_b != in_b.means.end() ? detail::shown(found_b->second) : "-",
                            in_both ? detail::signed_shown(found_b->second - found_a->second) : "-");
+    }
+    return text;
+}
+
+std::string by_video_text(std::string_view a, std::string_view b, const Comparison& read_pairwise) {
+    std::string text = std::format(
+        "{}, video by video, read pairwise: B against A, each video's mean over its "
+        "pairs of replicates (A: {}, B: {}):\n",
+        read_pairwise.metric, a, b);
+    if (read_pairwise.differences.empty()) {
+        return text + "  no video read\n";
+    }
+    text += pairwise_line("video", "B - A");
+    for (const auto& [video, difference] : read_pairwise.differences) {
+        text += pairwise_line(video, detail::signed_shown(difference));
     }
     return text;
 }

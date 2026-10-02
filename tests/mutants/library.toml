@@ -73,3 +73,35 @@ expect = "Library.Migration8StartsEveryRunMadeBeforeAtReplicateZero"
   [[mutant.edit]]
   from = '''NOT NULL DEFAULT 0 CHECK'''
   to = '''NOT NULL DEFAULT 1 CHECK'''
+
+[[mutant]]
+name = "a-pairing-is-no-kind"
+file = "src/library/jobs.cpp"
+expect = "JobKind.NamesItsKinds"
+  [[mutant.edit]]
+  from = '''    {JobKind::pairing, "pairing"},'''
+  to = ''''''
+
+[[mutant]]
+name = "migration-9-knows-no-pairing"
+file = "migrations/0009_pairing.sql"
+expect = "Library.Migration9PairsTwoArticleJobsOnceAPanelAndKeepsEveryJob"
+  [[mutant.edit]]
+  from = '''CHECK (kind IN ('article', 'annotation', 'judgement', 'pairing'))'''
+  to = '''CHECK (kind IN ('article', 'annotation', 'judgement'))'''
+
+[[mutant]]
+name = "migration-9-pairs-a-pair-twice"
+file = "migrations/0009_pairing.sql"
+expect = "Library.Migration9PairsTwoArticleJobsOnceAPanelAndKeepsEveryJob"
+  [[mutant.edit]]
+  from = '''    PRIMARY KEY (first_job_id, second_job_id, panel)'''
+  to = '''    PRIMARY KEY (first_job_id, second_job_id, panel, job_id)'''
+
+[[mutant]]
+name = "migration-9-shares-a-pairing-job"
+file = "migrations/0009_pairing.sql"
+expect = "Library.Migration9PairsTwoArticleJobsOnceAPanelAndKeepsEveryJob"
+  [[mutant.edit]]
+  from = '''    job_id        TEXT NOT NULL UNIQUE REFERENCES jobs (id),'''
+  to = '''    job_id        TEXT NOT NULL REFERENCES jobs (id),'''

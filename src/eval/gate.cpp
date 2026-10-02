@@ -28,6 +28,12 @@ std::optional<std::string> not_gateable(const Metric& metric) {
         return std::format("'{}' is a cost: costs are shown, never gated, as quality comes first (ADR-0019)",
                            metric.name);
     }
+    if (metric.pairwise) {
+        return std::format(
+            "'{}' is read pairwise, by `rreport eval compare --flow`, and no run scores it: it "
+            "is shown, and a gate cannot hold it yet",
+            metric.name);
+    }
     return std::nullopt;
 }
 

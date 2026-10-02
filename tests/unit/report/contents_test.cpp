@@ -203,6 +203,17 @@ TEST_F(ContentsTest, AnEvalJudgementHasNoArticleOfItsOwnButTheOneItJudges) {
                 HasSubstr(std::format("`rreport report {}` pages that one", judgement.source)));
 }
 
+TEST_F(ContentsTest, AnEvalPairingHasNoArticleOfItsOwnButTheTwoItCompares) {
+    const library::Job pairing = job(library::JobKind::pairing);
+    const Result<Contents> contents = contents_of(pairing, store());
+    EXPECT_ERRC(contents, Errc::invalid_argument);
+    EXPECT_THAT(
+        contents.error().message(),
+        HasSubstr(std::format("compares the articles of jobs {} for the eval, and has none of its own: "
+                              "`rreport report` pages each",
+                              pairing.source)));
+}
+
 TEST_F(ContentsTest, AnArtifactThatDoesNotReadAsItsStagesIsAnError) {
     const library::Job lecture = job();
     done(lecture, pipeline::TranscriptStage::kName, json::Json{{"sentences", "none"}});

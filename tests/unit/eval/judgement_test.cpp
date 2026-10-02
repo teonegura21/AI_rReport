@@ -352,7 +352,8 @@ TEST(JudgedScores, CountEachIssueUnderItsOwnName) {
 }
 
 // Every metric the judges score is one rr/eval/metrics.hpp knows as the
-// judges', and every one it knows as theirs is scored.
+// judges', and every one it knows as theirs is scored, but flow, which they
+// read pairwise between two runs (rr/eval/flow.hpp).
 TEST(JudgedScores, AreEveryMetricTheRegistryKnowsAsTheJudgesAndNoOther) {
     std::set<std::string, std::less<>> scored;
     for (const Score& kept : judged_scores(four_items())) {
@@ -362,8 +363,11 @@ TEST(JudgedScores, AreEveryMetricTheRegistryKnowsAsTheJudgesAndNoOther) {
         scored.insert(kept.metric);
     }
     for (const Metric& metric : metrics()) {
-        if (metric.family == "judges") {
+        if (metric.family == "judges" && !metric.pairwise) {
             EXPECT_TRUE(scored.contains(metric.name)) << metric.name << " is never scored";
+        }
+        if (metric.pairwise) {
+            EXPECT_FALSE(scored.contains(metric.name)) << metric.name << " is no run's own score";
         }
     }
 }

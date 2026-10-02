@@ -67,6 +67,12 @@ Result<Contents> contents_of(const library::Job& job, const library::StageStore&
                 std::format("job {} judges the article of job {} for the eval, and has none of its own: "
                             "`rreport report {}` pages that one",
                             job.id, job.source, job.source));
+        case library::JobKind::pairing:
+            return fail(
+                Errc::invalid_argument,
+                std::format("job {} compares the articles of jobs {} for the eval, and has none of its "
+                            "own: `rreport report` pages each",
+                            job.id, job.source));
     }
     RR_TRY_ASSIGN(const std::vector<library::StageRun> runs, store.runs(job.id));
     Contents contents{.job = job.id, .tier = job.tier};

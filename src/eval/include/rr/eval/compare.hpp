@@ -10,7 +10,9 @@
 //   standard error and 2.8 of them, the gate's margin where the gate holds
 //   it, and a word for what the interval shows. Rows are grouped by the
 //   scorer that computed them, code first, so a reader sees at once which
-//   numbers rest on judges not yet calibrated.
+//   numbers rest on judges not yet calibrated. A metric read pairwise (flow)
+//   has its row where the registry lists it, with no A and no B: its values
+//   are B against A already.
 //
 // Thread-safety: pure functions.
 #pragma once
@@ -52,11 +54,13 @@ enum class Seen : std::uint8_t {
 [[nodiscard]] std::string_view to_string(Seen seen) noexcept;
 [[nodiscard]] Seen seen_in(const MetricRow& row) noexcept;
 
-// A row for every metric either run has, in metrics() order, with the
-// margin `gated` gives it, if any.
+// A row for every metric either run has, and for each of `read_pairwise`
+// (compare_pairwise()), in metrics() order, with the margin `gated` gives
+// it, if any.
 [[nodiscard]] std::vector<MetricRow> compare_runs(std::span<const ScoredEntry> a,
                                                   std::span<const ScoredEntry> b,
-                                                  std::span<const Gated> gated = {});
+                                                  std::span<const Gated> gated = {},
+                                                  std::span<const Comparison> read_pairwise = {});
 
 // As `rreport eval compare` prints the rows, A and B named by their labels.
 [[nodiscard]] std::string to_text(std::string_view a, std::string_view b, const std::vector<MetricRow>& rows);
@@ -68,5 +72,9 @@ enum class Seen : std::uint8_t {
                                                 std::span<const ScoredEntry> a_entries,
                                                 std::span<const ScoredEntry> b_entries,
                                                 std::string_view metric);
+
+// A metric read pairwise, video by video: each video's value, B against A.
+[[nodiscard]] std::string by_video_text(std::string_view a, std::string_view b,
+                                        const Comparison& read_pairwise);
 
 }  // namespace rr::eval

@@ -12,6 +12,7 @@ rr_add_embedded_library(artifact_schemas
         schemas/artifacts/atoms.json
         schemas/artifacts/judgement.json
         schemas/artifacts/outline.json
+        schemas/artifacts/pairing.json
         schemas/artifacts/plan.json
         schemas/artifacts/silver.json
         schemas/artifacts/source.json

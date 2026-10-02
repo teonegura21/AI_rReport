@@ -24,3 +24,42 @@ expect = "Hub.TwoRunsAreComparedAndTheGateDecidesOnlyWhatItsNumbersCanSay"
   [[mutant.edit]]
   from = '''    return reading.passed() ? kOk : kFailure;'''
   to = '''    return kOk;'''
+
+[[mutant]]
+name = "flow-is-shown-unread"
+file = "apps/rreport/main.cpp"
+expect = "Hub.TwoRunsAreComparedAndTheGateDecidesOnlyWhatItsNumbersCanSay"
+  [[mutant.edit]]
+  from = '''    if (one != nullptr && one->pairwise && !flags.flow) {'''
+  to = '''    if (false && one != nullptr && one->pairwise && !flags.flow) {'''
+
+[[mutant]]
+name = "a-stale-panel-reads-the-pairs"
+file = "apps/rreport/main.cpp"
+expect = "Hub.TwoRunsAreComparedAndTheGateDecidesOnlyWhatItsNumbersCanSay"
+  [[mutant.edit]]
+  from = '''        return FlowRow{.code = failed(kFailure, prompts.error())};
+    }
+    if (auto frozen = eval::check_panel(*panel, *prompts); !frozen.has_value()) {'''
+  to = '''        return FlowRow{.code = failed(kFailure, prompts.error())};
+    }
+    if (auto frozen = eval::check_panel(*panel, *prompts); false && !frozen.has_value()) {'''
+
+[[mutant]]
+name = "what-the-flow-could-not-read-is-not-said"
+file = "apps/rreport/main.cpp"
+expect = "Hub.TwoRunsAreComparedAndTheGateDecidesOnlyWhatItsNumbersCanSay"
+  [[mutant.edit]]
+  from = '''            text += std::format("  {}\n", note);'''
+  to = '''            (void)note;'''
+
+[[mutant]]
+name = "a-pairing-is-resumed"
+file = "apps/rreport/main.cpp"
+expect = "Hub.APairingIsTakenUpByEvalCompareAndHasNoPageOfItsOwn"
+  [[mutant.edit]]
+  from = '''        case library::JobKind::pairing:
+            return failed('''
+  to = '''        case library::JobKind::pairing:
+            break;
+            return failed('''

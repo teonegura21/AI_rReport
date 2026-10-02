@@ -4,13 +4,14 @@
 # to the timeline, drafted by models as silver and corrected by a person; the
 # review sheet a person corrects them with; runs of the set's videos through
 # the article stages, scored by code and by the eval's frozen panel of judges,
-# and exported; two runs compared video by video, and a candidate gated
-# against its baseline. Hub only.
+# and exported; two runs compared video by video, their articles read side
+# by side by the panel, and a candidate gated against its baseline. Hub only.
 rr_add_module(eval
     SOURCES
         annotate.cpp
         compare.cpp
         export.cpp
+        flow.cpp
         gate.cpp
         gold.cpp
         judgement.cpp

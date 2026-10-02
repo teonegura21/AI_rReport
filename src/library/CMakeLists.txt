@@ -14,7 +14,8 @@ rr_add_embedded_library(library_migrations
         migrations/0005_job_kind.sql
         migrations/0006_eval.sql
         migrations/0007_judgement.sql
-        migrations/0008_first_replicate.sql)
+        migrations/0008_first_replicate.sql
+        migrations/0009_pairing.sql)
 
 rr_add_module(library
     SOURCES

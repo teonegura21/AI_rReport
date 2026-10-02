@@ -613,6 +613,25 @@ TEST_F(EndToEnd, TwoRunsOfOnePipelineAreComparedAndGatedAndAnAaRunHoldsTheGatesM
                 HasSubstr("  atoms_told                    2     1.000     1.000    +0.000   +0.000 "
                           "to +0.000       0.000   0.000   0.010   no difference\n"));
 
+    // Flow: each video's two articles read side by side, both orders, by
+    // both judges of a panel frozen for the files the runtime serves.
+    const std::int64_t unread = asked();
+    const proc::RunResult flowed =
+        eval({"compare", "base", "cand", "--gate", "e2e", "--flow", "--panel", "e2e-v1"});
+    ASSERT_EQ(flowed.status.code, 0) << flowed.stdout_text << flowed.stderr_text;
+    EXPECT_THAT(flowed.stdout_text,
+                HasSubstr("  flow                          2         -         -    +0.000   +0.000 to +0.000"
+                          "       0.000   0.000       -   no difference\n"))
+        << "one pipeline's articles, alike: every part a tie";
+    EXPECT_GT(asked(), unread) << "the judges read each part";
+    const std::int64_t read = asked();
+    const proc::RunResult by_video =
+        eval({"compare", "base", "cand", "--gate", "e2e", "--flow", "--panel", "e2e-v1", "--metric", "flow"});
+    ASSERT_EQ(by_video.status.code, 0) << by_video.stderr_text;
+    EXPECT_THAT(by_video.stdout_text, HasSubstr("  radium-again                    +0.000\n"));
+    EXPECT_THAT(by_video.stdout_text, HasSubstr("  weighing-radium                 +0.000\n"));
+    EXPECT_EQ(asked(), read) << "pairs read once, never asked again";
+
     const proc::RunResult gated = eval({"gate", "base", "cand", "--gate", "e2e", "--panel", "e2e-v1"});
     EXPECT_EQ(gated.status.code, 0) << gated.stdout_text << gated.stderr_text;
     EXPECT_THAT(gated.stdout_text,

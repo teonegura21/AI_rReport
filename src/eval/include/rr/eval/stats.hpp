@@ -26,6 +26,10 @@
 //        (z₀.₉₇₅ + z₀.₈ ≈ 1.96 + 0.84), the smallest difference these videos
 //        detect four times in five. A comparison that finds none says how
 //        small "none" is.
+//   A metric read pairwise, between the two runs' articles (flow,
+//   rr/eval/flow.hpp), has a value for each video that is a difference
+//   already, B against A: it is compared as its differences alone
+//   (compare_pairwise()), with no A and no B of its own.
 //   And the run-to-run noise a gate's margins must stand above comes from an
 //   A/A comparison: the baseline run again under other salts, nothing shared
 //   (unchanged_pass_rate(); rr/eval/gate.hpp says how a gate uses it). Two
@@ -89,12 +93,12 @@ struct Interval {
 // Two runs, A and B, on one metric.
 struct Comparison {
     std::string metric{};
-    std::string scorer{};    // what computed it in both runs; empty when neither has it
-    std::size_t videos = 0;  // scored by both
-    double a = 0;            // the mean over those videos
-    double b = 0;
-    double difference = 0;                   // b − a
-    std::optional<Interval> interval{};      // of the difference; none for fewer than two videos
+    std::string scorer{};                // what computed it in both runs; empty when neither has it
+    std::size_t videos = 0;              // scored by both
+    std::optional<double> a{};           // the mean over those videos; none for a metric read pairwise, which
+    std::optional<double> b{};           // has no value of its own in either run (and none for no video)
+    double difference = 0;               // b − a, or, read pairwise, the mean of the videos' own
+    std::optional<Interval> interval{};  // of the difference; none for fewer than two videos
     std::optional<double> standard_error{};  // of the mean difference, sd / √n; none for fewer than two
     std::map<std::string, double, std::less<>> differences{};  // each video's, b − a
     std::vector<std::string> unpaired{};  // videos one run scored and not the other, left out
@@ -111,6 +115,12 @@ struct Comparison {
 // measure different things, and the message says which run to score again.
 [[nodiscard]] Result<Comparison> compare(std::span<const ScoredEntry> a, std::span<const ScoredEntry> b,
                                          std::string_view metric);
+
+// `metric`, read pairwise by `scorer`: `differences` holds each video's
+// value, B against A already (flow: B's preference, from −1 to +1). Its
+// interval and standard error as compare() gives any difference's.
+[[nodiscard]] Comparison compare_pairwise(std::string_view metric, std::string scorer,
+                                          std::map<std::string, double, std::less<>> differences);
 
 // A gated metric in an A/A comparison: each video's difference between two
 // runs of one pipeline, oriented so that higher is better (a metric better

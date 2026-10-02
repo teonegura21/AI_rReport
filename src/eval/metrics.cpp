@@ -32,10 +32,12 @@ constexpr std::array kMetrics{
     Metric{.name = "intensifies", .family = kJudges, .better = Better::lower},
     Metric{.name = "misattributes", .family = kJudges, .better = Better::lower},
     Metric{.name = "contradicts", .family = kJudges, .better = Better::lower},
-    // The article's form (code), and how alike the judges read (judges): a
-    // longer article is not a better one, and agreement says how far to
-    // trust the panel, not the article.
+    // The article's form: its length (code), and how it reads beside the
+    // other run's (judges, read pairwise); and how alike the judges read
+    // (judges). A longer article is not a better one, and agreement says how
+    // far to trust the panel, not the article.
     Metric{.name = "length_ratio", .family = kCode, .better = Better::neither},
+    Metric{.name = "flow", .family = kJudges, .better = Better::higher, .pairwise = true},
     Metric{.name = "facts_agreement", .family = kJudges, .better = Better::neither},
     Metric{.name = "sentences_agreement", .family = kJudges, .better = Better::neither},
     // What it cost (code).

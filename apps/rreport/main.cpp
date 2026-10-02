@@ -33,7 +33,8 @@
 //                     the video supports (P24)
 //   eval compare A B  two runs side by side, every metric: the difference video
 //                     by video, its interval, and what the videos could see
-//                     (P25, ADR-0019)
+//                     (P25, ADR-0019); with --flow, each video's two articles
+//                     read side by side by the frozen judges, part by part
 //   eval gate A B     whether candidate B may replace baseline A, as
 //                     eval/gates/<gate>.toml says; with --aa, whether the
 //                     gate's margins hold, B being A run again
@@ -56,6 +57,7 @@
 // This file only parses arguments and wires modules together; the rules live
 // in src/ (rr/hub/*.hpp), where they are unit-tested. Configuration:
 // config/default.toml.
+#include <algorithm>
 #include <chrono>
 #include <csignal>
 #include <cstdint>
@@ -66,7 +68,9 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <numeric>
 #include <optional>
+#include <span>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -83,15 +87,18 @@
 #include <rr/eval/annotate.hpp>
 #include <rr/eval/compare.hpp>
 #include <rr/eval/export.hpp>
+#include <rr/eval/flow.hpp>
 #include <rr/eval/gate.hpp>
 #include <rr/eval/gold.hpp>
 #include <rr/eval/judgement.hpp>
+#include <rr/eval/metrics.hpp>
 #include <rr/eval/panel.hpp>
 #include <rr/eval/run.hpp>
 #include <rr/eval/score.hpp>
 #include <rr/eval/set.hpp>
 #include <rr/eval/sheet.hpp>
 #include <rr/eval/snapshot.hpp>
+#include <rr/eval/stats.hpp>
 #include <rr/hub/bench.hpp>
 #include <rr/hub/doctor.hpp>
 #include <rr/hub/hub_config.hpp>
@@ -656,6 +663,13 @@ int resume(const Global& global, const std::string& id, const proc::TerminationS
                       std::format("job {} judges an article for the eval: `rreport eval judge` takes "
                                   "it up again, with its run's label",
                                   job->id)});
+        case library::JobKind::pairing:
+            return failed(
+                kBadConfiguration,
+                Error{Errc::invalid_argument,
+                      std::format("job {} compares two articles for the eval: `rreport eval compare --flow` "
+                                  "takes it up again, with its runs' labels",
+                                  job->id)});
     }
     return run_job(*hub, *database, *std::move(job), signals);
 }
@@ -793,12 +807,14 @@ struct EvalFlags {
     int replicates = 3;                        // run: three at least, to see the noise (ADR-0019)
     std::string split{"dev"};                  // run: dev, or test for a gate
     std::string format{"csv"};                 // export: csv or json
-    std::string panel{"eval-v1"};              // judge, gate: the frozen panel (eval/judges/<panel>.toml)
+    std::string panel{"eval-v1"};              // judge, gate, compare --flow: the frozen panel
+                                               // (eval/judges/<panel>.toml)
     int first_replicate = 0;                   // run: an A/A run starts after its baseline's last
     std::string baseline;                      // compare, gate: run A, the baseline
     std::string candidate;                     // compare, gate: run B, the candidate
     std::string gate{"default"};               // compare, gate: eval/gates/<gate>.toml
     std::optional<std::string> metric;         // compare: one metric, video by video
+    bool flow = false;                         // compare: the panel reads the runs' articles pairwise
     bool aa = false;                           // gate: B is A run again: check the gate's margins
 };
 
@@ -1420,7 +1436,169 @@ int pair_failed(const Error& error) {
     return failed(error.code() == Errc::not_found ? kBadConfiguration : kFailure, error);
 }
 
-int eval_compare(const Global& global, const EvalFlags& flags) {
+// What reading two runs' flow needs, read once (`rreport eval compare --flow`).
+struct FlowReading {
+    const Hub* hub = nullptr;
+    db::Database* database = nullptr;
+    const prompt::Library* prompts = nullptr;
+    const eval::Panel* panel = nullptr;
+    const proc::TerminationSignals* signals = nullptr;
+    std::string again{};  // takes the pairings up again
+    std::vector<std::string> notes{};
+    int code = kOk;  // report()'s, or kFailure for a pair not made
+};
+
+// Takes `job`, the pairing of article job `a` with another, through its
+// stage, raising the army only if the stage asks for it (as run_job() does
+// an article job).
+//
+// clang-analyzer follows the std::function that video_length_of() makes as
+// far as its allocation, but not to its release, which libstdc++ makes
+// through a function pointer when the army is destroyed: it reports a leak
+// that is none. ASan's leak checker, on every test that pairs, finds none.
+// NOLINTBEGIN(clang-analyzer-cplusplus.NewDeleteLeaks)
+Result<eval::PairingRun> pair_job(const FlowReading& reading, const library::Job& a, library::Job job,
+                                  eval::ArticlesToCompare articles) {
+    const HubSettings& settings = reading.hub->settings;
+    db::Database& database = *reading.database;
+    const net::HttpClient http = make_http();
+    JobArmy forces{JobArmy::Inputs{.settings = &settings,
+                                   .http = &http,
+                                   .database = &database,
+                                   .clock = &SystemClock::instance(),
+                                   .job_id = job.id,
+                                   .elapsed_before = job.elapsed,
+                                   .video_length = video_length_of(database, a.id),
+                                   .stop = reading.signals->stop_token(),
+                                   .progress = say}};
+    pipeline::StageContext context{.prompts = reading.prompts,
+                                   .work_directory = settings.library_database().parent_path() / "jobs",
+                                   .stop = reading.signals->stop_token(),
+                                   .progress = say};
+    if (settings.llm_mode == LlmMode::replay || settings.runtime.has_value()) {
+        context.army = [&forces] { return forces.raise(); };
+    }
+    return eval::run_pairing(std::move(job), *reading.panel, std::move(articles), database,
+                             SystemClock::instance(), std::move(context));
+}
+// NOLINTEND(clang-analyzer-cplusplus.NewDeleteLeaks)
+
+// B's preference for one pair of entries, A's and B's of one video, once
+// their pairing is done; none otherwise, and `reading` says why.
+Result<std::optional<double>> read_pair(FlowReading& reading, const eval::RunEntry& a_entry,
+                                        const eval::RunEntry& b_entry) {
+    db::Database& database = *reading.database;
+    const auto unpaired = [&](std::string_view why) {
+        reading.notes.push_back(std::format("not paired: {}, replicates {} and {}: {}", a_entry.video,
+                                            a_entry.replicate, b_entry.replicate, why));
+        reading.code = kFailure;
+        return std::optional<double>{};
+    };
+    const library::Jobs jobs{database, SystemClock::instance()};
+    RR_TRY_ASSIGN(const library::Job a, jobs.find(a_entry.job));
+    RR_TRY_ASSIGN(const library::Job b, jobs.find(b_entry.job));
+    for (const library::Job* job : {&a, &b}) {
+        if (job->status != library::JobStatus::done) {
+            return unpaired(std::format("job {} is {}", job->id, library::to_string(job->status)));
+        }
+    }
+    const library::StageStore store{database, SystemClock::instance()};
+    auto articles = eval::articles_to_compare(a, b, store);
+    if (!articles.has_value()) {
+        if (articles.error().code() != Errc::invalid_argument) {
+            return fail(std::move(articles).error());
+        }
+        return unpaired(articles.error().message());  // no article, or two videos' transcripts
+    }
+    RR_TRY_ASSIGN(library::Job job,
+                  eval::start_pairing(database, SystemClock::instance(), a, b, *reading.panel));
+    (void)std::fprintf(stderr, "flow: %s, replicates %d and %d\n", a_entry.video.c_str(), a_entry.replicate,
+                       b_entry.replicate);
+    RR_TRY_ASSIGN(const eval::PairingRun done, pair_job(reading, a, std::move(job), *std::move(articles)));
+    if (const int code = report(done.run, reading.again, *reading.signals); code != kOk) {
+        reading.code = code;
+    }
+    if (!done.score.has_value()) {
+        return std::optional<double>{};  // not done: report() said why
+    }
+    if (!done.score->b_preferred.has_value()) {
+        reading.notes.push_back(std::format("{}, replicates {} and {}: no part both articles tell was read",
+                                            a_entry.video, a_entry.replicate, b_entry.replicate));
+    }
+    return done.score->b_preferred;
+}
+
+// Each video's B preferences, one a pair of its entries read
+// (eval::pairs_to_read()). Stops at a signal.
+Result<std::map<std::string, std::vector<double>, std::less<>>> read_flow(FlowReading& reading,
+                                                                          const RunPair& pair) {
+    std::map<std::string, std::vector<double>, std::less<>> read;
+    for (const eval::VideoPairs& video : eval::pairs_to_read(pair.a_scores, pair.b_scores)) {
+        if (video.a_replicates != video.b_replicates) {
+            reading.notes.push_back(
+                std::format("{}: {} replicates in A and {} in B: the first {} of each paired", video.video,
+                            video.a_replicates, video.b_replicates, video.pairs.size()));
+        }
+        std::vector<double>& values = read[video.video];
+        for (const auto& [a_entry, b_entry] : video.pairs) {
+            RR_TRY_ASSIGN(const std::optional<double> preferred, read_pair(reading, a_entry, b_entry));
+            if (reading.signals->received() != 0) {
+                return read;  // interrupted: the same command takes the pairings up
+            }
+            if (preferred.has_value()) {
+                values.push_back(*preferred);
+            }
+        }
+    }
+    return read;
+}
+
+// The flow row of `eval compare --flow`, by the panel the flags name; none
+// when it could not be read at all, and `code` is the exit code.
+struct FlowRow {
+    std::optional<eval::Comparison> comparison{};
+    std::vector<std::string> notes{};
+    int code = kOk;
+};
+
+FlowRow flow_row(const Hub& hub, const EvalFlags& flags, const RunPair& pair,
+                 const proc::TerminationSignals& signals) {
+    auto panel = eval::read_panel(flags.root, flags.panel);
+    if (!panel.has_value()) {
+        return FlowRow{.code = failed(kBadConfiguration, panel.error())};
+    }
+    auto prompts = prompt::Library::embedded();
+    if (!prompts.has_value()) {
+        return FlowRow{.code = failed(kFailure, prompts.error())};
+    }
+    if (auto frozen = eval::check_panel(*panel, *prompts); !frozen.has_value()) {
+        return FlowRow{.code = failed(kBadConfiguration, frozen.error())};
+    }
+    auto database = library::open_database(hub.settings.library_database());
+    if (!database.has_value()) {
+        return FlowRow{.code = failed(kFailure, database.error())};
+    }
+    FlowReading reading{.hub = &hub,
+                        .database = &*database,
+                        .prompts = &*prompts,
+                        .panel = &*panel,
+                        .signals = &signals,
+                        .again = eval_command(flags, "compare",
+                                              std::format("{} {} --flow --panel {}", flags.baseline,
+                                                          flags.candidate, flags.panel))};
+    auto read = read_flow(reading, pair);
+    if (!read.has_value()) {
+        return FlowRow{.code = failed(kFailure, read.error())};
+    }
+    if (signals.received() != 0) {
+        return FlowRow{.code = reading.code};  // report() said how to take it up
+    }
+    return FlowRow{.comparison = eval::flow_comparison(*panel, *read),
+                   .notes = std::move(reading.notes),
+                   .code = reading.code};
+}
+
+int eval_compare(const Global& global, const EvalFlags& flags, const proc::TerminationSignals& signals) {
     auto hub = load(global);
     if (!hub.has_value()) {
         return failed(kBadConfiguration, hub.error());
@@ -1429,23 +1607,52 @@ int eval_compare(const Global& global, const EvalFlags& flags) {
     if (!gate.has_value()) {
         return failed(kBadConfiguration, gate.error());
     }
+    const eval::Metric* one = flags.metric.has_value() ? eval::find_metric(*flags.metric) : nullptr;
+    if (one != nullptr && one->pairwise && !flags.flow) {
+        return failed(
+            kBadConfiguration,
+            Error{Errc::invalid_argument,
+                  std::format("{} is read pairwise, between the two runs' articles: add --flow, and "
+                              "the panel reads them",
+                              one->name)});
+    }
     auto pair = run_pair(hub->settings, flags);
     if (!pair.has_value()) {
         return pair_failed(pair.error());
     }
-    if (flags.metric.has_value()) {
-        auto text = eval::by_video_text(described(pair->a), described(pair->b), pair->a_scores,
-                                        pair->b_scores, *flags.metric);
-        if (!text.has_value()) {
-            return failed(kBadConfiguration, text.error());
+    FlowRow flow;
+    if (flags.flow) {
+        flow = flow_row(*hub, flags, *pair, signals);
+        if (!flow.comparison.has_value()) {
+            return flow.code;
         }
-        (void)std::fputs(text->c_str(), stdout);
-        return kOk;
     }
-    const std::string text = eval::to_text(described(pair->a), described(pair->b),
-                                           eval::compare_runs(pair->a_scores, pair->b_scores, gate->gated));
+    std::string text;
+    if (one != nullptr && one->pairwise && flow.comparison.has_value()) {
+        text = eval::by_video_text(described(pair->a), described(pair->b), *flow.comparison);
+    } else if (flags.metric.has_value()) {
+        auto by_video = eval::by_video_text(described(pair->a), described(pair->b), pair->a_scores,
+                                            pair->b_scores, *flags.metric);
+        if (!by_video.has_value()) {
+            return failed(kBadConfiguration, by_video.error());
+        }
+        text = *std::move(by_video);
+    } else {
+        std::vector<eval::Comparison> read_pairwise;
+        if (flow.comparison.has_value()) {
+            read_pairwise.push_back(*flow.comparison);
+        }
+        text = eval::to_text(described(pair->a), described(pair->b),
+                             eval::compare_runs(pair->a_scores, pair->b_scores, gate->gated, read_pairwise));
+    }
+    if (!flow.notes.empty()) {
+        text += "\nwhat the flow could not read:\n";
+        for (const std::string& note : flow.notes) {
+            text += std::format("  {}\n", note);
+        }
+    }
     (void)std::fputs(text.c_str(), stdout);
-    return kOk;
+    return flow.code;
 }
 
 int eval_gate(const Global& global, const EvalFlags& flags) {
@@ -1602,6 +1809,11 @@ int run(int argc, char** argv) {
     eval_compare_command->add_option("--gate", eval_flags.gate,
                                      "Whose margins to show, eval/gates/<gate>.toml (default: default)");
     eval_compare_command->add_option("--metric", eval_flags.metric, "One metric, video by video");
+    eval_compare_command->add_flag(
+        "--flow", eval_flags.flow,
+        "Read each video's two articles side by side with the frozen judges: flow");
+    eval_compare_command->add_option("--panel", eval_flags.panel,
+                                     "The frozen panel that reads them, with --flow (default: eval-v1)");
     auto* eval_gate_command = eval_group->add_subcommand(
         "gate", "Whether the candidate may replace the baseline: its invariants and margins (ADR-0019)");
     eval_gate_command->add_option("baseline", eval_flags.baseline, "Run A, the baseline")->required();
@@ -1708,7 +1920,7 @@ int run(int argc, char** argv) {
         return eval_judge(global, eval_flags, signals);
     }
     if (*eval_compare_command) {
-        return eval_compare(global, eval_flags);
+        return eval_compare(global, eval_flags, signals);
     }
     if (*eval_gate_command) {
         return eval_gate(global, eval_flags);

@@ -7,7 +7,7 @@ A **job** takes one video through the **stages**: `source`, `transcript`, `outli
 | `Stage` | `rr/pipeline/stage.hpp` | What a stage reads and makes, its version, its schema, its fingerprint; the cache key |
 | `Executor` | `rr/pipeline/executor.hpp` | Each stage of a job found done or run, checked, committed |
 | `run_job()` | `rr/pipeline/job_run.hpp` | A job taken through the executor and saved: running, done, stopped, needs_user, failed |
-| `Jobs`, `StageStore` | `rr/library/` | The jobs table, each job of a kind: an article, or the eval's annotation (`migrations/0005_job_kind.sql`); artifacts, the stage cache and each job's runs (`migrations/0004_pipeline.sql`) |
+| `Jobs`, `StageStore` | `rr/library/` | The jobs table, each job of a kind: an article, or the eval's annotation (`migrations/0005_job_kind.sql`), judgement (0007) or pairing (0009); artifacts, the stage cache and each job's runs (`migrations/0004_pipeline.sql`) |
 | `JobArmy` | `rr/hub/job_army.hpp` | A job's army, raised the first time a stage needs a model |
 | `SourceStage` | `rr/pipeline/source.hpp` | A video (through yt-dlp) or a caption file, read once |
 | `TranscriptStage` | `rr/pipeline/transcript_stage.hpp` | Captions into numbered sentences; punctuated by the infantry when they are not |
@@ -432,7 +432,7 @@ A rewrite stays the commander's: after a refusal, no other family writes it, so 
 |---|---|
 | `rreport ingest SOURCE [--tier T] [--salt N]` | a new job for a web address or a caption file; `--tier` is checked before a job is made |
 | `rreport resume JOB` | the job taken up again where it stopped; a done job says so. An eval annotation is refused: `rreport eval annotate` takes it up, with its own stages |
-| `rreport jobs [--limit N]` | the library's jobs, newest first, each with its kind: `article` or `annotation` |
+| `rreport jobs [--limit N]` | the library's jobs, newest first, each with its kind: `article`, or the eval's `annotation`, `judgement` or `pairing` |
 | `rreport jobs show JOB` | the job, and each stage: done, found done or failed, with its artifact or its error, and what it could not do |
 | `rreport report JOB [--out FILE]` | the job's article as one web page, with its Fidelity Report, written to `FILE`, by default `reports/JOB.html` beside the library's database; it says where. A job not done is a page too, of what it has ([report.md](report.md)) |
 

@@ -1517,7 +1517,7 @@ name = "every-metric-draws-alike"
 file = "src/eval/stats.cpp"
 expect = "Compare.ResamplesTheVideosUnderTheMetricsOwnSeed"
   [[mutant.edit]]
-  from = '''        comparison.interval = bootstrap_mean(differences, seed_of(metric));'''
+  from = '''        comparison.interval = bootstrap_mean(differences, seed_of(comparison.metric));'''
   to = '''        comparison.interval = bootstrap_mean(differences, 0);'''
 
 [[mutant]]
@@ -1535,8 +1535,8 @@ name = "the-standard-error-is-the-deviation"
 file = "src/eval/stats.cpp"
 expect = "Compare.PairsTheVideosBothRunsScoredAndLeavesOutTheRest"
   [[mutant.edit]]
-  from = '''        comparison.standard_error = standard_deviation(differences) / std::sqrt(videos);'''
-  to = '''        comparison.standard_error = standard_deviation(differences);'''
+  from = '''            standard_deviation(differences) / std::sqrt(static_cast<double>(differences.size()));'''
+  to = '''            standard_deviation(differences);'''
 
 [[mutant]]
 name = "the-deviation-is-the-populations"
@@ -1877,3 +1877,343 @@ expect = "RunsTest.ARunNeedsALabelAndOneReplicateAtLeast"
   [[mutant.edit]]
   from = '''    if (spec.first_replicate < 0) {'''
   to = '''    if (spec.first_replicate < -1) {'''
+
+# --- Flow, read pairwise (flow.cpp; stats.cpp, compare.cpp, gate.cpp, metrics.cpp; P25b) ----
+
+[[mutant]]
+name = "a-section-starts-at-its-last-atom"
+file = "src/eval/flow.cpp"
+expect = "ArticleSections.AreItsHeadingsEachWithItsProseWithoutMarkersAndWhereItsAtomsWereSaid"
+  [[mutant.edit]]
+  from = '''            section.first = section.first.has_value() ? std::min(*section.first, said) : said;'''
+  to = '''            section.first = section.first.has_value() ? std::max(*section.first, said) : said;'''
+
+[[mutant]]
+name = "a-marker-of-no-atom-places-a-section"
+file = "src/eval/flow.cpp"
+expect = "ArticleSections.AreItsHeadingsEachWithItsProseWithoutMarkersAndWhereItsAtomsWereSaid"
+  [[mutant.edit]]
+  from = '''        if (atom == nullptr) {'''
+  to = '''        if (false) {'''
+
+[[mutant]]
+name = "a-title-is-left-out"
+file = "src/eval/flow.cpp"
+expect = "PartsOf.AreTheSectionsOfOneOutlineSectionBySection"
+  [[mutant.edit]]
+  from = '''                placed.push_back(
+                    Placed{.first = *section.first, .last = *section.first, .in_a = in_a, .index = waiting});'''
+  to = '''                (void)waiting;'''
+
+[[mutant]]
+name = "a-section-citing-nothing-is-left-out"
+file = "src/eval/flow.cpp"
+expect = "PartsOf.GiveASectionCitingNothingToTheOneBeforeAndLeaveOutWhatOneArticleAloneTells"
+  [[mutant.edit]]
+  from = '''            placed.push_back(Placed{.first = *before, .last = *before, .in_a = in_a, .index = index});'''
+  to = '''            (void)before;'''
+
+[[mutant]]
+name = "touching-is-not-overlapping"
+file = "src/eval/flow.cpp"
+expect = "PartsOf.JoinSectionsCutDifferentlyWhereTheyOverlap"
+  [[mutant.edit]]
+  from = '''        if (!parts.empty() && one.first <= parts.back().last) {'''
+  to = '''        if (!parts.empty() && one.first < parts.back().last) {'''
+
+[[mutant]]
+name = "a-stretch-one-article-tells-is-a-part"
+file = "src/eval/flow.cpp"
+expect = "PartsOf.GiveASectionCitingNothingToTheOneBeforeAndLeaveOutWhatOneArticleAloneTells"
+  [[mutant.edit]]
+  from = '''    std::erase_if(parts, [](const Part& part) { return part.a.empty() || part.b.empty(); });'''
+  to = '''    std::erase_if(parts, [](const Part& part) { return part.a.empty() && part.b.empty(); });'''
+
+[[mutant]]
+name = "a-parts-sections-are-in-the-videos-order"
+file = "src/eval/flow.cpp"
+expect = "PartsOf.JoinSectionsCutDifferentlyWhereTheyOverlap"
+  [[mutant.edit]]
+  from = '''        std::ranges::sort(part.a);'''
+  to = '''        (void)part.a;'''
+
+[[mutant]]
+name = "sections-run-together"
+file = "src/eval/flow.cpp"
+expect = "FlowStage.ReadsEveryPartByEveryJudgeInBothOrders"
+  [[mutant.edit]]
+  from = '''        text += std::format("{}{}", text.empty() ? "" : "\n\n", sections[index].text);'''
+  to = '''        text += std::format("{}{}", text.empty() ? "" : "\n", sections[index].text);'''
+
+[[mutant]]
+name = "a-is-always-shown-first"
+file = "src/eval/flow.cpp"
+expect = "FlowStage.CountsAPreferenceOnlyWhenItSurvivesTheSwap"
+  [[mutant.edit]]
+  from = '''                                       {"first", a_first ? a_text : b_text},'''
+  to = '''                                       {"first", a_text},'''
+
+[[mutant]]
+name = "one-order-is-asked"
+file = "src/eval/flow.cpp"
+expect = "FlowStage.ReadsEveryPartByEveryJudgeInBothOrders"
+  [[mutant.edit]]
+  from = '''            for (const bool a_first : {true, false}) {'''
+  to = '''            for (const bool a_first : {true}) {'''
+
+[[mutant]]
+name = "a-part-no-engine-holds-is-asked"
+file = "src/eval/flow.cpp"
+expect = "FlowStage.LeavesUnreadAPartAJudgesEngineCannotHold"
+  [[mutant.edit]]
+  from = '''            if (!std::ranges::all_of(both, [&](const Order& order) { return army_->holds(order.mission); })) {'''
+  to = '''            if (false && !std::ranges::all_of(both, [&](const Order& order) { return army_->holds(order.mission); })) {'''
+
+[[mutant]]
+name = "the-judges-sample"
+file = "src/eval/flow.cpp"
+expect = "FlowStage.ReadsEveryPartByEveryJudgeInBothOrders"
+  [[mutant.edit]]
+  from = '''                                                           .temperature = 0.0,  // greedy, as a frozen judge'''
+  to = '''                                                           .temperature = 0.7,  // greedy, as a frozen judge'''
+
+[[mutant]]
+name = "the-judges-think"
+file = "src/eval/flow.cpp"
+expect = "FlowStage.ReadsEveryPartByEveryJudgeInBothOrders"
+  [[mutant.edit]]
+  from = '''                                                           .thinking = false},'''
+  to = '''                                                           .thinking = true},'''
+
+[[mutant]]
+name = "a-preference-is-kept-as-the-other-orders"
+file = "src/eval/flow.cpp"
+expect = "FlowStage.CountsAPreferenceOnlyWhenItSurvivesTheSwap"
+  [[mutant.edit]]
+  from = '''        (order.a_first ? reading.a_first : reading.b_first) = better;'''
+  to = '''        (order.a_first ? reading.b_first : reading.a_first) = better;'''
+
+[[mutant]]
+name = "an-unread-reading-says-not-why"
+file = "src/eval/flow.cpp"
+expect = "FlowStage.AReadingOneOfWhoseOrdersNoAnswerSettledIsUnread"
+  [[mutant.edit]]
+  from = '''                reading.unread = pipeline::why_unanswered(outcome, *army_, "read it");'''
+  to = '''                reading.unread = "";'''
+
+[[mutant]]
+name = "an-unread-reading-is-no-finding"
+file = "src/eval/flow.cpp"
+expect = "FlowStage.AReadingOneOfWhoseOrdersNoAnswerSettledIsUnread"
+  [[mutant.edit]]
+  from = '''                findings_.push_back(std::format("{} to {}: the {} could not read it: {}", part.first.str(),'''
+  to = '''                std::vector<std::string>{}.push_back(std::format("{} to {}: the {} could not read it: {}", part.first.str(),'''
+
+[[mutant]]
+name = "a-wins-are-counted-for-b"
+file = "src/eval/flow.cpp"
+expect = "FlowScore.IsBsPreferenceAPartWhenBothOrdersAgreeMeanedOverJudgesThenParts"
+  [[mutant.edit]]
+  from = '''        sum += static_cast<double>(tally.b - tally.a) / static_cast<double>(tally.pairs());'''
+  to = '''        sum += static_cast<double>(tally.a - tally.b) / static_cast<double>(tally.pairs());'''
+
+[[mutant]]
+name = "position-bias-is-not-counted"
+file = "src/eval/flow.cpp"
+expect = "FlowScore.IsBsPreferenceAPartWhenBothOrdersAgreeMeanedOverJudgesThenParts"
+  [[mutant.edit]]
+  from = '''        score.inconsistent += static_cast<std::size_t>(tally.inconsistent);'''
+  to = '''        (void)tally.inconsistent;'''
+
+[[mutant]]
+name = "a-part-no-judge-read-is-counted"
+file = "src/eval/flow.cpp"
+expect = "FlowScore.IsBsPreferenceAPartWhenBothOrdersAgreeMeanedOverJudgesThenParts"
+  [[mutant.edit]]
+  from = '''            continue;  // no judge read it'''
+  to = '''            ;  // no judge read it'''
+
+[[mutant]]
+name = "replicates-are-paired-in-the-order-listed"
+file = "src/eval/flow.cpp"
+expect = "PairsToRead.AreReplicateKOfAWithReplicateKOfBOfEachVideoBothRunsHave"
+  [[mutant.edit]]
+  from = '''        std::ranges::sort(entries, {}, &RunEntry::replicate);'''
+  to = '''        (void)entries;'''
+
+[[mutant]]
+name = "replicate-k-of-a-is-paired-with-the-last-of-b"
+file = "src/eval/flow.cpp"
+expect = "PairsToRead.AreReplicateKOfAWithReplicateKOfBOfEachVideoBothRunsHave"
+  [[mutant.edit]]
+  from = '''            paired.pairs.emplace_back(a_entries[index], b_entries[index]);'''
+  to = '''            paired.pairs.emplace_back(a_entries[index], b_entries[b_entries.size() - 1 - index]);'''
+
+[[mutant]]
+name = "a-video-no-pair-of-which-was-read-is-zero"
+file = "src/eval/flow.cpp"
+expect = "FlowComparison.IsEachVideosMeanOverItsPairsReadUnderThePanel"
+  [[mutant.edit]]
+  from = '''        if (!values.empty()) {'''
+  to = '''        if (true) {'''
+
+[[mutant]]
+name = "a-videos-pairs-are-summed"
+file = "src/eval/flow.cpp"
+expect = "FlowComparison.IsEachVideosMeanOverItsPairsReadUnderThePanel"
+  [[mutant.edit]]
+  from = '''                                           static_cast<double>(values.size()));'''
+  to = '''                                           1.0);'''
+
+[[mutant]]
+name = "two-transcripts-are-compared"
+file = "src/eval/flow.cpp"
+expect = "Pairings.OnlyTwoArticlesOfOneTranscriptAreCompared"
+  [[mutant.edit]]
+  from = '''    if (json::content_hash(knowledge::to_json(*first.transcript)) !='''
+  to = '''    if (false && json::content_hash(knowledge::to_json(*first.transcript)) !='''
+
+[[mutant]]
+name = "a-pair-is-titled-by-its-job"
+file = "src/eval/flow.cpp"
+expect = "Pairings.OnlyTwoArticlesOfOneTranscriptAreCompared"
+  [[mutant.edit]]
+  from = '''        .title = first.video.has_value() ? first.video->title : a.title.value_or(a.source),'''
+  to = '''        .title = a.source,'''
+
+[[mutant]]
+name = "a-pair-is-paired-anew"
+file = "src/eval/flow.cpp"
+expect = "Pairings.TwoArticlesHaveOnePairingAPanelInTheOrderCompared"
+  [[mutant.edit]]
+  from = '''    if (found.has_value()) {'''
+  to = '''    if (false && found.has_value()) {'''
+
+[[mutant]]
+name = "a-pairing-is-not-titled"
+file = "src/eval/flow.cpp"
+expect = "Pairings.TwoArticlesHaveOnePairingAPanelInTheOrderCompared"
+  [[mutant.edit]]
+  from = '''    job.title = a.title;  // what `rreport jobs` lists it by: the video'''
+  to = '''    (void)a.title;'''
+
+[[mutant]]
+name = "a-pairing-names-one-job"
+file = "src/eval/flow.cpp"
+expect = "Pairings.TwoArticlesHaveOnePairingAPanelInTheOrderCompared"
+  [[mutant.edit]]
+  from = '''                  jobs.create(std::format("{} {}", a.id, b.id), panel.name, 0, library::JobKind::pairing));'''
+  to = '''                  jobs.create(std::format("{}", a.id), panel.name, 0, library::JobKind::pairing));'''
+
+[[mutant]]
+name = "b-against-a-is-a-against-b"
+file = "src/eval/flow.cpp"
+expect = "Pairings.TwoArticlesHaveOnePairingAPanelInTheOrderCompared"
+  [[mutant.edit]]
+  from = '''            {a.id, b.id, panel.name});'''
+  to = '''            {b.id, a.id, panel.name});'''
+
+[[mutant]]
+name = "a-pairing-done-is-not-scored"
+file = "src/eval/flow.cpp"
+expect = "Pairings.APairingDoneIsScoredAndAPairUnchangedIsNeverReadTwice"
+  [[mutant.edit]]
+  from = '''    paired.score = flow_score(pairing);'''
+  to = '''    (void)pairing;'''
+
+[[mutant]]
+name = "a-pairings-key-holds-no-title"
+file = "src/eval/flow.cpp"
+expect = "FlowStage.ItsKeyHoldsBothArticlesAndThePanel"
+  [[mutant.edit]]
+  from = '''        {"video", json::Json{{"title", articles.title}, {"channel", articles.channel}}},'''
+  to = '''        {"video", json::Json{{"channel", articles.channel}}},'''
+
+[[mutant]]
+name = "the-key-holds-as-article-for-bs"
+file = "src/eval/flow.cpp"
+expect = "FlowStage.ItsKeyHoldsBothArticlesAndThePanel"
+  [[mutant.edit]]
+  from = '''                         {"article", json::content_hash(knowledge::to_json(articles.b)).hex()}}}};'''
+  to = '''                         {"article", json::content_hash(knowledge::to_json(articles.a)).hex()}}}};'''
+
+[[mutant]]
+name = "the-key-holds-not-what-an-engine-holds"
+file = "src/eval/flow.cpp"
+expect = "FlowStage.ItsKeyHoldsBothArticlesAndThePanel"
+  [[mutant.edit]]
+  from = '''                                    {"holds", engines[index]->ctx_per_slot},  // which parts are read'''
+  to = '''                                    {"holds", 0},  // which parts are read'''
+
+[[mutant]]
+name = "no-pod-is-asked-for-an-army"
+file = "src/eval/flow.cpp"
+expect = "FlowStage.ItsKeyHoldsBothArticlesAndThePanel"
+  [[mutant.edit]]
+  from = '''    if (!context.army) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-pairwise-difference-is-nothing"
+file = "src/eval/stats.cpp"
+expect = "ComparePairwise.IsOfTheVideosOwnDifferencesWithNoAAndNoB"
+  [[mutant.edit]]
+  from = '''        comparison.difference = mean(values);'''
+  to = '''        comparison.difference = 0;'''
+
+[[mutant]]
+name = "no-video-shows-a-difference"
+file = "src/eval/compare.cpp"
+expect = "CompareText.ARowNoVideoBothRunsScoredShowsNoDifference"
+  [[mutant.edit]]
+  from = '''    const std::string difference = compared.videos == 0 ? "-" : detail::signed_shown(compared.difference);'''
+  to = '''    const std::string difference = detail::signed_shown(compared.difference);'''
+
+[[mutant]]
+name = "a-pairwise-row-is-left-out"
+file = "src/eval/compare.cpp"
+expect = "CompareRuns.PutsAMetricReadPairwiseWhereTheRegistryHasItWithNoAAndNoB"
+  [[mutant.edit]]
+  from = '''                row.comparison = *read;
+                rows.push_back(std::move(row));'''
+  to = '''                row.comparison = *read;'''
+
+[[mutant]]
+name = "a-pairwise-metric-is-read-from-the-runs"
+file = "src/eval/compare.cpp"
+expect = "CompareRuns.PutsAMetricReadPairwiseWhereTheRegistryHasItWithNoAAndNoB"
+  [[mutant.edit]]
+  from = '''        if (metric.pairwise) {'''
+  to = '''        if (false) {'''
+
+[[mutant]]
+name = "a-pairwise-video-is-not-listed"
+file = "src/eval/compare.cpp"
+expect = "ByVideoText.OfAMetricReadPairwiseListsEachVideosPreference"
+  [[mutant.edit]]
+  from = '''        text += pairwise_line(video, detail::signed_shown(difference));'''
+  to = '''        (void)difference;'''
+
+[[mutant]]
+name = "flow-may-be-gated"
+file = "src/eval/gate.cpp"
+expect = "Gate.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (metric.pairwise) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "flow-is-a-runs-own"
+file = "src/eval/metrics.cpp"
+expect = "Metrics.FlowAloneIsReadPairwiseByTheJudgesAndIsBetterHigher"
+  [[mutant.edit]]
+  from = '''    Metric{.name = "flow", .family = kJudges, .better = Better::higher, .pairwise = true},'''
+  to = '''    Metric{.name = "flow", .family = kJudges, .better = Better::higher},'''
+
+[[mutant]]
+name = "flow-is-better-lower"
+file = "src/eval/metrics.cpp"
+expect = "Metrics.FlowAloneIsReadPairwiseByTheJudgesAndIsBetterHigher"
+  [[mutant.edit]]
+  from = '''    Metric{.name = "flow", .family = kJudges, .better = Better::higher, .pairwise = true},'''
+  to = '''    Metric{.name = "flow", .family = kJudges, .better = Better::lower, .pairwise = true},'''

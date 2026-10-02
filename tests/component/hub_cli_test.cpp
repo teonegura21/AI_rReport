@@ -14,6 +14,7 @@
 #include <rr/core/clock.hpp>
 #include <rr/core/file_io.hpp>
 #include <rr/core/hash.hpp>
+#include <rr/eval/panel.hpp>
 #include <rr/eval/run.hpp>
 #include <rr/fakes/fake_runpod.hpp>
 #include <rr/json/json.hpp>
@@ -21,6 +22,7 @@
 #include <rr/library/jobs.hpp>
 #include <rr/library/library.hpp>
 #include <rr/proc/process.hpp>
+#include <rr/prompt/library.hpp>
 #include <rr/testkit/result.hpp>
 #include <rr/testkit/temp_dir.hpp>
 
@@ -511,6 +513,26 @@ TEST_F(Hub, AJudgementIsTakenUpByEvalJudgeAndPagedByTheArticleItJudges) {
     EXPECT_THAT(rreport({"jobs"}).stdout_text, HasSubstr("judgement"));
 }
 
+TEST_F(Hub, APairingIsTakenUpByEvalCompareAndHasNoPageOfItsOwn) {
+    std::string pairing;
+    {
+        db::Database database =
+            unwrap(library::open_database(data_dir() / "libraries" / "default" / "library.db"));
+        library::Jobs jobs{database, SystemClock::instance()};
+        const std::string a = unwrap(jobs.create("talk.vtt", "max", 0)).id;
+        const std::string b = unwrap(jobs.create("talk.vtt", "fast", 0)).id;
+        pairing = unwrap(jobs.create(std::format("{} {}", a, b), "eval-v1", 0, library::JobKind::pairing)).id;
+    }
+    const proc::RunResult resumed = rreport({"resume", pairing});
+    EXPECT_EQ(resumed.status.code, 2) << "a pairing runs other stages than an article";
+    EXPECT_THAT(resumed.stderr_text,
+                HasSubstr("`rreport eval compare --flow` takes it up again, with its runs' labels"));
+    const proc::RunResult paged = rreport({"report", pairing});
+    EXPECT_EQ(paged.status.code, 2) << "a pairing has no article of its own";
+    EXPECT_THAT(paged.stderr_text, HasSubstr("has none of its own: `rreport report` pages each"));
+    EXPECT_THAT(rreport({"jobs"}).stdout_text, HasSubstr("pairing"));
+}
+
 // A gate of one invariant and one margin, and a panel to read judged metrics
 // by, as a person would write them.
 constexpr std::string_view kGate = R"toml(name = "g"
@@ -542,6 +564,21 @@ role = "commander"
 model = "chat"
 sha256 = "c600de0300ae8a0eb3a6c0b8b5561b8b96f16bd2c863c2a66c42de29d391a747"
 )toml";
+
+// A panel frozen for this rreport's prompts: it reads, once its judges are served.
+std::string frozen_panel() {
+    const prompt::Library prompts = unwrap(prompt::Library::embedded());
+    std::string text =
+        std::format("name = \"frozen\"\nprocedure = {}\ncalibrated = false\n", eval::kJudgingProcedure);
+    for (const std::string_view name : eval::kJudgePrompts) {
+        const prompt::Version& current = prompts.find(name)->current();
+        text += std::format("[[prompt]]\nname = \"{}\"\nversion = {}\nhash = \"{}\"\n", name, current.number,
+                            current.hash);
+    }
+    return text +
+           "[[judge]]\nrole = \"commander\"\nmodel = \"chat\"\nsha256 = "
+           "\"c600de0300ae8a0eb3a6c0b8b5561b8b96f16bd2c863c2a66c42de29d391a747\"\n";
+}
 
 TEST_F(Hub, TwoRunsAreComparedAndTheGateDecidesOnlyWhatItsNumbersCanSay) {
     const std::filesystem::path eval_dir = home() / "eval";
@@ -615,6 +652,26 @@ TEST_F(Hub, TwoRunsAreComparedAndTheGateDecidesOnlyWhatItsNumbersCanSay) {
     const proc::RunResult aa = eval({"gate", "base", "base-aa", "--aa", "--gate", "g", "--panel", "p"});
     EXPECT_EQ(aa.status.code, 0) << aa.stdout_text << aa.stderr_text;
     EXPECT_THAT(aa.stdout_text, HasSubstr("gate g: its margins hold\n"));
+
+    const proc::RunResult flow_alone = eval({"compare", "base", "cand", "--gate", "g", "--metric", "flow"});
+    EXPECT_EQ(flow_alone.status.code, 2);
+    EXPECT_THAT(flow_alone.stderr_text,
+                HasSubstr("flow is read pairwise, between the two runs' articles: add --flow"));
+    const proc::RunResult stale = eval({"compare", "base", "cand", "--gate", "g", "--flow", "--panel", "p"});
+    EXPECT_EQ(stale.status.code, 2) << "a panel frozen for other prompts reads nothing";
+    EXPECT_THAT(stale.stderr_text, Not(HasSubstr("flow: lecture"))) << "no pairing started";
+
+    (void)home().write_file("eval/judges/frozen.toml", frozen_panel());
+    const proc::RunResult unread =
+        eval({"compare", "base", "cand", "--gate", "g", "--flow", "--panel", "frozen"});
+    EXPECT_EQ(unread.status.code, 1) << "pairs of jobs not done, not read" << unread.stderr_text;
+    EXPECT_THAT(unread.stdout_text,
+                HasSubstr("\nwhat the flow could not read:\n  not paired: lecture, replicates 0 "
+                          "and 0: job "));
+    EXPECT_THAT(unread.stdout_text, HasSubstr(" is running\n"));
+    EXPECT_THAT(unread.stdout_text,
+                HasSubstr("  flow                          0         -         -         -   -"))
+        << "a row, of no video";
 }
 
 TEST_F(Hub, TheEvalSaysWhatIsMissing) {

@@ -4,6 +4,7 @@ rr_add_test_suite(eval
         annotate_test.cpp
         compare_test.cpp
         export_test.cpp
+        flow_test.cpp
         gate_test.cpp
         gold_test.cpp
         judgement_test.cpp

@@ -42,6 +42,19 @@ TEST(Metrics, SayWhichWayTheyAreBetter) {
     EXPECT_EQ(to_string(Better::neither), "neither");
 }
 
+TEST(Metrics, FlowAloneIsReadPairwiseByTheJudgesAndIsBetterHigher) {
+    std::set<std::string_view> pairwise;
+    for (const Metric& metric : metrics()) {
+        if (metric.pairwise) {
+            pairwise.insert(metric.name);
+        }
+    }
+    EXPECT_EQ(pairwise, std::set<std::string_view>{"flow"});
+    EXPECT_EQ(find_metric("flow")->family, "judges");
+    EXPECT_EQ(find_metric("flow")->better, Better::higher) << "B preferred";
+    EXPECT_FALSE(find_metric("flow")->cost);
+}
+
 TEST(Metrics, CostsAreTheCodesAndBetterLower) {
     std::set<std::string_view> costs;
     for (const Metric& metric : metrics()) {

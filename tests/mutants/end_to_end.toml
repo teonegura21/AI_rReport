@@ -47,3 +47,11 @@ expect = "EndToEnd.TwoRunsOfOnePipelineAreComparedAndGatedAndAnAaRunHoldsTheGate
   [[mutant.edit]]
   from = '''                         .first_replicate = flags.first_replicate};'''
   to = '''                         .first_replicate = 0};'''
+
+[[mutant]]
+name = "no-pair-is-read"
+file = "apps/rreport/main.cpp"
+expect = "EndToEnd.TwoRunsOfOnePipelineAreComparedAndGatedAndAnAaRunHoldsTheGatesMargins"
+  [[mutant.edit]]
+  from = '''                values.push_back(*preferred);'''
+  to = '''                values.clear();'''

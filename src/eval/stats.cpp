@@ -76,6 +76,17 @@ std::vector<double> resampled_means(std::span<const double> values, std::uint64_
     return means;
 }
 
+// `comparison`'s interval and standard error, of `differences`, each
+// video's, when there are two at least.
+void spread(Comparison& comparison, std::span<const double> differences) {
+    comparison.videos = differences.size();
+    if (differences.size() >= 2) {
+        comparison.interval = bootstrap_mean(differences, seed_of(comparison.metric));
+        comparison.standard_error =
+            standard_deviation(differences) / std::sqrt(static_cast<double>(differences.size()));
+    }
+}
+
 // "code@1 and code@2", for a message.
 std::string scorers_named(const std::set<std::string, std::less<>>& scorers) {
     const std::vector<std::string> named{scorers.begin(), scorers.end()};
@@ -169,18 +180,29 @@ Result<Comparison> compare(std::span<const ScoredEntry> a, std::span<const Score
         }
     }
     std::ranges::sort(comparison.unpaired);
-    comparison.videos = differences.size();
-    if (differences.empty()) {
-        return comparison;
+    if (!differences.empty()) {
+        const auto videos = static_cast<double>(differences.size());
+        comparison.a = sum_a / videos;
+        comparison.b = sum_b / videos;
+        comparison.difference = *comparison.b - *comparison.a;
     }
-    const auto videos = static_cast<double>(differences.size());
-    comparison.a = sum_a / videos;
-    comparison.b = sum_b / videos;
-    comparison.difference = comparison.b - comparison.a;
-    if (differences.size() >= 2) {
-        comparison.interval = bootstrap_mean(differences, seed_of(metric));
-        comparison.standard_error = standard_deviation(differences) / std::sqrt(videos);
+    spread(comparison, differences);
+    return comparison;
+}
+
+Comparison compare_pairwise(std::string_view metric, std::string scorer,
+                            std::map<std::string, double, std::less<>> differences) {
+    Comparison comparison{.metric = std::string{metric}, .scorer = std::move(scorer)};
+    std::vector<double> values;
+    values.reserve(differences.size());
+    for (const auto& [video, value] : differences) {
+        values.push_back(value);
     }
+    if (!values.empty()) {
+        comparison.difference = mean(values);
+    }
+    comparison.differences = std::move(differences);
+    spread(comparison, values);
     return comparison;
 }
 

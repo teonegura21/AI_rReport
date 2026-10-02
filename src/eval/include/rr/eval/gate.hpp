@@ -87,8 +87,9 @@ struct Gate {
 
 // `text`, the gate `name`'s file, read strictly, as every file of the eval:
 // a metric this rreport does not score, one better neither higher nor lower,
-// a cost; a metric named twice; a negative margin; a gate with nothing to
-// check: each Errc::invalid_argument saying where.
+// a cost, one read pairwise (no run scores it); a metric named twice; a
+// negative margin; a gate with nothing to check: each Errc::invalid_argument
+// saying where.
 [[nodiscard]] Result<Gate> parse_gate(std::string_view name, std::string_view text);
 [[nodiscard]] Result<Gate> read_gate(const std::filesystem::path& eval_root, std::string_view name);
 

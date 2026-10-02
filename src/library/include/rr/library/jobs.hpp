@@ -58,6 +58,7 @@ enum class JobKind : std::uint8_t {
     article,     // a video, through the article's stages (rreport ingest)
     annotation,  // an eval snapshot, through the annotation's (rreport eval annotate)
     judgement,   // an article job's article, read by the eval's judges (rreport eval judge)
+    pairing,     // two article jobs' articles, compared by the eval's judges (rreport eval compare --flow)
 };
 
 [[nodiscard]] std::string_view to_string(JobKind kind) noexcept;

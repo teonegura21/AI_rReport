@@ -132,6 +132,67 @@ TEST(Library, Migration8StartsEveryRunMadeBeforeAtReplicateZero) {
     EXPECT_ERRC(negative, Errc::invalid_argument) << "the table's own check";
 }
 
+// Migration 0009 makes `jobs` anew for the pairing kind, as 0007 did for the
+// judgement's, and keeps which job compares two article jobs under a panel.
+TEST(Library, Migration9PairsTwoArticleJobsOnceAPanelAndKeepsEveryJob) {
+    db::Database database = unwrap(db::Database::open({.path = ":memory:"}));
+    ASSERT_EQ(unwrap(database.migrate(migrations().first(8))), 8);
+    unwrap(database.write([](db::WriteTx& tx) -> Result<void> {
+        RR_TRY(tx.execute_script(
+            "INSERT INTO jobs (id, source, tier, salt, status, elapsed_ms, created_at_ms, updated_at_ms, "
+            "kind) "
+            "VALUES ('A', 'talk.vtt', 'max', 0, 'done', 1, 1, 2, 'article'), "
+            "('B', 'talk.vtt', 'fast', 0, 'done', 1, 3, 4, 'article'), "
+            "('J', 'A', 'eval-v1', 0, 'done', 1, 5, 6, 'judgement');"
+            "INSERT INTO eval_judgements (article_job_id, panel, job_id) VALUES ('A', 'eval-v1', 'J');"));
+        return ok();
+    }));
+    const auto pairing = [&](std::string_view id, std::string_view a, std::string_view b) {
+        return database.write([&](db::WriteTx& tx) -> Result<void> {
+            RR_TRY(tx.execute(
+                "INSERT OR IGNORE INTO jobs (id, source, tier, salt, status, elapsed_ms, created_at_ms, "
+                "updated_at_ms, kind) VALUES (?1, ?2 || ' ' || ?3, 'eval-v1', 0, 'running', 0, 7, 7, "
+                "'pairing')",
+                {std::string{id}, std::string{a}, std::string{b}}));
+            RR_TRY(
+                tx.execute("INSERT INTO eval_pairings (first_job_id, second_job_id, panel, job_id) VALUES "
+                           "(?1, ?2, 'eval-v1', ?3)",
+                           {std::string{a}, std::string{b}, std::string{id}}));
+            return ok();
+        });
+    };
+    EXPECT_ERRC(database.write([](db::WriteTx& tx) -> Result<void> {
+        RR_TRY(
+            tx.execute("INSERT INTO jobs (id, source, tier, salt, status, elapsed_ms, created_at_ms, "
+                       "updated_at_ms, kind) "
+                       "VALUES ('P', 'A B', 'eval-v1', 0, 'running', 0, 7, 7, 'pairing')"));
+        return ok();
+    }),
+                Errc::invalid_argument)
+        << "version 8 knows no pairing";
+
+    ASSERT_GE(migrations().size(), 9U);
+    ASSERT_EQ(unwrap(database.migrate(migrations().first(9))), 9);
+    EXPECT_EQ(unwrap(database.read([](db::ReadTx& tx) {
+                  return tx.query_text(
+                      "SELECT group_concat(id || ' ' || source || ' ' || tier || ' ' || status || ' ' || "
+                      "kind, '; ') "
+                      "FROM jobs");
+              })),
+              "A talk.vtt max done article; B talk.vtt fast done article; J A eval-v1 done judgement")
+        << "every job kept";
+    EXPECT_EQ(unwrap(database.read([](db::ReadTx& tx) {
+                  return tx.query_int("SELECT COUNT(*) FROM eval_judgements JOIN jobs ON jobs.id = job_id");
+              })),
+              1)
+        << "what referred to a job refers to it still";
+    unwrap(pairing("P", "A", "B"));
+    EXPECT_ERRC(pairing("Q", "A", "B"), Errc::conflict) << "one pairing a pair a panel";
+    unwrap(pairing("R", "B", "A"));  // B against A: another comparison
+    EXPECT_ERRC(pairing("P", "A", "J"), Errc::conflict) << "a pairing job compares one pair";
+    EXPECT_ERRC(pairing("S", "A", "Z"), Errc::conflict) << "an article job of no row: foreign keys on again";
+}
+
 TEST(Library, RefusesADatabaseFromANewerRreport) {
     const testkit::TempDir dir;
     const std::filesystem::path file = dir / "library.db";

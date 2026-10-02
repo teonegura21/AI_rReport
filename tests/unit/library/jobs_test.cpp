@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <format>
 #include <string>
 #include <vector>
 
@@ -77,14 +78,18 @@ TEST_F(JobsTest, AJobSaysWhatItMakes) {
     EXPECT_EQ(unwrap(jobs().find(article.id)).kind, JobKind::article);
     const Job judgement = unwrap(jobs().create(article.id, "eval-v1", 0, JobKind::judgement));
     EXPECT_EQ(unwrap(jobs().find(judgement.id)).kind, JobKind::judgement) << "the table takes it (0007)";
+    const Job pairing =
+        unwrap(jobs().create(std::format("{} {}", article.id, article.id), "eval-v1", 0, JobKind::pairing));
+    EXPECT_EQ(unwrap(jobs().find(pairing.id)).kind, JobKind::pairing) << "the table takes it (0009)";
 }
 
 TEST(JobKind, NamesItsKinds) {
-    for (const JobKind kind : {JobKind::article, JobKind::annotation, JobKind::judgement}) {
+    for (const JobKind kind : {JobKind::article, JobKind::annotation, JobKind::judgement, JobKind::pairing}) {
         EXPECT_EQ(job_kind_from_string(to_string(kind)), kind);
     }
     EXPECT_EQ(to_string(JobKind::annotation), "annotation");
     EXPECT_EQ(to_string(JobKind::judgement), "judgement");
+    EXPECT_EQ(to_string(JobKind::pairing), "pairing");
     EXPECT_EQ(job_kind_from_string("report"), std::nullopt);
 }
 

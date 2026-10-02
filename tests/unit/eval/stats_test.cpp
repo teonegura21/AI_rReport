@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <format>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -18,6 +19,7 @@ using ::testing::DoubleNear;
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
+using ::testing::Optional;
 using ::testing::Pair;
 using testkit::unwrap;
 
@@ -91,8 +93,8 @@ TEST(Compare, PairsTheVideosBothRunsScoredAndLeavesOutTheRest) {
     EXPECT_EQ(compared.scorer, "code@1");
     EXPECT_EQ(compared.videos, 2U);
     EXPECT_THAT(compared.unpaired, ElementsAre("news", "tutorial"));
-    EXPECT_THAT(compared.a, DoubleNear(0.7, 1e-12)) << "A's mean over the videos B scored too";
-    EXPECT_THAT(compared.b, DoubleNear(0.75, 1e-12));
+    EXPECT_THAT(compared.a, Optional(DoubleNear(0.7, 1e-12))) << "A's mean over the videos B scored too";
+    EXPECT_THAT(compared.b, Optional(DoubleNear(0.75, 1e-12)));
     EXPECT_THAT(compared.difference, DoubleNear(0.05, 1e-12));
     EXPECT_THAT(compared.differences, ElementsAre(Pair("lecture", DoubleNear(0.1, 1e-12)),
                                                   Pair("podcast", DoubleNear(0.0, 1e-12))));
@@ -156,7 +158,33 @@ TEST(Compare, OfAMetricNeitherRunHasIsEmpty) {
         compare(std::vector{told("lecture", 0, 0.8)}, std::vector{told("lecture", 0, 0.9)}, "facts_told"));
     EXPECT_EQ(compared.scorer, "");
     EXPECT_EQ(compared.videos, 0U);
+    EXPECT_EQ(compared.a, std::nullopt) << "no video, no mean";
     EXPECT_THAT(compared.unpaired, IsEmpty());
+}
+
+TEST(ComparePairwise, IsOfTheVideosOwnDifferencesWithNoAAndNoB) {
+    const std::map<std::string, double, std::less<>> preferences{
+        {"lecture", 0.5}, {"podcast", 0.0}, {"tutorial", 1.0}};
+    const Comparison compared = compare_pairwise("flow", "judges@eval-v1", preferences);
+    EXPECT_EQ(compared.metric, "flow");
+    EXPECT_EQ(compared.scorer, "judges@eval-v1");
+    EXPECT_EQ(compared.videos, 3U);
+    EXPECT_EQ(compared.a, std::nullopt) << "no run has a flow of its own";
+    EXPECT_EQ(compared.b, std::nullopt);
+    EXPECT_THAT(compared.difference, DoubleNear(0.5, 1e-12));
+    EXPECT_EQ(compared.differences, preferences);
+    // sd(0.5, 0, 1) = 0.5, over √3.
+    EXPECT_THAT(compared.standard_error, Optional(DoubleNear(0.5 / std::sqrt(3.0), 1e-12)));
+    EXPECT_EQ(compared.interval, bootstrap_mean(std::vector<double>{0.5, 0.0, 1.0}, seed_of("flow")))
+        << "resampled as any difference, under the metric's own seed";
+
+    const Comparison one = compare_pairwise("flow", "judges@eval-v1", {{"lecture", -1.0}});
+    EXPECT_EQ(one.difference, -1.0);
+    EXPECT_EQ(one.interval, std::nullopt) << "one video: no interval";
+    EXPECT_EQ(one.standard_error, std::nullopt);
+    const Comparison none = compare_pairwise("flow", "judges@eval-v1", {});
+    EXPECT_EQ(none.videos, 0U);
+    EXPECT_EQ(none.difference, 0.0);
 }
 
 TEST(Compare, RefusesRunsScoredByScorersThatMeasureDifferently) {
