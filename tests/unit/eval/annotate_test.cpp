@@ -1,5 +1,6 @@
 // Silver annotation, its pure parts: windows sized to their engines, drafts
-// checked against the words said, joined, and kept.
+// checked against the words said, joined, and kept. How the windows are cut
+// is the pipeline's, and tested with it (tests/unit/pipeline/windows_test.cpp).
 #include <rr/eval/annotate.hpp>
 
 #include <chrono>
@@ -39,18 +40,6 @@ knowledge::Transcript lecture() {
                                     {"Thank you.", 32s, 36s}});
 }
 
-// `count` sentences of 13 bytes, four seconds apart: lines of 24 bytes with
-// their newline ("S1 [0:00] Radium glows.\n"), 25 from S10 on.
-knowledge::Transcript glowing(std::size_t count = 10) {
-    std::vector<fixtures::Said> said;
-    said.reserve(count);
-    for (std::size_t index = 0; index < count; ++index) {
-        const auto start = std::chrono::seconds{4 * static_cast<std::int64_t>(index)};
-        said.push_back({"Radium glows.", start, start + 4s});
-    }
-    return fixtures::transcript_of(said);
-}
-
 std::vector<SentenceId> ids(std::initializer_list<std::uint32_t> numbers) {
     std::vector<SentenceId> all;
     all.reserve(numbers.size());
@@ -60,48 +49,7 @@ std::vector<SentenceId> ids(std::initializer_list<std::uint32_t> numbers) {
     return all;
 }
 
-// --- Windows ----------------------------------------------------------------
-
-TEST(Windows, ShowTheirSentencesALineEach) {
-    EXPECT_EQ(sentence_lines(glowing(), 0, 2), "S1 [0:00] Radium glows.\nS2 [0:04] Radium glows.");
-    EXPECT_EQ(sentence_lines(glowing(), 9, 12), "S10 [0:36] Radium glows.") << "to the transcript's end";
-    EXPECT_EQ(sentence_lines(glowing(), 3, 3), "");
-}
-
-TEST(Windows, HoldAsManyWholeSentencesAsTheirLinesFitOneAtLeast) {
-    const knowledge::Transcript transcript = glowing();
-    EXPECT_EQ(window_from(transcript, 0, 72).end, 3U) << "three lines of 24 bytes";
-    EXPECT_EQ(window_from(transcript, 0, 71).end, 2U);
-    EXPECT_EQ(window_from(transcript, 0, 1).end, 1U) << "one at least";
-    EXPECT_EQ(window_from(transcript, 8, 10'000).end, 10U) << "to the end";
-    EXPECT_EQ(window_from(transcript, 4, 72),
-              (SentenceWindow{.begin = 4, .end = 7, .context_begin = 1, .context_end = 10}));
-}
-
-TEST(Windows, TheirContextIsAFewSentencesOnEitherSideWithinItsBytes) {
-    const knowledge::Transcript transcript = glowing();
-    EXPECT_EQ(window_of(transcript, 4, 6),
-              (SentenceWindow{.begin = 4, .end = 6, .context_begin = 1, .context_end = 9}))
-        << "three on either side";
-    EXPECT_EQ(window_of(transcript, 0, 2),
-              (SentenceWindow{.begin = 0, .end = 2, .context_begin = 0, .context_end = 5}))
-        << "none before the first";
-    EXPECT_EQ(window_of(transcript, 8, 10),
-              (SentenceWindow{.begin = 8, .end = 10, .context_begin = 5, .context_end = 10}))
-        << "none after the last";
-    EXPECT_EQ(window_of(transcript, 4, 6, 0),
-              (SentenceWindow{.begin = 4, .end = 6, .context_begin = 4, .context_end = 6}));
-
-    // Before the window, two sentences of 600 bytes: one fits 1,000 bytes.
-    std::vector<fixtures::Said> said;
-    for (std::size_t index = 0; index < 9; ++index) {
-        const auto start = std::chrono::seconds{4 * static_cast<std::int64_t>(index)};
-        said.push_back(
-            {index == 2 || index == 3 ? std::string(600, 'x') : "Radium glows.", start, start + 4s});
-    }
-    EXPECT_EQ(window_of(fixtures::transcript_of(said), 4, 6),
-              (SentenceWindow{.begin = 4, .end = 6, .context_begin = 3, .context_end = 9}));
-}
+// --- Window sizes -----------------------------------------------------------
 
 TEST(Windows, AreSizedToTheirEngines) {
     const auto sizes_of = [](std::vector<agents::Engine> engines) {
@@ -169,14 +117,15 @@ TEST(Drafts, ThatSayWhatTheWindowSaysPass) {
                                                               "took months")}),
                                       json::Json::array({quoted({"S4"}, "We call that the proof load.")}),
                                       json::Json::array({termed("Proof Load")})),
-                               transcript, window_of(transcript, 3, 6)),
+                               transcript, pipeline::window_of(transcript, 3, 6)),
                 IsEmpty())
         << "across sentences, case and punctuation aside";
 }
 
 TEST(Drafts, ThatDoNotAreSentBackWithWhatToDoInstead) {
     const knowledge::Transcript transcript = lecture();
-    const SentenceWindow window = window_of(transcript, 3, 6);  // S4–S6, read with S1–S3 and S7–S9
+    const pipeline::SentenceWindow window =
+        pipeline::window_of(transcript, 3, 6);  // S4–S6, read with S1–S3 and S7–S9
     EXPECT_THAT(
         draft_problems(
             answer(json::Json::array({item({"S2"}, "the radium salts"), item({"S4", "S7"}, "proof load"),
@@ -196,7 +145,7 @@ TEST(Drafts, ThatDoNotAreSentBackWithWhatToDoInstead) {
             "term \"polonium\" is not said in S4\u2013S6: list only the video's own words"));
 
     EXPECT_THAT(draft_problems(answer(json::Json::array({item({"S5"}, "Marie Curie")})), transcript,
-                               window_of(transcript, 3, 4)),
+                               pipeline::window_of(transcript, 3, 4)),
                 ElementsAre("fact 1: cite only the sentences to annotate, S4, not S5"));
 }
 
@@ -207,7 +156,7 @@ TEST(Drafts, AreSentBackAFewProblemsAtATime) {
         facts.push_back(item({"S1"}, "Welcome back"));
     }
     const std::vector<std::string> problems =
-        draft_problems(answer(facts), transcript, window_of(transcript, 3, 6));
+        draft_problems(answer(facts), transcript, pipeline::window_of(transcript, 3, 6));
     ASSERT_EQ(problems.size(), 9U);
     EXPECT_EQ(problems[7], "fact 8: cite only the sentences to annotate, S4\u2013S6, not S1");
     EXPECT_EQ(problems[8], "and 2 more like them");

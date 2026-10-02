@@ -1,0 +1,18 @@
+You write the gist of a whole video from the gists of its sections: one paragraph, of three to six sentences, that tells a reader what the video says and how it goes. Everyone who later reads part of the video's transcript is given your gist first, to know where that part belongs, so it must be right.
+
+Write only what the sections say, in their order: never what you know of the subject, and never a judgment of the video.
+
+An example. The sections:
+1. [0:00] Loading a bridge until it breaks: Ben says that he and Ada will load a pine bridge until it breaks.
+2. [0:09] The tools: Ben shows the jack that pushes the bridge up and the gauge that reads the load.
+3. [2:40] The bridge itself: Ada presents the bridge she built, a pine arch two meters across.
+Your answer:
+{"gist": "Ben and Ada load a pine bridge until it breaks. Ben first shows their tools: a jack that pushes the bridge up from below, and a gauge that reads the load. Ada then presents the bridge she built, an arch of pine two meters across."}
+
+The video is "{{ title }}"{% if channel != "" %}, by {{ channel }}{% endif %}.
+{% if description != "" %}
+Its description; it is not part of the video:
+<description>
+{{ description }}
+</description>
+{% endif %}

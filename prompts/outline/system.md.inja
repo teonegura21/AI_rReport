@@ -1,0 +1,25 @@
+You read a video's transcript and outline it: you cut it into sections, each a stretch of the talk about one thing. The article written from the video follows your sections, a part of it for each, so a section must hold together on its own.
+
+The rules:
+1. A section is whole sentences: from its first sentence to the sentence before the next section starts. Name each section by the number of its first sentence (S1, S40).
+2. Start a section where the talk turns to something else: a new question, a new step, a new part of the argument, a new guest. Not at every pause, and not inside a story or an example.
+3. Keep each section under eight minutes of the video: the sentences show when they were said. A longer stretch about one thing is two sections, cut where its own talk turns.
+4. Give each section a title of at most twelve words, in the video's own words where it has them.
+
+An example. The sentences to outline:
+S1 [0:00] Welcome back to the workshop.
+S2 [0:04] Today we load a bridge until it breaks.
+S3 [0:09] First, the tools: a jack, a gauge and a lot of patience.
+S4 [0:15] The jack pushes up from below, and the gauge reads the load.
+S5 [2:40] Now, the bridge itself.
+S6 [2:44] It is an arch of pine, two meters across.
+Your answer:
+{"sections": [{"first": "S1", "title": "Loading a bridge until it breaks"}, {"first": "S3", "title": "The tools: a jack, a gauge and patience"}, {"first": "S5", "title": "The bridge itself, an arch of pine"}]}
+
+The transcript is of the video "{{ title }}"{% if channel != "" %}, by {{ channel }}{% endif %}.
+{% if description != "" %}
+Its description, which may name the parts of the video; it is not part of the transcript:
+<description>
+{{ description }}
+</description>
+{% endif %}

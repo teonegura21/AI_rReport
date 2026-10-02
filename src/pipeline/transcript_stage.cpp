@@ -11,6 +11,7 @@
 #include <rr/core/time_span.hpp>
 #include <rr/knowledge/transcript.hpp>
 #include <rr/llm/memo.hpp>
+#include <rr/pipeline/asking.hpp>
 #include <rr/pipeline/source.hpp>
 #include <rr/prompt/tokens.hpp>
 #include <rr/transcript/sentences.hpp>
@@ -21,15 +22,10 @@ namespace {
 
 using transcript::Word;
 
-// The most of a video's description the prompt shows: enough for the names
-// and terms it spells, without the links and sponsors that follow them.
-constexpr std::size_t kBriefBytes = 1500;
-constexpr std::string_view kCut = "\u2026";  // where a description was cut
-
 constexpr std::string_view kNoPod =
     "The captions are not punctuated, and no pod is configured to punctuate them: sentences were cut where "
-    "the "
-    "speaker paused, 60 words at most. Set up the pod (rreport doctor says how) and ingest the video again.";
+    "the speaker paused, 60 words at most. Set up the pod (rreport doctor says how) and ingest the video "
+    "again.";
 
 struct Read {
     Source source{};
@@ -47,62 +43,10 @@ Result<Read> read_input(const StageContext& context) {
     return Read{.source = std::move(source), .track = std::move(track)};
 }
 
-// The first kBriefBytes of `description`, cut after a line or, failing that,
-// after a word; "…" says where it was cut.
-std::string brief(std::string_view description) {
-    if (description.size() <= kBriefBytes) {
-        return std::string{description};
-    }
-    const std::string_view head = description.substr(0, kBriefBytes);
-    std::size_t kept = 0;
-    if (const std::size_t line = head.rfind('\n'); line != std::string_view::npos && line > 0) {
-        kept = line + 1;
-    } else if (const std::size_t word = head.rfind(' '); word != std::string_view::npos && word > 0) {
-        kept = word;
-    } else {
-        // No space in its first bytes: it is cut before a character, never inside one.
-        kept = kBriefBytes;
-        while (kept > 0 && (static_cast<unsigned char>(description[kept]) & 0xC0U) == 0x80U) {
-            --kept;
-        }
-    }
-    std::string cut{head.substr(0, kept)};
-    cut += kCut;
-    return cut;
-}
-
-// What the prompt's system part shows of the video: the same for every window.
-json::Json shared_of(const Source& source) {
-    return json::Json{{"title", source.video.title},
-                      {"channel", source.video.channel},
-                      {"description", brief(source.video.description)}};
-}
-
 // "the words said from 12:31 to 13:05"
 std::string said(const std::vector<Word>& words, const Window& window) {
     return std::format("the words said from {} to {}", format_timestamp(words[window.begin].start),
                        format_timestamp(words[window.end - 1].end));
-}
-
-// Why no model punctuated a window, for its finding.
-std::string why_not(const agents::Outcome& outcome, const agents::Army& army) {
-    switch (outcome.verdict) {
-        case agents::Verdict::refused:
-            return "the models declined to punctuate them";
-        case agents::Verdict::ceiling: {
-            const std::optional<agents::CeilingHit> hit = army.ceiling();
-            return std::format("the job reached its {} ceiling first",
-                               hit.has_value() ? agents::to_string(hit->kind) : std::string_view{"spending"});
-        }
-        case agents::Verdict::accepted:
-        case agents::Verdict::invalid:
-            break;
-    }
-    std::string problems;
-    for (const std::string& problem : outcome.problems) {
-        problems += problems.empty() ? problem : "; " + problem;
-    }
-    return std::format("no answer passed its checks ({})", problems);
 }
 
 // The window's mission: punctuate its excerpt, keeping every word.
@@ -151,7 +95,7 @@ Result<Punctuated> punctuate(const std::vector<Word>& words, const Source& sourc
     RR_TRY_ASSIGN(const std::shared_ptr<const json::Schema> schema,
                   context.prompts->answer_schema(TranscriptStage::kPrompt));
     const std::vector<Window> windows = windows_of(words, size);
-    const json::Json shared = shared_of(source);
+    const json::Json shared = video_shared(source.video);
     std::vector<agents::Mission> missions;
     for (std::size_t index = 0; index < windows.size(); ++index) {
         RR_TRY_ASSIGN(agents::Mission mission,
@@ -176,7 +120,8 @@ Result<Punctuated> punctuate(const std::vector<Word>& words, const Source& sourc
             continue;
         }
         done.findings.push_back(std::format("{} keep the captions' form, unpunctuated: {}.",
-                                            said(words, window), why_not(outcome, army)));
+                                            said(words, window),
+                                            why_unanswered(outcome, army, "punctuate them")));
         if (outcome.verdict == agents::Verdict::ceiling) {
             done.reusable = false;  // a job allowed more would have punctuated them
         }

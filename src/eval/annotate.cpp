@@ -16,9 +16,11 @@
 #include <rr/knowledge/artifacts.hpp>
 #include <rr/library/stage_store.hpp>
 #include <rr/llm/memo.hpp>
+#include <rr/pipeline/asking.hpp>
 #include <rr/pipeline/executor.hpp>
 #include <rr/pipeline/source.hpp>
 #include <rr/pipeline/transcript_stage.hpp>
+#include <rr/pipeline/windows.hpp>
 #include <rr/prompt/tokens.hpp>
 #include <rr/text/align.hpp>
 #include <rr/text/unicode.hpp>
@@ -29,6 +31,9 @@ namespace {
 
 using knowledge::SentenceId;
 using knowledge::Transcript;
+using pipeline::sentence_lines;
+using pipeline::sentence_range;
+using pipeline::SentenceWindow;
 
 constexpr std::string_view kAnnotate = "annotate";
 constexpr std::string_view kAnnotateMore = "annotate_more";
@@ -46,30 +51,10 @@ bool serves(const agents::Engine& engine, std::string_view role) {
     return std::ranges::contains(engine.roles, role);
 }
 
-// The engine serving `role`, or nullptr.
-const agents::Engine* engine_for(const agents::Army& army, std::string_view role) {
-    const auto found = std::ranges::find_if(
-        army.engines(), [&](const agents::Engine& engine) { return serves(engine, role); });
-    return found == army.engines().end() ? nullptr : &*found;
-}
-
 // The model serving `role`: what drafted_by names.
 std::string model_for(const agents::Army& army, std::string_view role) {
-    const agents::Engine* engine = engine_for(army, role);
+    const agents::Engine* engine = pipeline::engine_serving(army, role);
     return engine == nullptr ? std::string{role} : engine->model;
-}
-
-// The bytes sentence `index` takes in a prompt: its line, and its newline.
-std::size_t line_bytes(const Transcript& transcript, std::size_t index) {
-    return sentence_lines(transcript, index, index + 1).size() + 1;
-}
-
-std::size_t lines_bytes(const Transcript& transcript, const SentenceWindow& window) {
-    std::size_t bytes = 0;
-    for (std::size_t index = window.begin; index < window.end; ++index) {
-        bytes += line_bytes(transcript, index);
-    }
-    return bytes;
 }
 
 // The commander's answer: up to twice the tokens it reads. A dense passage
@@ -127,11 +112,6 @@ std::pair<Millis, Millis> span_of(const std::vector<SentenceId>& ids, const Tran
     RR_ASSERT(!ids.empty(), "an item cites a sentence at least");
     return {transcript.sentences[index_of(ids.front())].span.start(),
             transcript.sentences[index_of(ids.back())].span.end()};
-}
-
-// "S12–S48"
-std::string sentence_range(std::size_t begin, std::size_t end) {
-    return begin + 1 == end ? std::format("S{}", begin + 1) : std::format("S{}\u2013S{}", begin + 1, end);
 }
 
 std::string listed(const std::vector<SentenceId>& ids) {
@@ -240,41 +220,6 @@ json::Json order_for(const Transcript& transcript, const SentenceWindow& window)
                       {"after", sentence_lines(transcript, window.end, window.context_end)}};
 }
 
-// Why no draft of a window passed, for its finding.
-std::string why_not(const agents::Outcome& outcome, const agents::Army& army) {
-    switch (outcome.verdict) {
-        case agents::Verdict::refused:
-            return "the models declined to annotate them";
-        case agents::Verdict::ceiling: {
-            const std::optional<agents::CeilingHit> hit = army.ceiling();
-            return std::format("the job reached its {} ceiling first",
-                               hit.has_value() ? agents::to_string(hit->kind) : std::string_view{"spending"});
-        }
-        case agents::Verdict::accepted:
-        case agents::Verdict::invalid:
-            break;
-    }
-    std::string problems;
-    for (const std::string& problem : outcome.problems) {
-        problems += problems.empty() ? problem : "; " + problem;
-    }
-    return std::format("no answer passed its checks ({})", problems);
-}
-
-struct Prompt {
-    const prompt::PromptInfo* info = nullptr;
-    std::shared_ptr<const json::Schema> schema{};
-};
-
-Result<Prompt> prompt_named(const prompt::Library& prompts, std::string_view name) {
-    const prompt::PromptInfo* info = prompts.find(name);
-    if (info == nullptr) {
-        return fail(Errc::not_found, std::format("the prompts have no '{}'", name));
-    }
-    RR_TRY_ASSIGN(std::shared_ptr<const json::Schema> schema, prompts.answer_schema(name));
-    return Prompt{.info = info, .schema = std::move(schema)};
-}
-
 // Who reads a window, and how.
 struct Reader {
     std::string_view role;
@@ -283,10 +228,10 @@ struct Reader {
     int answer_tokens = 0;
 };
 
-Result<agents::Mission> mission_for(const pipeline::StageContext& context, const Prompt& prompt,
-                                    const json::Json& shared, const json::Json& order,
-                                    const Transcript& transcript, const SentenceWindow& window,
-                                    std::string id, const Reader& reader) {
+Result<agents::Mission> mission_for(const pipeline::StageContext& context,
+                                    const pipeline::StagePrompt& prompt, const json::Json& shared,
+                                    const json::Json& order, const Transcript& transcript,
+                                    const SentenceWindow& window, std::string id, const Reader& reader) {
     RR_TRY_ASSIGN(const prompt::Rendered rendered, context.prompts->render(prompt.info->name, shared, order));
     const std::int64_t seed = llm::derived_seed(context.job->salt, AnnotateStage::kName, id, 0);
     return agents::Mission{
@@ -305,40 +250,6 @@ Result<agents::Mission> mission_for(const pipeline::StageContext& context, const
         .samples = reader.samples};
 }
 
-// One reading of the transcript, window by window.
-struct Plan {
-    std::vector<SentenceWindow> windows{};    // in order
-    std::vector<agents::Mission> missions{};  // the windows' own, in the same order
-    std::vector<SentenceWindow> too_long{};   // a sentence its engine cannot hold even alone
-};
-
-// Cuts the transcript into windows, each filled to `bytes`, then given up
-// sentence by sentence until its engine holds the mission `make` builds for
-// it (the header comment); make(window, n) builds the nth window's.
-template <typename Make>
-Result<Plan> plan_reading(const Transcript& transcript, std::size_t bytes, const agents::Army& army,
-                          const Make& make) {
-    Plan plan;
-    for (std::size_t begin = 0; begin < transcript.sentences.size();) {
-        SentenceWindow window = window_from(transcript, begin, bytes);
-        RR_TRY_ASSIGN(agents::Mission mission, make(window, plan.missions.size() + 1));
-        bool held = army.holds(mission);
-        while (!held && window.end - window.begin > 1) {
-            window = window_of(transcript, window.begin, window.end - 1);
-            RR_TRY_ASSIGN(mission, make(window, plan.missions.size() + 1));
-            held = army.holds(mission);
-        }
-        if (held) {
-            plan.windows.push_back(window);
-            plan.missions.push_back(std::move(mission));
-        } else {
-            plan.too_long.push_back(window);
-        }
-        begin = window.end;
-    }
-    return plan;
-}
-
 // The windows the readings left without a draft, and why: published as
 // findings in the order said, one reading after the other.
 class Unread {
@@ -346,7 +257,7 @@ public:
     Unread(const Transcript& transcript, const agents::Army& army) : transcript_(&transcript), army_(&army) {}
 
     // Each window of `plan` too long for the engine serving `role`.
-    void too_long(const Plan& plan, std::string_view role) {
+    void too_long(const pipeline::WindowPlan& plan, std::string_view role) {
         for (const SentenceWindow& window : plan.too_long) {
             missed_.emplace_back(window, std::format("even alone, with its context and an answer, it is more "
                                                      "than {} holds at once",
@@ -359,7 +270,7 @@ public:
         if (outcome.verdict == agents::Verdict::accepted) {
             return;
         }
-        missed_.emplace_back(window, why_not(outcome, *army_));
+        missed_.emplace_back(window, pipeline::why_unanswered(outcome, *army_, "annotate them"));
         ceiling_ = ceiling_ || outcome.verdict == agents::Verdict::ceiling;
     }
 
@@ -369,13 +280,8 @@ public:
     void publish(pipeline::StageOutput& output) {
         std::ranges::stable_sort(missed_, {}, [](const auto& entry) { return entry.first.begin; });
         for (const auto& [window, why] : missed_) {
-            const bool one = window.end - window.begin == 1;
-            output.findings.push_back(
-                std::format("the {} {} ({} to {}) {} no draft: {}", one ? "sentence" : "sentences",
-                            sentence_range(window.begin, window.end),
-                            format_timestamp(transcript_->sentences[window.begin].span.start()),
-                            format_timestamp(transcript_->sentences[window.end - 1].span.end()),
-                            one ? "has" : "have", why));
+            output.findings.push_back(std::format(
+                "{} no draft: {}", pipeline::sentences_have(*transcript_, window.begin, window.end), why));
         }
         missed_.clear();
         if (ceiling_) {
@@ -392,8 +298,8 @@ private:
 
 // Runs `plan`'s missions; notes in `unread` the windows they left without a
 // draft; returns every accepted answer as a draft, window by window.
-Result<std::vector<Draft>> drafts_of(Plan plan, agents::Army& army, const std::stop_token& stop,
-                                     Unread& unread) {
+Result<std::vector<Draft>> drafts_of(pipeline::WindowPlan plan, agents::Army& army,
+                                     const std::stop_token& stop, Unread& unread) {
     RR_TRY_ASSIGN(const std::vector<agents::Outcome> outcomes, army.squad(std::move(plan.missions), stop));
     std::vector<Draft> drafts;
     for (std::size_t index = 0; index < plan.windows.size(); ++index) {
@@ -406,35 +312,6 @@ Result<std::vector<Draft>> drafts_of(Plan plan, agents::Army& army, const std::s
 }
 
 }  // namespace
-
-SentenceWindow window_of(const Transcript& transcript, std::size_t begin, std::size_t end,
-                         std::size_t context) {
-    const bool of_the_transcript = begin <= end && end <= transcript.sentences.size();
-    RR_ASSERT(of_the_transcript, "a window is of the transcript's sentences");
-    SentenceWindow window{.begin = begin, .end = end, .context_begin = begin, .context_end = end};
-    std::size_t used = 0;
-    while (window.context_begin > 0 && begin - window.context_begin < context &&
-           used + line_bytes(transcript, window.context_begin - 1) <= kContextBytes) {
-        used += line_bytes(transcript, --window.context_begin);
-    }
-    used = 0;
-    while (window.context_end < transcript.sentences.size() && window.context_end - end < context &&
-           used + line_bytes(transcript, window.context_end) <= kContextBytes) {
-        used += line_bytes(transcript, window.context_end++);
-    }
-    return window;
-}
-
-SentenceWindow window_from(const Transcript& transcript, std::size_t begin, std::size_t bytes,
-                           std::size_t context) {
-    RR_ASSERT(begin < transcript.sentences.size(), "a window starts at one of the transcript's sentences");
-    std::size_t end = begin + 1;
-    std::size_t used = line_bytes(transcript, begin);
-    while (end < transcript.sentences.size() && used + line_bytes(transcript, end) <= bytes) {
-        used += line_bytes(transcript, end++);
-    }
-    return window_of(transcript, begin, end, context);
-}
 
 WindowSizes window_sizes(const agents::Army& army) {
     const auto bytes = [](std::int64_t tokens, std::size_t most) {
@@ -459,16 +336,6 @@ WindowSizes window_sizes(const agents::Army& army) {
         }
     }
     return sizes;
-}
-
-std::string sentence_lines(const Transcript& transcript, std::size_t begin, std::size_t end) {
-    std::string lines;
-    for (std::size_t index = begin; index < end && index < transcript.sentences.size(); ++index) {
-        const knowledge::Sentence& sentence = transcript.sentences[index];
-        lines += std::format("{}{} [{}] {}", lines.empty() ? "" : "\n", sentence.id.str(),
-                             format_timestamp(sentence.span.start()), sentence.text);
-    }
-    return lines;
 }
 
 Draft draft_from_json(const json::Json& answer) {
@@ -693,25 +560,21 @@ Result<json::Json> AnnotateStage::fingerprint(const pipeline::StageContext& cont
                     "drafting an annotation needs models, and no pod is configured: rreport doctor says how");
     }
     RR_ASSERT(context.prompts != nullptr, "a stage that asks models is given the prompts");
-    json::Json prompts = json::Json::object();
-    for (const std::string_view name : {kAnnotate, kAnnotateMore}) {
-        RR_TRY_ASSIGN(const Prompt prompt, prompt_named(*context.prompts, name));
-        RR_TRY_ASSIGN(const std::string hash, context.prompts->content_hash(name));
-        prompts[std::string{name}] = json::Json{{"label", prompt.info->label()}, {"hash", hash}};
-    }
+    RR_TRY_ASSIGN(json::Json prompts,
+                  pipeline::prompts_fingerprint(*context.prompts, {kAnnotate, kAnnotateMore}));
     RR_TRY_ASSIGN(agents::Army* const army, context.army());
     const WindowSizes sizes = window_sizes(*army);
     const auto reading = [&](std::size_t bytes, std::string_view role) {
-        const agents::Engine* engine = engine_for(*army, role);
+        const agents::Engine* engine = pipeline::engine_serving(*army, role);
         return json::Json{{"bytes", bytes}, {"holds", engine == nullptr ? 0 : engine->ctx_per_slot}};
     };
     return json::Json{
         {"prompts", std::move(prompts)},
         {"army", pipeline::army_fingerprint(*army)},
-        {"windows",
-         json::Json{{"annotate", reading(sizes.annotate, "commander")},
-                    {"more", reading(sizes.more, "infantry")},
-                    {"context", json::Json{{"sentences", kContextSentences}, {"bytes", kContextBytes}}}}},
+        {"windows", json::Json{{"annotate", reading(sizes.annotate, "commander")},
+                               {"more", reading(sizes.more, "infantry")},
+                               {"context", json::Json{{"sentences", pipeline::kContextSentences},
+                                                      {"bytes", pipeline::kContextBytes}}}}},
         {"samples", kSamples}};
 }
 
@@ -720,26 +583,26 @@ Result<pipeline::StageOutput> AnnotateStage::run(const pipeline::StageContext& c
     RR_TRY_ASSIGN(const Transcript transcript,
                   knowledge::transcript_from_json(context.inputs.at("transcript")));
     RR_TRY_ASSIGN(agents::Army* const army, context.army());
-    RR_TRY_ASSIGN(const Prompt annotate, prompt_named(*context.prompts, kAnnotate));
-    RR_TRY_ASSIGN(const Prompt more, prompt_named(*context.prompts, kAnnotateMore));
+    RR_TRY_ASSIGN(const pipeline::StagePrompt annotate, pipeline::stage_prompt(*context.prompts, kAnnotate));
+    RR_TRY_ASSIGN(const pipeline::StagePrompt more, pipeline::stage_prompt(*context.prompts, kAnnotateMore));
     const json::Json& windows = context.fingerprint.at("windows");
     const json::Json shared{{"title", source.video.title}, {"channel", source.video.channel}};
     pipeline::StageOutput output;
     Unread unread{transcript, *army};
 
     // The commander's three drafts of each window, joined.
-    RR_TRY_ASSIGN(Plan drafted,
-                  plan_reading(transcript, windows.at("annotate").at("bytes").get<std::size_t>(), *army,
-                               [&](const SentenceWindow& window, std::size_t number) {
-                                   return mission_for(
-                                       context, annotate, shared, order_for(transcript, window), transcript,
-                                       window, std::format("annotate-{}", number),
-                                       Reader{.role = "commander",
-                                              .thinking = true,
-                                              .samples = kSamples,
-                                              .answer_tokens =
-                                                  annotate_answer_tokens(lines_bytes(transcript, window))});
-                               }));
+    RR_TRY_ASSIGN(pipeline::WindowPlan drafted,
+                  pipeline::plan_windows(transcript, windows.at("annotate").at("bytes").get<std::size_t>(),
+                                         *army, [&](const SentenceWindow& window, std::size_t number) {
+                                             return mission_for(
+                                                 context, annotate, shared, order_for(transcript, window),
+                                                 transcript, window, std::format("annotate-{}", number),
+                                                 Reader{.role = "commander",
+                                                        .thinking = true,
+                                                        .samples = kSamples,
+                                                        .answer_tokens = annotate_answer_tokens(
+                                                            pipeline::lines_bytes(transcript, window))});
+                                         }));
     unread.too_long(drafted, "commander");
     if (context.progress) {
         context.progress(std::format("annotate: the commander drafts {} windows, {} times each",
@@ -751,17 +614,17 @@ Result<pipeline::StageOutput> AnnotateStage::run(const pipeline::StageContext& c
     Silver silver = join_drafts(drafts, transcript);
 
     // The other family's reading, with the facts found so far.
-    RR_TRY_ASSIGN(Plan reread,
-                  plan_reading(transcript, windows.at("more").at("bytes").get<std::size_t>(), *army,
-                               [&](const SentenceWindow& window, std::size_t number) {
-                                   json::Json order = order_for(transcript, window);
-                                   order["found"] = found_lines(silver, window);
-                                   return mission_for(
-                                       context, more, shared, order, transcript, window,
-                                       std::format("annotate-more-{}", number),
-                                       Reader{.role = "infantry",
-                                              .answer_tokens = static_cast<int>(kMoreAnswerTokens)});
-                               }));
+    RR_TRY_ASSIGN(
+        pipeline::WindowPlan reread,
+        pipeline::plan_windows(
+            transcript, windows.at("more").at("bytes").get<std::size_t>(), *army,
+            [&](const SentenceWindow& window, std::size_t number) {
+                json::Json order = order_for(transcript, window);
+                order["found"] = found_lines(silver, window);
+                return mission_for(
+                    context, more, shared, order, transcript, window, std::format("annotate-more-{}", number),
+                    Reader{.role = "infantry", .answer_tokens = static_cast<int>(kMoreAnswerTokens)});
+            }));
     unread.too_long(reread, "infantry");
     if (context.progress) {
         context.progress(

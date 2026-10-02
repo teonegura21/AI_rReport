@@ -1,6 +1,6 @@
 # The pipeline: jobs, stages, and the stage cache
 
-A **job** takes one video through the **stages**: today `source` and `transcript`, then `outline`, `atomize`, `plan` and `write` as they land (P17–P20). The eval's annotation jobs run `source`, `transcript` and `annotate` ([eval.md](eval.md#silver-drafted-by-models)). Each stage turns the artifacts of the stages before it into one artifact of its own, an immutable JSON document that follows its schema (ADR-0004). This note is about what runs them, `rr_pipeline`, and the first two stages.
+A **job** takes one video through the **stages**: today `source`, `transcript` and `outline`, then `atomize`, `plan` and `write` as they land (P18–P20). The eval's annotation jobs run `source`, `transcript` and `annotate` ([eval.md](eval.md#silver-drafted-by-models)). Each stage turns the artifacts of the stages before it into one artifact of its own, an immutable JSON document that follows its schema (ADR-0004). This note is about what runs them, `rr_pipeline`, and the first three stages.
 
 | Piece | Where | What |
 |---|---|---|
@@ -11,6 +11,10 @@ A **job** takes one video through the **stages**: today `source` and `transcript
 | `JobArmy` | `rr/hub/job_army.hpp` | A job's army, raised the first time a stage needs a model |
 | `SourceStage` | `rr/pipeline/source.hpp` | A video (through yt-dlp) or a caption file, read once |
 | `TranscriptStage` | `rr/pipeline/transcript_stage.hpp` | Captions into numbered sentences; punctuated by the infantry when they are not |
+| `OutlineStage` | `rr/pipeline/outline_stage.hpp` | The video's sections, and the brief every later mission is given |
+| windows | `rr/pipeline/windows.hpp` | A transcript cut into windows of whole sentences, each as large as its engine holds |
+| sections | `rr/pipeline/outline.hpp` | Sections from chapters, from pauses, from outlines agreed on; long ones cut; briefs joined |
+| asking | `rr/pipeline/asking.hpp` | What every stage that asks models says the same way: the video, a prompt's fingerprint, why a mission went unanswered |
 
 ## The cache key
 
@@ -59,7 +63,7 @@ A stage's result can depend on its job, not only on its key. The case today is a
 
 ## The army, raised when needed
 
-A pod costs money from the minute it starts. So a stage is given **the means to raise the army** (`StageContext::army`, a function), not an army, and a job whose stages need no model never starts the pod. A video with its creator's captions, today, never does.
+A pod costs money from the minute it starts. So a stage is given **the means to raise the army** (`StageContext::army`, a function), not an army, and a job whose stages need no model never starts the pod. The first stage that asks one raises it: the transcript, for captions that need punctuating; otherwise the outline, which reads every video with the commander when a pod is configured.
 
 `JobArmy::raise()` raises it once per job:
 
@@ -130,6 +134,71 @@ Each window is a **`punctuate` mission** for the infantry, all of them sent at o
 
 The oracle answers `punctuate` missions from the script a synthetic video was read from (`rr/oracle/answers.hpp`). It finds the excerpt's words in the script and returns the script's text for them. Without a script, it ends a sentence every twelve words, which passes the checks, so a pipeline runs end to end on any captions.
 
+## What every stage that asks models shares
+
+**Windows** (`rr/pipeline/windows.hpp`). A stage that asks about a transcript asks a window at a time: a model reads a few pages better than a book, and an engine holds only so many tokens. Every such stage cuts the same way:
+- a window is whole sentences, shown a line each, `S12 [3:04] What was said.`;
+- it is sent with **context** on either side, up to three sentences, as many as fit 1,000 bytes of lines, so that its first and last sentences are read as they were said;
+- it is **filled** with sentences up to a size the stage chooses, then **given up from its end** while the engine would not hold its mission (`Army::holds()`, the very test the squad applies). The largest window the engine holds is found by **bisection**. So no mission is ever refused for its size, whatever the prompt around the sentences, and a sentence too long for its engine even alone is set aside for the stage to report.
+
+Holding is monotone in a window's end: giving up a sentence takes its line out of the prompt and puts at most one line of context in, and the answer shrinks with it. That is why bisection finds the window that giving up one sentence at a time would; a test compares the two over six engine sizes and three fill sizes, with sentences too long for context and for the engine among them. The eval's silver drafts (P16) were the first to read this way, and now read through the same code.
+
+**Asking** (`rr/pipeline/asking.hpp`). What a prompt's shared part shows of the video (its title, its channel, and its description cut after a line at 1,500 bytes, before the links and sponsors that follow), a prompt's place in a key (its label and content hash), and why a mission ended without an answer: the models declined; the job reached a ceiling first; or no answer passed the stage's checks, with the last problems. Findings say it the same way in every stage.
+
+## The outline stage
+
+An article is written a section at a time, and every mission after this stage sees its own stretch of the video and the video's **brief**, no more (plan §3.7). The outline stage writes both ([knowledge.md](knowledge.md#the-outline)). It decides two things: where the sections are, and what they say.
+
+### Where the sections are
+
+Best first:
+
+| Sections from | When | How |
+|---|---|---|
+| `chapters` | the tier takes chapters (every shipped tier does) and the video has two or more | the creator's own cut. A chapter starts at the sentence that starts closest to its time, the earlier of two as close, so a speaker a moment early or late is still its first sentence. The first chapter starts at S1, whatever its time says. A chapter that would start where the one before does, or before it, is dropped |
+| `models` | a pod, and no chapters to take | the commander's outlines (`prompts/outline`), as many as the tier's samples (3 at `max`), thinking (below). A section starts where enough of them start one within a sentence or two of each other (`reason::boundary_consensus()`: at `max`, two of three within two sentences), at the place closest to them all. One sample's whim is not a section. The title is that of the first sample that starts a section exactly there |
+| `pauses` | no pod; or no outline came back | cut where the speaker paused longest, until no section is longer than eight minutes; each titled by its stretch, `12:30–19:45` |
+
+Whatever drew them, **no section runs longer than eight minutes**, what a writer drafts in one piece (plan §5, stage 8). A longer one is cut where the speaker paused longest, among the cuts that leave each part a quarter of it at least, so that it is cut in balanced parts, not trimmed. Between pauses as long, and when no cut leaves a quarter, it is cut nearest its middle; on a tie, at the earlier. Its parts keep its title, numbered: `Radium (2 of 3)`. A single sentence is never cut.
+
+**How the commander outlines.** It reads the whole transcript at once when it holds it: sections are a judgment about the whole. It thinks within the tier's budget (16,384 tokens at `max`, 8,192 below), but never more than half of what it holds: a budget that left no room for the transcript would leave nothing to think about. A transcript too long for one reading, such as a 90-minute podcast on a 48 GB pod at `max`, is read in windows as large as it holds, each with the sentences just before it as context, each told to list only the sections that start among its own sentences, and to list none when the talk does not turn. Each window's samples are agreed on by themselves: a quorum counts the samples that came back for it.
+
+**What is sent back.** An outline is checked before it is taken (the repair loop and the escalation ladder do the rest, `rr/agents/army.hpp`):
+- a section that starts outside its own sentences;
+- sections out of order, or one listed twice;
+- a first window whose first section is not S1;
+- a title of more than twelve words;
+- more than a section a minute, plus one: a section at every pause is no outline.
+
+**What no outline covers** is cut where the speaker paused, with a finding that says which sentences and why. A sentence too long for the commander even alone starts a section; sentences set aside one after another are one stretch, cut at pauses, with one finding: an engine too small to hold any of them leaves the video as it would be without a pod, not one section a sentence.
+
+### What the sections say
+
+With a pod, the commander **describes each section on its own** (`prompts/describe`): who speaks in it, by the name the video gives them; the section's own words for things, with their meanings as the video explains them; its gist in one or two sentences; and what the video is, as far as the section shows. The descriptions **join into the brief** (`join_briefs()`):
+- the genre most sections name, the first named on a tie;
+- the speakers and the words, each once by its folded form ("ADA LOVELACE" is "Ada Lovelace"), a role or a meaning filling an empty one and never replacing one;
+- at most 12 speakers and 40 words, those the most sections name. A word every section uses matters more than one a section mentions, and it is what a model listing too much lists least often.
+
+From the sections' gists, in order, the commander then writes **the video's gist**, a paragraph (`prompts/brief`).
+
+Describing is reading, not judging, so it is asked **without thinking**: reasoning models invent more when they summarize (Vectara's leaderboard: 14.3% for R1 against 3.9% for V3). Only the outline, a judgment over the whole, thinks. The eval decides whether that holds for these prompts (P26).
+
+**What is sent back.** A description that names a speaker neither the section nor the video's title, channel or description names; lists a word the section does not say, or more than fifteen; or gives a gist of more than sixty words. A video gist of more than 150 words. The words are compared folded, so case, accents and punctuation do not count.
+
+**What no description covers** leaves its section without a gist, and its speakers and words out of the brief, with a finding. The video's gist is then written from the gists there are, a section without one listed by its title; with no gist at all, the brief has none, and a finding says why.
+
+### The key, and the prompts
+
+The stage samples, so the job's salt is in its key. Its fingerprint holds the tier's outline settings and the longest a section may run; with a pod, the three prompts' labels and hashes, the army, what the commander holds, and the context windows are read with. Without a pod the stage cuts at pauses, or takes the chapters, and says the brief is empty; a pod configured later makes another key, so the stage runs again with models.
+
+| Prompt | Asks | Answer |
+|---|---|---|
+| `outline` | where sections start among the sentences to outline, with titles; the first window is told its first section starts at S1, and the others that a section may start nowhere among their sentences | `{"sections": [{"first", "title"}]}` |
+| `describe` | one section: who speaks, its words, its gist, the genre | `{"speakers", "lexicon", "gist", "genre"}`: the evidence first, then the gist |
+| `brief` | the video's gist from the sections' titles and gists, in order | `{"gist"}` |
+
+All three share the video's title, channel and description in their system part, and each example is synthetic. The oracle answers each by a rule a test can predict (`rr/oracle/answers.hpp`): a section starts at S1 and at each sentence that opens with "Now," or "Next,"; a speaker for each "I'm" and the name after it; a word for each acronym; the first sentence as a section's gist; and "A video in 4 sections, from … to …" as the video's.
+
 ## The commands
 
 | Command | What |
@@ -143,7 +212,9 @@ Each stage says how it is doing on stderr. At the end, the command says what the
 
 ## What waits
 
-- **Job ceilings per video-hour** (ADR-0018) need the video's duration, which the source stage now knows. They arrive with the first stages that spend much (P17). Until then a job has no ceiling, and punctuation is bounded per mission: its answer's size, its repairs, the ladder.
+- **Job ceilings per video-hour** (ADR-0018) need the video's duration, which the source stage now knows. They arrive with atomize, the first stage whose spending grows with the video (P18). Until then a job has no ceiling, and each mission is bounded: its answer's size, its thinking budget, its repairs, the ladder.
+- **A tier that does not take chapters.** The stage reads `[outline] chapters`, but every shipped tier sets it, so no test can turn it off through a tier. Its other side waits for a tier that needs it.
+- **Thinking while describing**, and a brief from more than gists: the eval decides (P26).
 - **The token estimator** is not yet calibrated from the call log: the default, which errs high, sizes every request.
 - **A video read again**: a source is read once per library, so captions the creator fixed later are not seen. A way to read a source again, on purpose, will come with the library's commands.
 - **A key that names the models costs a pod start.** A stage that asks models raises the army to make its key, even when its result is then found done. So ingesting again an automatic-captioned video whose transcript is done still starts the pod. Remembering the pod's engines from its last run would save that start, but a key made from a memory could name models the pod no longer serves. It waits until runs show the start matters; in practice, a job that reaches the pod's stages needs it anyway.
@@ -153,10 +224,10 @@ Each stage says how it is doing on stderr. At the end, the command says what the
 
 | Suite | What it holds |
 |---|---|
-| `tests/unit/pipeline/` (42) | the executor on scripted stages: found done, run again only where an input changed, a failure recorded and resumed, a stop, an artifact that breaks its schema, the salt, a result kept for one job, the cache key and the army's fingerprint; `run_job()`; windows and answer checks; the source stage on a fake yt-dlp and on files; the transcript stage on an army of oracles, with faults injected |
+| `tests/unit/pipeline/` (91) | the executor on scripted stages: found done, run again only where an input changed, a failure recorded and resumed, a stop, an artifact that breaks its schema, the salt, a result kept for one job, the cache key and the army's fingerprint; `run_job()`; punctuation's windows and answer checks; the source stage on a fake yt-dlp and on files; the transcript stage on an army of oracles, with faults injected; sentence windows, planned against engines of many sizes, bisection against giving up one sentence at a time; what asking stages share; sections from chapters, pauses and agreement, long ones cut, briefs joined; the outline stage on a synthetic lecture: outlines, chapters, no pod, windows, a sentence too long, an engine too small, every check sent back and repaired, every failure a finding |
 | `tests/unit/library/` | jobs, and the stage store: one commit or none, an artifact kept once, a damaged one refused, findings per run |
 | `tests/unit/hub/` | `JobArmy`: raised once, recorded engines replayed, what needs the user; the configured yt-dlp |
-| `tests/component/hub_cli_test.cpp` | `rreport ingest / resume / jobs` through the real executable: a caption file done without starting the pod, then found done; no pod, a finding; a missing file; an unknown tier |
+| `tests/component/hub_cli_test.cpp` | `rreport ingest / resume / jobs` through the real executable: a caption file done without a pod, the outline's finding said, then every stage found done; no pod, a finding; a missing file; an unknown tier |
 
 They pass under ASan and UBSan, and the pipeline, hub and library suites under TSan (the transcript stage's missions run on the army's threads). clang-tidy found what a reader might miss: an `optional` read without a check in `JobArmy` (now a `unique_ptr` that cannot be empty once raised), a `std::move` into a conditional that copied anyway, and fixtures with public state.
 
@@ -174,3 +245,21 @@ They pass under ASan and UBSan, and the pipeline, hub and library suites under T
 - `a-changed-file-is-kept` did not build (it left a parameter unused), and was written another way.
 
 The final run kills all 70, each by the test that claims it: 53 in the pipeline (21 of the executor and the key, 6 of a job's run, 6 of the source, 9 of the transcript stage, 10 of windows and answers, 1 of the stage store's order), 10 in the hub, 2 of the prompt library's answer schema, 2 of a preset in a key, 3 of the oracle's answers.
+
+**The outline stage (P17).** Its tests run it on a synthetic fifteen-minute lecture whose talk turns where the oracle starts a section, and on a 130-minute one for windows. What they found before any mutant ran:
+1. **A commander too small for the tier's thinking budget would have cut the video into one-sentence sections.** At `max` the outline thinks 16,384 tokens; on an engine holding 16K or less no window fit, so every sentence was set aside, each starting a section of its own. Now thinking takes half of what the commander holds at most, and sentences set aside one after another are one stretch, cut where the speaker paused, with one finding. Two tests hold it: a 16K commander thinks 8,192 tokens, and a 2K one leaves the video as no pod would.
+2. **A caption file now starts the pod.** The CLI test pinned "punctuated captions never start the pod"; with the outline in a job's chain, a configured pod reads every video. The test runs without a pod until the fake engines answer as the oracle does (P22).
+3. The oracle titled a section with its sentence's full stop, so the video's gist read "…mean..": its titles drop the punctuation after their last word.
+4. A test's fault rewrote `"meaning":null}` and never fired: `json::Json` sorts keys, so the oracle writes `{"meaning":null,"term":…}`. The fault now rewrites the text as written, and the test checks that its repair was asked.
+5. A squad's missions run at once, and log their requests in any order: tests read them by mission.
+
+clang-tidy found an optional read through an index it could not prove checked, a vector filled without a reserve, `std::iota` where `std::ranges::iota` serves, a variable that could be `const`, and a test's `uint32` product widened after the fact.
+
+**Writing the mutants found tests missing,** each written: the naming of sentence ranges ("S4", "S4–S6") and of findings' openings; the lookup of the engine serving a role; a first chapter nearer the second sentence than the first; a brief listing a word three times naming it once; the prompts' hashes in the key; a speaker the video's description names, not the section.
+
+**The mutants** (`tests/mutants/pipeline.toml`, 129). P15's 50 ran again, since the transcript stage's shared parts moved; 79 are new: 8 of what asking stages share, 14 of windows, 19 of sections and briefs, 38 of the outline stage. With them ran the outline artifact's 7 (`knowledge.toml`), the oracle's 5 new ones, and the eval's 42 in `annotate.cpp`, whose windows moved here. The first run killed 125 of the pipeline's 129:
+- three did not build: each left a parameter, a function or a variable unused, which `-Werror` refuses, and they were written another way;
+- `a-tie-goes-to-the-later-cut` survived. No test had two cuts exactly as near the middle that leave different parts; one does now (three sentences of ten seconds, cut for twenty-five);
+- `every-outline-that-agrees-adds-a-cut` was killed before the test that claimed it could run. Its duplicate cuts reach `outline_of()` in the ceiling test, whose invariant aborts the process, as it should. It is claimed now by the first test that catches it.
+
+The final run kills all 129, and the 7, 5 and 42, each by the test that claims it.

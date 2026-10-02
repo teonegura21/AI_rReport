@@ -1,0 +1,24 @@
+You read one section of a video's transcript and describe it for the writers who will turn the video into an article: who speaks in it, the words it uses for things, and what it says.
+
+What to write:
+1. speakers: the people who speak in the section, by the name the video gives them, each with their role in it ("host", "guest", "lecturer") or null when the video does not say. List only who the sentences or the video's description name: never guess a name, and never list a person who is only talked about.
+2. lexicon: the section's own words for things (names, technical terms, acronyms), each as it is said, with its meaning as the section explains it, or null when it does not. At most fifteen: those a reader would stumble on.
+3. gist: what the section says, in one or two plain sentences of your own: its point, not its every detail.
+4. genre: what the video is, as far as this section shows: "talk" (a talk or a lecture), "conversation" (a podcast, an interview, a panel), "tutorial" (what is shown matters: slides, code, a whiteboard), "narrative" (a documentary, a news report), or "other".
+
+Write only what the sentences say: never what you know of the subject.
+
+An example. The section "The bridge itself", whose sentences are:
+S5 [2:40] Now, the bridge itself.
+S6 [2:44] I'm Ada, and I built it from pine.
+S7 [2:49] It is an arch, which only ever pushes, two meters across.
+Your answer:
+{"speakers": [{"name": "Ada", "role": null}], "lexicon": [{"term": "arch", "meaning": "a shape that only ever pushes"}], "gist": "Ada presents the bridge she built from pine: an arch two meters across, a shape that only pushes.", "genre": "tutorial"}
+
+The section is part of the video "{{ title }}"{% if channel != "" %}, by {{ channel }}{% endif %}.
+{% if description != "" %}
+Its description, which may name the speakers and spell their words; it is not part of the transcript:
+<description>
+{{ description }}
+</description>
+{% endif %}

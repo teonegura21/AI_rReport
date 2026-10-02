@@ -8,10 +8,11 @@ rReport turns a video into a knowledge model: the transcript's sentences, the at
 |---|---|
 | `rr/knowledge/ids.hpp` | The short IDs of an analysis, `S#`, `A#`, `V#`, each its own type |
 | `rr/knowledge/transcript.hpp` | The transcript: sentences `S1…Sn`, when each was said, and by whom when known |
+| `rr/knowledge/outline.hpp` | The outline: the video's sections, and the brief every later mission is given |
 | `rr/knowledge/atoms.hpp` | Ledger A: the atoms every sentence became, or its filler label |
 | `rr/knowledge/article.hpp` | The article's Markdown; its blocks, sentences and `[A#]` markers |
 | `rr/knowledge/artifacts.hpp` | The artifact schemas, compiled in |
-| `schemas/artifacts/{transcript,atoms,article}.json` | The schemas themselves |
+| `schemas/artifacts/{transcript,outline,atoms,article}.json` | The schemas themselves |
 | `tests/fuzz/markers_fuzz.cpp` | The marker parser's invariants, for libFuzzer |
 
 ## Short IDs
@@ -25,19 +26,27 @@ The written form is strict: the letter, then a number from 1 without leading zer
 | Artifact | Written by | Holds |
 |---|---|---|
 | `transcript` | the transcript stage (P14) | sentences `S1…Sn` in the order said: text (NFC), `start_ms`, `end_ms`, speaker or `null` |
+| `outline` | the outline stage (P17) | the sections, each from its `first` sentence to its `last`, with a title and a gist or `null`; the brief: the genre, the speakers (a name, a role or `null`), the lexicon (a term, a meaning or `null`), the video's gist or `null`; and where the sections came from: `chapters`, `models` or `pauses` |
 | `atoms` | atomize (P18) | Ledger A: atoms `A1…An`, and the fillers |
 | `article` | write (P20) | the Markdown, with its markers |
 
-Each schema follows the repo's rules for schemas (`rr/json/schema.hpp`): every object closed (`additionalProperties: false`), every field required, with `null` for what may be absent, and enumerations closed. Reading an artifact (`transcript_from_json()`, `atom_ledger_from_json()`, `article_from_json()`) validates it against its schema first. Then it checks what a schema cannot say:
+Each schema follows the repo's rules for schemas (`rr/json/schema.hpp`): every object closed (`additionalProperties: false`), every field required, with `null` for what may be absent, and enumerations closed. Reading an artifact (`transcript_from_json()`, `outline_from_json()`, `atom_ledger_from_json()`, `article_from_json()`) validates it against its schema first. Then it checks what a schema cannot say:
 - IDs run `S1, S2, …` and `A1, A2, …` in order, so a lookup by ID is an index;
 - a sentence ends after it starts, and starts no earlier than the one before;
+- sections run in order from S1, each starting right after the one before, and none ends before it starts;
 - an atom's sentences are in order, once each;
 - `quote` is present exactly when `must_quote` is;
 - fillers follow their sentences' order, one each.
 
 Every refusal names what is wrong ("A1 lists S2 after S3"), because these messages feed repairs.
 
-What reading does **not** check is whether the parts agree with each other: whether Ledger A accounts for every sentence of the transcript, whether every marker names an atom, whether every atom is cited. Those are the fidelity checks (P13), each with its own repair message.
+What reading does **not** check is whether the parts agree with each other: whether the outline's sections end at the transcript's last sentence (`outline_problems()` says), whether Ledger A accounts for every sentence of the transcript, whether every marker names an atom, whether every atom is cited. Those are the fidelity checks (P13), each with its own repair message.
+
+### The outline
+
+An article is written a section at a time, and each mission after the outline sees its own stretch of the video and the **brief**, no more (plan §3.7). The brief is what any mission needs to know of the whole: the genre, who speaks, the video's words for things, and its gist, about 1,500 tokens. Prompts put it in their system message, the part every mission of a stage shares, so an engine reads it once ([prompts.md](prompts.md#the-cache-aware-layout)).
+
+Whatever is absent is `null`, never a guess: a section no model described has no gist; a speaker whose role the video does not say has none; a word the video does not explain has no meaning. Five genres name what changes how a video is retold: a `talk` (or a lecture), a `conversation` (a podcast, an interview, a panel), a `tutorial` (what is shown matters), a `narrative` (a documentary, a news report), and `other`. `sections_from` says what drew the sections, so a reader of the article knows how far to trust them: the creator's `chapters`, the commander's `models`, or `pauses` where neither was there ([pipeline.md](pipeline.md#the-outline-stage)).
 
 ### Atoms
 
@@ -60,7 +69,7 @@ A sentence that holds no atom gets a filler label from the closed list: disfluen
 
 ### What waits for its stage
 
-The outline (sections and the video brief) arrives with the outline stage (P17). On-screen items (`V#`) arrive with frames (M4). Duplicates declared in Ledger B arrive with the plan (P19). Each schema is defined when the stage that writes it is, so no shape is guessed early. A schema's text enters the stage cache key ([pipeline.md](pipeline.md#the-cache-key)), so changing one invalidates exactly the artifacts written under it. The pipeline's first artifact, the `source` (`schemas/artifacts/source.json`), is registered here with the others, and so is the eval's `silver` (`schemas/artifacts/silver.json`: a video's annotation drafted by models, [eval.md](eval.md#silver-drafted-by-models)).
+On-screen items (`V#`) arrive with frames (M4). Duplicates declared in Ledger B arrive with the plan (P19). Each schema is defined when the stage that writes it is, so no shape is guessed early. A schema's text enters the stage cache key ([pipeline.md](pipeline.md#the-cache-key)), so changing one invalidates exactly the artifacts written under it. The pipeline's first artifact, the `source` (`schemas/artifacts/source.json`), is registered here with the others, and so is the eval's `silver` (`schemas/artifacts/silver.json`: a video's annotation drafted by models, [eval.md](eval.md#silver-drafted-by-models)).
 
 ## The article's markers
 
@@ -117,3 +126,5 @@ A bracket is a citation when what it holds starts with A, S or V and a digit, wi
 The final run kills all 43 mutants: 3 on IDs, 30 on the parser's citations, sentences, blocks and reading, 4 on the transcript, 6 on the ledger.
 
 P13 made the inline-code reader public, as `inline_code()`, with a test of its own. The two mutants on it, rerun after the move, are still killed.
+
+P17 added the outline (`rr/knowledge/outline.hpp`). Six tests state its rules: it reads back what it wrote, every optional field both ways; it names its genres and where its sections came from; sections run from S1, each right after the one before; none ends before it starts; the schema refuses an unknown field, an empty title or gist, no sections, a sentence that is not one, a genre or a source of no kind; and `outline_problems()` says where an outline and its transcript disagree. Its seven mutants are all killed by the tests that claim them.

@@ -32,9 +32,10 @@ The work is cut into thirty phases, each one commit that builds, passes CI and i
 | P13 | `rr_fidelity`: the deterministic ledger checks, each with a repair message; the oracle's faults caught ([fidelity.md](design/fidelity.md)) | done: `3f78d77` |
 | P14 | `rr_media`, `rr_transcript`: captions → `S#` sentences with timings; auto captions re-punctuated by projection ([transcript.md](design/transcript.md)) | done: `3574dbf` |
 | P15 | `rr_pipeline`: stages, the executor, the stage cache; the stages `source` and `transcript`, with the first prompt, `punctuate`; `rreport ingest / resume / jobs` ([pipeline.md](design/pipeline.md)) | done: `9d1b971` |
-| P16 | `rr_eval`: the set, snapshots (`eval fetch`), gold anchored to the timeline, silver drafted by the `annotate` stage (`eval annotate`), the review sheet (`eval sheet`) ([eval.md](design/eval.md)) → **runbook R2** | this commit |
+| P16 | `rr_eval`: the set, snapshots (`eval fetch`), gold anchored to the timeline, silver drafted by the `annotate` stage (`eval annotate`), the review sheet (`eval sheet`) ([eval.md](design/eval.md)) → **runbook R2** | done: `39945d3` |
 | **4. The vertical slice** | | |
-| P17–P20 | The stages `outline`, `atomize`, `plan`, `write` (with seams): prompt, schema, stage, oracle support, fault tests | |
+| P17 | The stage `outline`: sections from chapters, from the commander's outlines agreed on, or from pauses, none over eight minutes; each described, the video's brief joined; the prompts `outline`, `describe`, `brief`; windows that fit their engine, shared with the eval ([pipeline.md](design/pipeline.md#the-outline-stage)) | this commit |
+| P18–P20 | The stages `atomize`, `plan`, `write` (with seams): prompt, schema, stage, oracle support, fault tests | |
 | P21 | `rr_report`, `rreport report`: the HTML article | |
 | P22 | End to end through the real executables; `kill -9` and resume → **runbook R3** | |
 | **5. Measurement** | | |

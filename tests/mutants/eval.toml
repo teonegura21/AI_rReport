@@ -3,6 +3,7 @@
 # making the review sheet, and names the test that must fail without it.
 # Run: scripts/mutate.py tests/mutants/eval.toml
 # What they found is in docs/design/eval.md, "How the tests were validated".
+# The windows' own mutants moved with their code to pipeline.toml (P17).
 
 target = "rr_eval_tests"
 binary = "build/dev/tests/unit/eval/rr_eval_tests"
@@ -394,46 +395,6 @@ expect = "Gold.ATimeIsWrittenAsPlayersShowIt"
 # --- Windows and drafts (annotate.cpp) ------------------------------------------------
 
 [[mutant]]
-name = "a-line-is-counted-without-its-newline"
-file = "src/eval/annotate.cpp"
-expect = "Windows.HoldAsManyWholeSentencesAsTheirLinesFitOneAtLeast"
-  [[mutant.edit]]
-  from = '''    return sentence_lines(transcript, index, index + 1).size() + 1;'''
-  to = '''    return sentence_lines(transcript, index, index + 1).size();'''
-
-[[mutant]]
-name = "a-window-stops-short-of-its-bytes"
-file = "src/eval/annotate.cpp"
-expect = "Windows.HoldAsManyWholeSentencesAsTheirLinesFitOneAtLeast"
-  [[mutant.edit]]
-  from = '''used + line_bytes(transcript, end) <= bytes) {'''
-  to = '''used + line_bytes(transcript, end) < bytes) {'''
-
-[[mutant]]
-name = "context-before-is-not-bounded-by-bytes"
-file = "src/eval/annotate.cpp"
-expect = "Windows.TheirContextIsAFewSentencesOnEitherSideWithinItsBytes"
-  [[mutant.edit]]
-  from = '''           used + line_bytes(transcript, window.context_begin - 1) <= kContextBytes) {'''
-  to = '''           true) {'''
-
-[[mutant]]
-name = "context-before-is-not-bounded-by-count"
-file = "src/eval/annotate.cpp"
-expect = "Windows.TheirContextIsAFewSentencesOnEitherSideWithinItsBytes"
-  [[mutant.edit]]
-  from = '''    while (window.context_begin > 0 && begin - window.context_begin < context &&'''
-  to = '''    while (window.context_begin > 0 &&'''
-
-[[mutant]]
-name = "context-after-is-not-bounded-by-count"
-file = "src/eval/annotate.cpp"
-expect = "Windows.TheirContextIsAFewSentencesOnEitherSideWithinItsBytes"
-  [[mutant.edit]]
-  from = '''window.context_end - end < context &&'''
-  to = ''''''
-
-[[mutant]]
 name = "the-commanders-thinking-is-not-sized"
 file = "src/eval/annotate.cpp"
 expect = "Windows.AreSizedToTheirEngines"
@@ -464,24 +425,6 @@ expect = "AnnotateStageTest.AWindowGivesUpSentencesUntilItsEngineHoldsIt"
   [[mutant.edit]]
   from = '''std::clamp<std::int64_t>(read * 2, 1'024, 8'192)'''
   to = '''std::clamp<std::int64_t>(read * 3 / 2, 1'024, 8'192)'''
-
-[[mutant]]
-name = "a-window-never-gives-up-a-sentence"
-file = "src/eval/annotate.cpp"
-expect = "AnnotateStageTest.AWindowGivesUpSentencesUntilItsEngineHoldsIt"
-  [[mutant.edit]]
-  from = '''        while (!held && window.end - window.begin > 1) {'''
-  to = '''        while (false) {'''
-
-[[mutant]]
-name = "a-sentence-too-long-is-sent-anyway"
-file = "src/eval/annotate.cpp"
-expect = "AnnotateStageTest.ASentenceTooLongForItsEngineEvenAloneIsAFinding"
-  [[mutant.edit]]
-  from = '''        if (held) {
-            plan.windows.push_back(window);'''
-  to = '''        if (true) {
-            plan.windows.push_back(window);'''
 
 [[mutant]]
 name = "a-citation-after-the-window-is-taken"
@@ -717,8 +660,8 @@ name = "the-commander-reads-again"
 file = "src/eval/annotate.cpp"
 expect = "AnnotateStageTest.TheCommanderDraftsThreeTimesAndTheOtherFamilyAddsWhatTheyMissed"
   [[mutant.edit]]
-  from = '''                                       Reader{.role = "infantry",'''
-  to = '''                                       Reader{.role = "commander",'''
+  from = '''Reader{.role = "infantry", .answer_tokens'''
+  to = '''Reader{.role = "commander", .answer_tokens'''
 
 [[mutant]]
 name = "a-window-without-a-draft-says-nothing"

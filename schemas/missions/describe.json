@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Section description",
+  "description": "Who speaks in a section of a transcript, the words it uses for things, what it says, and what the video is: the evidence first, then the gist (prompts/describe).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["speakers", "lexicon", "gist", "genre"],
+  "properties": {
+    "speakers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "role"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "role": {"type": ["string", "null"], "minLength": 1}
+        }
+      }
+    },
+    "lexicon": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["term", "meaning"],
+        "properties": {
+          "term": {"type": "string", "minLength": 1},
+          "meaning": {"type": ["string", "null"], "minLength": 1}
+        }
+      }
+    },
+    "gist": {"type": "string", "minLength": 1},
+    "genre": {"enum": ["talk", "conversation", "tutorial", "narrative", "other"]}
+  }
+}

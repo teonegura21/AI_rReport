@@ -1,0 +1,21 @@
+Answer with JSON: {"sections": [{"first": "S1", "title": "..."}, ...]}.
+{% if opening %}
+The sentences to outline, {{ part }}:
+<sentences>
+{{ sentences }}
+</sentences>
+
+Your first section starts at S1, where the video starts.
+{% else %}
+{% if before != "" %}
+The sentences before them, for context only (another reader outlines them):
+{{ before }}
+
+{% endif %}
+The sentences to outline, {{ part }}:
+<sentences>
+{{ sentences }}
+</sentences>
+
+List only the sections that start among these sentences. When their first sentence goes on with the talk before it, your first section starts later, where the talk turns; when none turns, list none.
+{% endif %}

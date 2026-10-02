@@ -24,16 +24,15 @@
 //   an annotation interrupted halfway asks again none of the calls it made.
 //
 // Windows, and the pod
-//   A window is as large as the engine that reads it holds. Each is filled
-//   with whole sentences up to a size the engine suggests (window_sizes():
-//   the commander's up to 12,000 bytes of lines, room left for its thinking
-//   and an answer twice as long; the other family's up to 3,000, with the
-//   facts found in them beside), then its mission is built and, while the
-//   engine would not hold it (agents::Army::holds()), its last sentence goes
-//   to the next window. So a prompt is never refused for its size, whatever
-//   the title, the context or the facts found. A sentence too long for its
-//   engine even alone is a finding. The sizes, and what each engine holds,
-//   enter the stage's key.
+//   The transcript is read in the pipeline's windows (rr/pipeline/windows.hpp):
+//   each filled with whole sentences up to a size the engine suggests
+//   (window_sizes(): the commander's up to 12,000 bytes of lines, room left
+//   for its thinking and an answer twice as long; the other family's up to
+//   3,000, with the facts found in them beside), then given up from its end
+//   until the engine holds its mission. So a prompt is never refused for its
+//   size, whatever the title, the context or the facts found. A sentence too
+//   long for its engine even alone is a finding. The sizes, and what each
+//   engine holds, enter the stage's key.
 //
 // Thread-safety: the stage is immutable, and the functions pure, but for
 //   start_annotation() and run_annotation(), which read and write the eval's
@@ -60,37 +59,9 @@
 #include <rr/library/jobs.hpp>
 #include <rr/pipeline/job_run.hpp>
 #include <rr/pipeline/stage.hpp>
+#include <rr/pipeline/windows.hpp>
 
 namespace rr::eval {
-
-// A window of the transcript: its own sentences [begin, end), and with its
-// context [context_begin, context_end), as indices of transcript.sentences.
-struct SentenceWindow {
-    std::size_t begin = 0;
-    std::size_t end = 0;
-    std::size_t context_begin = 0;
-    std::size_t context_end = 0;
-
-    friend bool operator==(const SentenceWindow&, const SentenceWindow&) = default;
-};
-
-// A window's context, on either side: up to three sentences, as many of them
-// as fit 1,000 bytes of lines. It lets a model read the window's first and
-// last sentences as they were said.
-inline constexpr std::size_t kContextSentences = 3;
-inline constexpr std::size_t kContextBytes = 1'000;
-
-// The window of the sentences [begin, end), which must be some of
-// `transcript`'s, with its context: on either side, the nearest sentences,
-// up to `context` of them, as many as fit kContextBytes of lines.
-[[nodiscard]] SentenceWindow window_of(const knowledge::Transcript& transcript, std::size_t begin,
-                                       std::size_t end, std::size_t context = kContextSentences);
-
-// The window from sentence `begin`, which must be one of `transcript`'s: as
-// many whole sentences as fit `bytes` of their lines (sentence_lines(), each
-// with its newline), one at least, with its context (window_of()).
-[[nodiscard]] SentenceWindow window_from(const knowledge::Transcript& transcript, std::size_t begin,
-                                         std::size_t bytes, std::size_t context = kContextSentences);
 
 // The window sizes, in bytes of lines, that the army's engines suggest (see
 // the header comment): what a window is filled to before it is checked
@@ -103,11 +74,6 @@ struct WindowSizes {
 };
 
 [[nodiscard]] WindowSizes window_sizes(const agents::Army& army);
-
-// Sentences [begin, end) as the prompts show them, a line each:
-// "S12 [3:04] What was said."
-[[nodiscard]] std::string sentence_lines(const knowledge::Transcript& transcript, std::size_t begin,
-                                         std::size_t end);
 
 // One answer, read (schemas/missions/annotate.json).
 struct DraftFact {
@@ -136,7 +102,7 @@ struct Draft {
 // nothing is.
 [[nodiscard]] std::vector<std::string> draft_problems(const json::Json& answer,
                                                       const knowledge::Transcript& transcript,
-                                                      const SentenceWindow& window);
+                                                      const pipeline::SentenceWindow& window);
 
 // The silver annotation.
 struct SilverFact {

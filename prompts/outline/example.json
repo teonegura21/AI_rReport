@@ -1,0 +1,11 @@
+{
+  "shared": {
+    "title": "How bridges stand up",
+    "channel": "Engineering Hour",
+    "description": "Tension, compression and resonance: a walk through the forces in a bridge, from the Roman arch to the Tacoma Narrows collapse of 1940."
+  },
+  "orders": [
+    {"opening": true, "before": "", "part": "the whole video", "sentences": "S1 [0:00] Welcome back.\nS2 [0:03] Today we load a bridge until it breaks.\nS3 [0:08] First, the tools."},
+    {"opening": false, "before": "S40 [31:02] And that is why it fell.", "part": "from 31:05 to 58:40 of the video's 1:02:13", "sentences": "S41 [31:05] Now, the arch.\nS42 [31:09] The Romans had no steel, so every bridge they built is an arch."}
+  ]
+}

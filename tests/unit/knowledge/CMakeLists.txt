@@ -3,6 +3,7 @@ rr_add_test_suite(knowledge
         article_test.cpp
         atoms_test.cpp
         ids_test.cpp
+        outline_test.cpp
         transcript_test.cpp
     DEPS
         rr::knowledge)

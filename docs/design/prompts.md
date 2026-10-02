@@ -52,7 +52,7 @@ Exact counts need the model's tokenizer, which lives on the pod. An estimate is 
 - **Say how it fails.** `failure_modes` lists what reviewers have seen go wrong, so the next change is checked against it.
 - **Put a block tag on a line of its own.** inja's `trim_blocks` removes the newline after a `{% … %}` tag, and the spaces before it too: `.{% if x %} Its` renders as `.Its`. The first prompt shipped with that slip until its test read the rendered text.
 
-The first prompt is `punctuate` (P15): it puts the punctuation back into a window of automatic captions, and the transcript stage lays it onto the captions' words without taking a word from it ([pipeline.md](pipeline.md#the-prompt)).
+The first prompt is `punctuate` (P15): it puts the punctuation back into a window of automatic captions, and the transcript stage lays it onto the captions' words without taking a word from it ([pipeline.md](pipeline.md#the-prompt)). The eval's `annotate` and `annotate_more` draft silver (P16, [eval.md](eval.md#silver-drafted-by-models)). The outline stage asks three (P17, [pipeline.md](pipeline.md#the-outline-stage)): `outline`, a judgment, thinks; `describe` and `brief`, which read and sum up, do not.
 
 ## How it is tested
 

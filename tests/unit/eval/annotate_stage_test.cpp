@@ -268,7 +268,7 @@ TEST_F(AnnotateStageTest, AWindowGivesUpSentencesUntilItsEngineHoldsIt) {
     const auto bytes = fingerprint().at("windows").at("annotate").at("bytes").get<std::size_t>();
     std::size_t filled = 0;
     for (std::size_t begin = 0; begin < transcript.sentences.size();
-         begin = window_from(transcript, begin, bytes).end) {
+         begin = pipeline::window_from(transcript, begin, bytes).end) {
         ++filled;
     }
     EXPECT_GT(drafts.size(), filled);

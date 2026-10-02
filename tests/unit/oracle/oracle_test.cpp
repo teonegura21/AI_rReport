@@ -151,6 +151,63 @@ TEST(OracleAnswers, AnnotateMoreAddsTheSentencesTheNotesDoNotCite) {
         << "no notes to add to";
 }
 
+// A request of `kind` whose last message holds `block` between <tag> and </tag>.
+llm::ChatRequest holding(std::string kind, std::string_view tag, std::string_view block) {
+    llm::ChatRequest request = asked(std::move(kind));
+    request.messages = {llm::Message::system("You read a video's transcript."),
+                        llm::Message::user(std::format("The lines:\n<{0}>\n{1}\n</{0}>\n", tag, block))};
+    return request;
+}
+
+TEST(OracleAnswers, OutlineStartsASectionAtS1AndWhereTheTalkTurns) {
+    Oracle oracle;
+    teach_stages(oracle);
+    const std::string_view sentences =
+        "S1 [0:00] Welcome back to the shed.\nS2 [0:04] Today we weigh radium.\nS3 [1:10] Now, the scales "
+        "we weigh it with.\nS4 [1:15] They came from Paris.\nS5 [2:30] Next, the radium itself.";
+    EXPECT_EQ(unwrap(json::parse(
+                  unwrap(oracle.chat(holding("outline", "sentences", sentences), {}, {})).first().content)),
+              unwrap(json::parse(R"({"sections": [
+        {"first": "S1", "title": "Welcome back to the shed"},
+        {"first": "S3", "title": "Now, the scales we weigh"},
+        {"first": "S5", "title": "Next, the radium itself"}]})")))
+        << "each titled by its first five words, without the full stop";
+    EXPECT_EQ(unwrap(oracle.chat(holding("outline", "sentences", "S7 [3:00] They glowed."), {}, {}))
+                  .first()
+                  .content,
+              R"({"sections":[]})")
+        << "a window where the talk does not turn starts no section";
+    EXPECT_ERRC(oracle.chat(asked("outline"), {}, {}), Errc::invalid_argument) << "no sentences to outline";
+}
+
+TEST(OracleAnswers, DescribeNamesWhoSaysImListsTheAcronymsAndGistsTheFirstSentence) {
+    Oracle oracle;
+    teach_stages(oracle);
+    const std::string_view sentences =
+        "S3 [1:10] Now, the scales from NASA.\nS4 [1:15] I'm Ada, and I weigh it.\nS5 [1:20] NASA lent "
+        "them, and the DNA lab too.";
+    EXPECT_EQ(unwrap(json::parse(
+                  unwrap(oracle.chat(holding("describe", "sentences", sentences), {}, {})).first().content)),
+              unwrap(json::parse(R"({"speakers": [{"name": "Ada", "role": null}],
+        "lexicon": [{"term": "NASA", "meaning": null}, {"term": "DNA", "meaning": null}],
+        "gist": "Now, the scales from NASA.", "genre": "talk"})")))
+        << "each acronym once";
+    EXPECT_ERRC(oracle.chat(holding("describe", "sentences", "no lines here"), {}, {}),
+                Errc::invalid_argument)
+        << "no sentence to describe";
+}
+
+TEST(OracleAnswers, BriefSaysHowManySectionsFromWhichToWhich) {
+    Oracle oracle;
+    teach_stages(oracle);
+    const std::string_view sections =
+        "1. [0:00] Welcome back: Ada welcomes the viewers.\n2. [1:10] Now, the scales\n3. [2:30] The radium: "
+        "it glows.";
+    EXPECT_EQ(unwrap(oracle.chat(holding("brief", "sections", sections), {}, {})).first().content,
+              R"({"gist":"A video in 3 sections, from Welcome back to The radium."})");
+    EXPECT_ERRC(oracle.chat(asked("brief"), {}, {}), Errc::invalid_argument) << "no sections to sum up";
+}
+
 TEST(RequestLog, KeepsEveryRequestItPassesOn) {
     Oracle oracle;
     oracle.teach("label",

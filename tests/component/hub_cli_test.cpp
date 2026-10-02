@@ -364,20 +364,26 @@ std::string job_in(const std::string& output) {
     return at == std::string::npos ? std::string{} : output.substr(at + 4, 26);
 }
 
-TEST_F(Hub, IngestsACaptionFileWithoutStartingThePod) {
-    runpod().add_pod("pod123", "EXITED");
+// Without a pod, so far: the fake engines do not answer as the oracle does
+// yet (plan P22), and every stage does what it can without models.
+TEST_F(Hub, IngestsACaptionFileWithoutAPodAndSaysWhatItCouldNotDo) {
+    const std::vector<std::string> no_pod{"runtime.url=", "runpod.pod_id="};
     const std::filesystem::path captions = home().write_file("On radium.vtt", kCaptions);
-    const proc::RunResult first = rreport({"ingest", captions.string()});
+    const proc::RunResult first = rreport({"ingest", captions.string()}, no_pod);
     ASSERT_EQ(first.status.code, 0) << first.stdout_text << first.stderr_text;
     EXPECT_THAT(first.stdout_text, HasSubstr("is done: On radium"));
     EXPECT_THAT(first.stderr_text, HasSubstr("transcript: done"));
-    EXPECT_EQ(runpod().status("pod123"), "EXITED")
-        << "punctuated captions need no model: the pod stays stopped";
+    EXPECT_THAT(first.stderr_text, HasSubstr("outline: done"));
+    EXPECT_THAT(first.stdout_text, HasSubstr("what the stages could not do:"));
+    EXPECT_THAT(first.stdout_text,
+                HasSubstr("outline: No pod is configured to read the video: its sections are cut "
+                          "where the speaker paused"));
 
-    const proc::RunResult second = rreport({"ingest", captions.string()});
+    const proc::RunResult second = rreport({"ingest", captions.string()}, no_pod);
     ASSERT_EQ(second.status.code, 0);
     EXPECT_THAT(second.stderr_text, HasSubstr("source: found done"));
     EXPECT_THAT(second.stderr_text, HasSubstr("transcript: found done")) << "the stage cache answers";
+    EXPECT_THAT(second.stderr_text, HasSubstr("outline: found done"));
 
     const proc::RunResult listed = rreport({"jobs"});
     ASSERT_EQ(listed.status.code, 0);
@@ -389,8 +395,9 @@ TEST_F(Hub, IngestsACaptionFileWithoutStartingThePod) {
     EXPECT_THAT(shown.stdout_text, HasSubstr("title:   On radium"));
     EXPECT_THAT(shown.stdout_text, HasSubstr(std::format("source:  {}", captions.string())));
     EXPECT_THAT(shown.stdout_text, HasSubstr("stage transcript   found done"));
+    EXPECT_THAT(shown.stdout_text, HasSubstr("stage outline      found done"));
 
-    const proc::RunResult resumed = rreport({"resume", job_in(first.stdout_text)});
+    const proc::RunResult resumed = rreport({"resume", job_in(first.stdout_text)}, no_pod);
     EXPECT_EQ(resumed.status.code, 0);
     EXPECT_THAT(resumed.stdout_text, HasSubstr("is done already"));
 }

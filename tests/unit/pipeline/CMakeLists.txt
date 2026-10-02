@@ -1,10 +1,14 @@
 rr_add_test_suite(pipeline
     SOURCES
+        asking_test.cpp
         executor_test.cpp
         job_run_test.cpp
+        outline_stage_test.cpp
+        outline_test.cpp
         punctuation_test.cpp
         source_test.cpp
         transcript_stage_test.cpp
+        windows_test.cpp
     DEPS
         rr::library
         rr::oracle

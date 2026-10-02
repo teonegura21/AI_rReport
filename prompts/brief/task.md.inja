@@ -1,0 +1,5 @@
+Answer with JSON: {"gist": "..."}.
+The sections:
+<sections>
+{{ sections }}
+</sections>

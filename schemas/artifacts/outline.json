@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Outline",
+  "description": "The video's sections, each a stretch of whole sentences in the order said, and the brief every later mission is given: genre, speakers, words, gist (rr/knowledge/outline.hpp).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sections", "brief", "sections_from"],
+  "properties": {
+    "sections": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["first", "last", "title", "gist"],
+        "properties": {
+          "first": {"type": "string", "pattern": "^S[1-9][0-9]{0,8}$"},
+          "last": {"type": "string", "pattern": "^S[1-9][0-9]{0,8}$"},
+          "title": {"type": "string", "minLength": 1},
+          "gist": {"type": ["string", "null"], "minLength": 1}
+        }
+      }
+    },
+    "brief": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["genre", "speakers", "lexicon", "gist"],
+      "properties": {
+        "genre": {"enum": ["talk", "conversation", "tutorial", "narrative", "other"]},
+        "speakers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "role"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1},
+              "role": {"type": ["string", "null"], "minLength": 1}
+            }
+          }
+        },
+        "lexicon": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["term", "meaning"],
+            "properties": {
+              "term": {"type": "string", "minLength": 1},
+              "meaning": {"type": ["string", "null"], "minLength": 1}
+            }
+          }
+        },
+        "gist": {"type": ["string", "null"], "minLength": 1}
+      }
+    },
+    "sections_from": {"enum": ["chapters", "models", "pauses"]}
+  }
+}

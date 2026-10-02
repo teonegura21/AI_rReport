@@ -16,7 +16,8 @@
 #
 # The prompts arrive with their stages: punctuate with the transcript (plan
 # P15); annotate and annotate_more with the eval's silver drafts (P16);
-# outline, atomize, plan and write with theirs (P17–P20).
+# outline, describe and brief with the outline (P17); atomize, plan and
+# write with theirs (P18–P20).
 
 [[prompt]]
 name = "punctuate"
@@ -61,4 +62,50 @@ failure_modes = [
   [[prompt.version]]
   number = 1
   hash = "d37b22e6e28cc5d84b918e0d7fe954eba807ad86faea8fed571080cbc048986f"
+  note = "first version"
+
+[[prompt]]
+name = "outline"
+purpose = "Cut a stretch of a transcript into sections, each a stretch of talk about one thing, and title them: where the article's parts begin (rr/pipeline/outline_stage.hpp)."
+schema = "schemas/missions/outline.json"
+shared = ["title", "channel", "description"]
+failure_modes = [
+  "a section at every pause, or every few sentences: the check sends back more than a section a minute",
+  "a section that starts among the context sentences, outside the stretch to outline",
+  "a section inside a story or an example, splitting it from its point",
+  "titles that summarize instead of naming, longer than twelve words",
+]
+  [[prompt.version]]
+  number = 1
+  hash = "5d91e8cc0e63ab3bf357c282b55c0a707eb00a64a643c2022b2aa7ea243bdea4"
+  note = "first version"
+
+[[prompt]]
+name = "describe"
+purpose = "Say who speaks in a section of a transcript, the words it uses for things, and what it says: the section's gist, and its share of the video's brief (rr/pipeline/outline_stage.hpp)."
+schema = "schemas/missions/describe.json"
+shared = ["title", "channel", "description"]
+failure_modes = [
+  "names a speaker the video never names, or lists a person who is only talked about",
+  "lists words the section does not say, or common words no reader stumbles on",
+  "a gist of the subject, from what the model knows, instead of what the section says",
+]
+  [[prompt.version]]
+  number = 1
+  hash = "78334d916140796966e32b6909ed4a45d2a9b7ba569edd551d5a80412f4b1142"
+  note = "first version"
+
+[[prompt]]
+name = "brief"
+purpose = "Write the gist of a whole video from the gists of its sections, in their order: the paragraph every later mission is given (rr/pipeline/outline_stage.hpp)."
+schema = "schemas/missions/brief.json"
+shared = ["title", "channel", "description"]
+failure_modes = [
+  "judges the video instead of saying what it says",
+  "adds what the model knows of the subject",
+  "lists the sections one by one instead of telling how the video goes",
+]
+  [[prompt.version]]
+  number = 1
+  hash = "12dbc256b3b0fadd4c3b49a36dc821252c51c46b9268508e786ae2a349d4f14f"
   note = "first version"

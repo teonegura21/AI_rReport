@@ -75,6 +75,7 @@
 #include <rr/net/http_client.hpp>
 #include <rr/pipeline/executor.hpp>
 #include <rr/pipeline/job_run.hpp>
+#include <rr/pipeline/outline_stage.hpp>
 #include <rr/pipeline/source.hpp>
 #include <rr/pipeline/transcript_stage.hpp>
 #include <rr/proc/termination_signals.hpp>
@@ -444,12 +445,14 @@ std::string took(std::chrono::milliseconds elapsed) {
                        duration_cast<std::chrono::minutes>(elapsed).count() % 60);
 }
 
-// The stages a job runs, so far (plan P15): its source, then its transcript.
+// The stages a job runs, so far (plan P17): its source, its transcript, then
+// its outline.
 Result<pipeline::Executor> job_stages(const HubSettings& settings) {
     std::vector<std::unique_ptr<pipeline::Stage>> stages;
     stages.push_back(std::make_unique<pipeline::SourceStage>(
         media::YtDlp{media::YtDlpOptions{.executable = settings.ytdlp, .timeout = settings.ytdlp_timeout}}));
     stages.push_back(std::make_unique<pipeline::TranscriptStage>());
+    stages.push_back(std::make_unique<pipeline::OutlineStage>());
     return pipeline::Executor::create(std::move(stages), SystemClock::instance());
 }
 

@@ -343,30 +343,6 @@ expect = "TranscriptStageTest.AWindowAJobCeilingStoppedMakesTheResultThisJobsAlo
   from = '''            done.reusable = false;'''
   to = '''            done.reusable = true;'''
 
-[[mutant]]
-name = "a-refusal-is-unexplained"
-file = "src/pipeline/transcript_stage.cpp"
-expect = "TranscriptStageTest.AWindowTheModelsDeclineIsAFinding"
-  [[mutant.edit]]
-  from = '''        case agents::Verdict::refused:
-            return "the models declined to punctuate them";'''
-  to = '''        case agents::Verdict::refused:'''
-
-[[mutant]]
-name = "the-whole-description"
-file = "src/pipeline/transcript_stage.cpp"
-expect = "TranscriptStageTest.TheInfantryPunctuatesThemWithoutChangingAWord"
-  [[mutant.edit]]
-  from = '''    if (description.size() <= kBriefBytes) {'''
-  to = '''    if (description.size() <= 100 * kBriefBytes) {'''
-
-[[mutant]]
-name = "a-cut-loses-its-line-end"
-file = "src/pipeline/transcript_stage.cpp"
-expect = "TranscriptStageTest.TheInfantryPunctuatesThemWithoutChangingAWord"
-  [[mutant.edit]]
-  from = '''        kept = line + 1;'''
-  to = '''        kept = line;'''
 
 # --- Windows and answers (punctuation.cpp) ------------------------------------------
 
@@ -449,3 +425,650 @@ expect = "PunctuationAnswers.OnlyTheWindowsOwnWordsAreTakenWithTheirTimes"
   [[mutant.edit]]
   from = '''        projection.words.begin() + static_cast<std::ptrdiff_t>(window.begin - window.context_begin);'''
   to = '''        projection.words.begin();'''
+
+# --- What every stage that asks models shares (asking.cpp) ---------------------------
+
+[[mutant]]
+name = "a-refusal-is-unexplained"
+file = "src/pipeline/asking.cpp"
+expect = "Asking.AMissionWithoutAnAnswerSaysWhy"
+  [[mutant.edit]]
+  from = '''            return std::format("the models declined to {}", task);'''
+  to = '''            return std::format("{}", task.substr(0, 0));'''
+
+[[mutant]]
+name = "problems-run-together"
+file = "src/pipeline/asking.cpp"
+expect = "Asking.AMissionWithoutAnAnswerSaysWhy"
+  [[mutant.edit]]
+  from = '''        problems += problems.empty() ? problem : "; " + problem;'''
+  to = '''        problems += problem;'''
+
+[[mutant]]
+name = "a-ceiling-is-unnamed"
+file = "src/pipeline/asking.cpp"
+expect = "OutlineStageTest.AJobCeilingMakesTheResultThisJobsAlone"
+  [[mutant.edit]]
+  from = '''hit.has_value() ? agents::to_string(hit->kind) : std::string_view{"spending"}'''
+  to = '''std::string_view{"spending"}'''
+
+[[mutant]]
+name = "the-whole-description"
+file = "src/pipeline/asking.cpp"
+expect = "Asking.ALongerDescriptionIsCutAfterALineOrAWordAndSaysSo"
+  [[mutant.edit]]
+  from = '''    if (description.size() <= kDescriptionBytes) {'''
+  to = '''    if (description.size() <= 100 * kDescriptionBytes) {'''
+
+[[mutant]]
+name = "a-cut-loses-its-line-end"
+file = "src/pipeline/asking.cpp"
+expect = "Asking.ALongerDescriptionIsCutAfterALineOrAWordAndSaysSo"
+  [[mutant.edit]]
+  from = '''        kept = line + 1;'''
+  to = '''        kept = line;'''
+
+[[mutant]]
+name = "a-cut-may-split-a-character"
+file = "src/pipeline/asking.cpp"
+expect = "Asking.ADescriptionWithoutASpaceIsCutBeforeACharacterNeverInsideOne"
+  [[mutant.edit]]
+  from = '''        while (kept > 0 && (static_cast<unsigned char>(description[kept]) & 0xC0U) == 0x80U) {'''
+  to = '''        while (false) {'''
+
+[[mutant]]
+name = "any-engine-serves-every-role"
+file = "src/pipeline/asking.cpp"
+expect = "Asking.TheEngineServingARoleIsFound"
+  [[mutant.edit]]
+  from = '''return std::ranges::contains(engine.roles, role);'''
+  to = '''return std::ranges::contains(engine.roles, role) || true;'''
+
+[[mutant]]
+name = "a-prompt-is-fingerprinted-without-its-hash"
+file = "src/pipeline/asking.cpp"
+expect = "OutlineStageTest.TheKeyHoldsTheTierThePromptsTheArmyAndWhatTheCommanderHolds"
+  [[mutant.edit]]
+  from = '''{"label", prompt.info->label()}, {"hash", hash}'''
+  to = '''{"label", prompt.info->label()}, {"hash", hash.substr(0, 0)}'''
+
+# --- Windows of a transcript (windows.cpp) ------------------------------------------
+
+[[mutant]]
+name = "a-line-is-counted-without-its-newline"
+file = "src/pipeline/windows.cpp"
+expect = "SentenceWindows.HoldAsManyWholeSentencesAsTheirLinesFitOneAtLeast"
+  [[mutant.edit]]
+  from = '''    return sentence_lines(transcript, index, index + 1).size() + 1;'''
+  to = '''    return sentence_lines(transcript, index, index + 1).size();'''
+
+[[mutant]]
+name = "a-window-stops-short-of-its-bytes"
+file = "src/pipeline/windows.cpp"
+expect = "SentenceWindows.HoldAsManyWholeSentencesAsTheirLinesFitOneAtLeast"
+  [[mutant.edit]]
+  from = '''used + line_bytes(transcript, end) <= bytes) {'''
+  to = '''used + line_bytes(transcript, end) < bytes) {'''
+
+[[mutant]]
+name = "context-before-is-not-bounded-by-bytes"
+file = "src/pipeline/windows.cpp"
+expect = "SentenceWindows.TheirContextIsAFewSentencesOnEitherSideWithinItsBytes"
+  [[mutant.edit]]
+  from = '''           used + line_bytes(transcript, window.context_begin - 1) <= kContextBytes) {'''
+  to = '''           true) {'''
+
+[[mutant]]
+name = "context-before-is-not-bounded-by-count"
+file = "src/pipeline/windows.cpp"
+expect = "SentenceWindows.TheirContextIsAFewSentencesOnEitherSideWithinItsBytes"
+  [[mutant.edit]]
+  from = '''    while (window.context_begin > 0 && begin - window.context_begin < context &&'''
+  to = '''    while (window.context_begin > 0 &&'''
+
+[[mutant]]
+name = "context-after-is-not-bounded-by-count"
+file = "src/pipeline/windows.cpp"
+expect = "SentenceWindows.TheirContextIsAFewSentencesOnEitherSideWithinItsBytes"
+  [[mutant.edit]]
+  from = '''window.context_end - end < context &&'''
+  to = ''''''
+
+[[mutant]]
+name = "context-after-is-not-bounded-by-bytes"
+file = "src/pipeline/windows.cpp"
+expect = "SentenceWindows.TheirContextIsAFewSentencesOnEitherSideWithinItsBytes"
+  [[mutant.edit]]
+  from = '''           used + line_bytes(transcript, window.context_end) <= kContextBytes) {'''
+  to = '''           true) {'''
+
+[[mutant]]
+name = "own-lines-are-not-counted"
+file = "src/pipeline/windows.cpp"
+expect = "SentenceWindows.CountTheBytesOfTheirOwnLinesEachWithItsNewline"
+  [[mutant.edit]]
+  from = '''        bytes += line_bytes(transcript, index);'''
+  to = '''        bytes += line_bytes(transcript, index) - 1;'''
+
+[[mutant]]
+name = "one-sentence-is-a-range"
+file = "src/pipeline/windows.cpp"
+expect = "SentenceWindows.NameTheirSentences"
+  [[mutant.edit]]
+  from = '''    return begin + 1 == end ? std::format("S{}", begin + 1)'''
+  to = '''    return false ? std::format("S{}", begin + 1)'''
+
+[[mutant]]
+name = "one-sentence-is-said-as-several"
+file = "src/pipeline/windows.cpp"
+expect = "SentenceWindows.NameTheirSentences"
+  [[mutant.edit]]
+  from = '''    const bool one = begin + 1 == end;'''
+  to = '''    const bool one = begin + 1 == end && false;'''
+
+[[mutant]]
+name = "a-window-never-gives-up-a-sentence"
+file = "src/pipeline/windows.cpp"
+expect = "SentenceWindows.GiveUpSentencesFromTheirEndUntilTheirEngineHoldsThem"
+  [[mutant.edit]]
+  from = '''        if (!army.holds(mission)) {'''
+  to = '''        if (!army.holds(mission) && false) {'''
+
+[[mutant]]
+name = "a-trial-is-always-refused"
+file = "src/pipeline/windows.cpp"
+expect = "SentenceWindows.GiveUpSentencesFromTheirEndUntilTheirEngineHoldsThem"
+  [[mutant.edit]]
+  from = '''                if (army.holds(trial)) {'''
+  to = '''                if (army.holds(trial) && false) {'''
+
+[[mutant]]
+name = "a-trial-is-always-held"
+file = "src/pipeline/windows.cpp"
+expect = "SentenceWindows.GiveUpSentencesFromTheirEndUntilTheirEngineHoldsThem"
+  [[mutant.edit]]
+  from = '''                if (army.holds(trial)) {'''
+  to = '''                if (army.holds(trial) || true) {'''
+
+[[mutant]]
+name = "a-sentence-too-long-is-sent-anyway"
+file = "src/pipeline/windows.cpp"
+expect = "SentenceWindows.SetAsideASentenceTooLongForItsEngineEvenAlone"
+  [[mutant.edit]]
+  from = '''        if (army.holds(mission)) {
+            plan.windows.push_back(window);'''
+  to = '''        if (true) {
+            plan.windows.push_back(window);'''
+
+[[mutant]]
+name = "a-window-set-aside-takes-a-number"
+file = "src/pipeline/windows.cpp"
+expect = "SentenceWindows.SetAsideASentenceTooLongForItsEngineEvenAlone"
+  [[mutant.edit]]
+  from = '''        const std::size_t number = plan.missions.size() + 1;'''
+  to = '''        const std::size_t number = plan.missions.size() + plan.too_long.size() + 1;'''
+
+# --- Sections made and joined (outline.cpp) -----------------------------------------
+
+[[mutant]]
+name = "a-chapter-starts-at-the-sentence-farthest"
+file = "src/pipeline/outline.cpp"
+expect = "Sections.AChapterStartsAtTheSentenceThatStartsClosestToItsTime"
+  [[mutant.edit]]
+  from = '''            std::ranges::min_element(transcript.sentences, {},'''
+  to = '''            std::ranges::max_element(transcript.sentences, {},'''
+
+[[mutant]]
+name = "the-first-chapter-starts-where-it-says"
+file = "src/pipeline/outline.cpp"
+expect = "Sections.AChapterStartsAtTheSentenceThatStartsClosestToItsTime"
+  [[mutant.edit]]
+  from = '''            cuts.empty() ? std::size_t{0} : static_cast<std::size_t>(closest - transcript.sentences.begin());'''
+  to = '''            static_cast<std::size_t>(closest - transcript.sentences.begin());'''
+
+[[mutant]]
+name = "a-chapter-where-the-one-before-starts-is-kept"
+file = "src/pipeline/outline.cpp"
+expect = "Sections.AChapterThatWouldStartWhereOrBeforeTheOneBeforeIsDropped"
+  [[mutant.edit]]
+  from = '''        if (!cuts.empty() && first <= cuts.back().first) {'''
+  to = '''        if (!cuts.empty() && first < cuts.back().first) {'''
+
+[[mutant]]
+name = "a-section-is-never-cut"
+file = "src/pipeline/outline.cpp"
+expect = "Sections.ALongOneIsCutAgainUntilNoPartIsLongerAndASentenceIsNeverCut"
+  [[mutant.edit]]
+  from = '''stretch_length(transcript, first, end) <= longest) {'''
+  to = '''stretch_length(transcript, first, end) <= longest || true) {'''
+
+[[mutant]]
+name = "any-cut-is-balanced"
+file = "src/pipeline/outline.cpp"
+expect = "Sections.ALongOneIsCutWhereTheSpeakerPausedLongestLeavingEachPartAQuarter"
+  [[mutant.edit]]
+  from = '''        const bool balanced = at * 4 >= length && (length - at) * 4 >= length;'''
+  to = '''        const bool balanced = true || (at * 4 >= length && (length - at) * 4 >= length);'''
+
+[[mutant]]
+name = "the-shortest-pause-wins"
+file = "src/pipeline/outline.cpp"
+expect = "Sections.ALongOneIsCutWhereTheSpeakerPausedLongestLeavingEachPartAQuarter"
+  [[mutant.edit]]
+  from = '''        if (key(cut) > key(best)) {'''
+  to = '''        if (key(cut) < key(best)) {'''
+
+[[mutant]]
+name = "a-tie-goes-to-the-later-cut"
+file = "src/pipeline/outline.cpp"
+expect = "Sections.BetweenPausesAsLongALongOneIsCutNearestItsMiddle"
+  [[mutant.edit]]
+  from = '''        if (key(cut) > key(best)) {'''
+  to = '''        if (key(cut) >= key(best)) {'''
+
+[[mutant]]
+name = "the-middle-is-ignored"
+file = "src/pipeline/outline.cpp"
+expect = "Sections.BetweenPausesAsLongALongOneIsCutNearestItsMiddle"
+  [[mutant.edit]]
+  from = '''-std::chrono::abs(at - (length / 2))};'''
+  to = '''Millis{0} * (at - length).count()};'''
+
+[[mutant]]
+name = "a-part-keeps-the-whole-title"
+file = "src/pipeline/outline.cpp"
+expect = "Sections.ALongOneIsCutWhereTheSpeakerPausedLongestLeavingEachPartAQuarter"
+  [[mutant.edit]]
+  from = '''                    .title = std::format("{} ({} of {})", cuts[index].title, part + 1, starts.size())});'''
+  to = '''                    .title = cuts[index].title + std::string(part * 0, ' ')});'''
+
+[[mutant]]
+name = "a-pause-cut-ends-where-its-last-sentence-starts"
+file = "src/pipeline/outline.cpp"
+expect = "Sections.WithoutChaptersOrAModelAreCutAtPausesAndTitledByTheirStretch"
+  [[mutant.edit]]
+  from = '''                            format_timestamp(transcript.sentences[last].span.end()))});'''
+  to = '''                            format_timestamp(transcript.sentences[last].span.start()))});'''
+
+[[mutant]]
+name = "every-outline-that-agrees-adds-a-cut"
+file = "src/pipeline/outline.cpp"
+expect = "OutlineStageTest.TheCommandersOutlinesCutTheVideoWhereTheTalkTurns"
+  [[mutant.edit]]
+  from = '''                agreed.push_back(*found);
+                break;'''
+  to = '''                agreed.push_back(*found);'''
+
+[[mutant]]
+name = "the-tolerance-is-ignored"
+file = "src/pipeline/outline.cpp"
+expect = "Sections.OutlinesAgreeWhereEnoughOfThemStartOneNearEachOther"
+  [[mutant.edit]]
+  from = '''reason::boundary_consensus(starts, tolerance, quorum)'''
+  to = '''reason::boundary_consensus(starts, tolerance * 0, quorum)'''
+
+[[mutant]]
+name = "the-genre-goes-to-the-last-of-a-tie"
+file = "src/pipeline/outline.cpp"
+expect = "Briefs.JoinTheGenreMostOfThemName"
+  [[mutant.edit]]
+  from = '''        if (votes[brief.genre] > most) {'''
+  to = '''        if (votes[brief.genre] >= most) {'''
+
+[[mutant]]
+name = "a-role-replaces-one"
+file = "src/pipeline/outline.cpp"
+expect = "Briefs.JoinTheirSpeakersAndWordsEachOnceARoleOrMeaningFillingAnEmptyOne"
+  [[mutant.edit]]
+  from = '''            if (!(entry.item.*value_).has_value()) {'''
+  to = '''            if (true) {'''
+
+[[mutant]]
+name = "names-are-compared-as-written"
+file = "src/pipeline/outline.cpp"
+expect = "Briefs.JoinTheirSpeakersAndWordsEachOnceARoleOrMeaningFillingAnEmptyOne"
+  [[mutant.edit]]
+  from = '''index_.try_emplace(folded(item.*key_), entries_.size());'''
+  to = '''index_.try_emplace(item.*key_ + folded({}), entries_.size());'''
+
+[[mutant]]
+name = "a-brief-names-a-word-as-often-as-it-lists-it"
+file = "src/pipeline/outline.cpp"
+expect = "Briefs.KeepTheWordsMostOfThemNameWhenTheyNameTooMany"
+  [[mutant.edit]]
+  from = '''            if (named.insert(found->second).second) {'''
+  to = '''            if (named.insert(found->second).second || true) {'''
+
+[[mutant]]
+name = "words-are-never-capped"
+file = "src/pipeline/outline.cpp"
+expect = "Briefs.KeepTheWordsMostOfThemNameWhenTheyNameTooMany"
+  [[mutant.edit]]
+  from = '''        order.resize(std::min(most, order.size()));'''
+  to = '''        order.resize(order.size() + (most * 0));'''
+
+[[mutant]]
+name = "the-words-kept-come-most-named-first"
+file = "src/pipeline/outline.cpp"
+expect = "Briefs.KeepTheWordsMostOfThemNameWhenTheyNameTooMany"
+  [[mutant.edit]]
+  from = '''        std::ranges::sort(order);'''
+  to = ''''''
+
+[[mutant]]
+name = "speakers-are-never-capped"
+file = "src/pipeline/outline.cpp"
+expect = "Briefs.KeepTheWordsMostOfThemNameWhenTheyNameTooMany"
+  [[mutant.edit]]
+  from = '''    joined.speakers = speakers.most_named(kMostSpeakers);'''
+  to = '''    joined.speakers = speakers.most_named(1'000);'''
+
+# --- The outline stage (outline_stage.cpp) ------------------------------------------
+
+[[mutant]]
+name = "a-section-outside-the-window-is-taken"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''        if (index < window.begin || index >= window.end) {'''
+  to = '''        if ((index < window.begin || index >= window.end) && false) {'''
+
+[[mutant]]
+name = "sections-may-come-in-any-order"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''        } else if (first.number() <= previous) {'''
+  to = '''        } else if (first.number() <= previous && false) {'''
+
+[[mutant]]
+name = "the-video-may-start-anywhere"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''    if (window.begin == 0 && !opens) {'''
+  to = '''    if (window.begin == 0 && !opens && false) {'''
+
+[[mutant]]
+name = "a-title-may-run-on"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''words_in(section.at("title")); words > kTitleWords) {'''
+  to = '''words_in(section.at("title")); words > kTitleWords && false) {'''
+
+[[mutant]]
+name = "a-section-a-sentence-is-an-outline"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''    if (sections.size() > minutes + 1) {'''
+  to = '''    if (sections.size() > minutes + 1 && false) {'''
+
+[[mutant]]
+name = "a-minute-is-an-hour"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.TheCommandersOutlinesCutTheVideoWhereTheTalkTurns"
+  [[mutant.edit]]
+  from = '''(length.count() + 59'999) / 60'000'''
+  to = '''(length.count() + 59'999) / 3'600'000'''
+
+[[mutant]]
+name = "a-speaker-no-one-names-is-taken"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''        if (!says(said, name) && !says(video, name)) {'''
+  to = '''        if (!says(said, name) && !says(video, name) && false) {'''
+
+[[mutant]]
+name = "only-the-section-may-name-a-speaker"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.ASpeakerTheVideosDescriptionNamesIsTaken"
+  [[mutant.edit]]
+  from = '''        if (!says(said, name) && !says(video, name)) {'''
+  to = '''        if (!says(said, name) && (!says(video, name) || true)) {'''
+
+[[mutant]]
+name = "a-word-not-said-is-taken"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''get<std::string>(); !says(said, written)) {'''
+  to = '''get<std::string>(); !says(said, written) && false) {'''
+
+[[mutant]]
+name = "any-number-of-words"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''    if (lexicon.size() > kSectionTerms) {'''
+  to = '''    if (lexicon.size() > kSectionTerms && false) {'''
+
+[[mutant]]
+name = "a-gist-may-run-on"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''words_in(answer.at("gist")); words > kGistWords) {'''
+  to = '''words_in(answer.at("gist")); words > kGistWords && false) {'''
+
+[[mutant]]
+name = "a-video-gist-may-run-on"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.EveryRuleAnAnswerBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''words_in(answer.at("gist")); words > kVideoGistWords) {'''
+  to = '''words_in(answer.at("gist")); words > kVideoGistWords && false) {'''
+
+[[mutant]]
+name = "samples-are-not-agreed-on"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.ASectionStartsWhereEnoughSamplesAgree"
+  [[mutant.edit]]
+  from = '''        return agreed_cuts(samples, compute_.boundary_tolerance, compute_.quorum);'''
+  to = '''        return agreed_cuts(std::span(samples).first(1), compute_.boundary_tolerance, compute_.quorum);'''
+
+[[mutant]]
+name = "one-sample-is-drawn"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.TheCommandersOutlinesCutTheVideoWhereTheTalkTurns"
+  [[mutant.edit]]
+  from = '''        mission.samples = compute_.samples;'''
+  to = '''        mission.samples = 1 + (compute_.samples * 0);'''
+
+[[mutant]]
+name = "outlines-do-not-think"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.TheCommandersOutlinesCutTheVideoWhereTheTalkTurns"
+  [[mutant.edit]]
+  from = '''        mission.request.thinking = true;'''
+  to = '''        mission.request.thinking = false;'''
+
+[[mutant]]
+name = "descriptions-think"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.TheCommandersOutlinesCutTheVideoWhereTheTalkTurns"
+  [[mutant.edit]]
+  from = '''                                                           .thinking = false},'''
+  to = '''                                                           .thinking = true},'''
+
+[[mutant]]
+name = "the-tiers-budget-is-ignored"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.AFasterTierOutlinesOnceWithASmallerBudget"
+  [[mutant.edit]]
+  from = '''                               : std::min(compute.thinking_budget, commander->ctx_per_slot / 2);'''
+  to = '''                               : commander->ctx_per_slot / 2;'''
+
+[[mutant]]
+name = "thinking-may-take-it-all"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.AnOutlineThinksWithinHalfOfWhatTheCommanderHolds"
+  [[mutant.edit]]
+  from = '''                               : std::min(compute.thinking_budget, commander->ctx_per_slot / 2);'''
+  to = '''                               : std::min(compute.thinking_budget, commander->ctx_per_slot);'''
+
+[[mutant]]
+name = "the-closing-words-are-forgotten"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.TheCommandersOutlinesCutTheVideoWhereTheTalkTurns"
+  [[mutant.edit]]
+  from = '''            closing_ = commander->thinking.thinking_budget->closing;'''
+  to = '''            closing_.clear();'''
+
+[[mutant]]
+name = "the-whole-video-is-a-part"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.TheCommandersOutlinesCutTheVideoWhereTheTalkTurns"
+  [[mutant.edit]]
+  from = '''    if (window.begin == 0 && window.end == transcript.sentences.size()) {'''
+  to = '''    if (window.begin == 0 && window.end == transcript.sentences.size() && false) {'''
+
+[[mutant]]
+name = "no-window-opens-the-video"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.TheCommandersOutlinesCutTheVideoWhereTheTalkTurns"
+  [[mutant.edit]]
+  from = '''        const json::Json order{{"opening", window.begin == 0},'''
+  to = '''        const json::Json order{{"opening", window.begin == 0 && false},'''
+
+[[mutant]]
+name = "set-aside-sentences-are-not-merged"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.AnEngineThatHoldsNoSentenceLeavesTheVideoCutAtPauses"
+  [[mutant.edit]]
+  from = '''            if (before.second == nullptr && stretches[index].second == nullptr &&'''
+  to = '''            if (before.second == nullptr && stretches[index].second == nullptr && false &&'''
+
+[[mutant]]
+name = "a-set-aside-sentence-starts-nothing"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.ASentenceTooLongForTheCommanderEvenAloneStartsASection"
+  [[mutant.edit]]
+  from = '''            std::vector<Cut> cuts = outcome == nullptr ? set_aside(window) : agreed(window, *outcome);'''
+  to = '''            std::vector<Cut> cuts = outcome == nullptr ? std::vector<Cut>{} : agreed(window, *outcome);'''
+
+[[mutant]]
+name = "pauses-are-credited-to-the-models"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.AStretchTheModelsDeclineToOutlineIsCutWhereTheSpeakerPaused"
+  [[mutant.edit]]
+  from = '''            outlined.by_models = outlined.by_models || (outcome != nullptr && !outcome->answers.empty());'''
+  to = '''            outlined.by_models = true;'''
+
+[[mutant]]
+name = "a-section-too-long-to-describe-is-asked-anyway"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.AnEngineThatHoldsNoSentenceLeavesTheVideoCutAtPauses"
+  [[mutant.edit]]
+  from = '''            if (!army_->holds(mission)) {
+                note_ungisted'''
+  to = '''            if (!army_->holds(mission) && false) {
+                note_ungisted'''
+
+[[mutant]]
+name = "a-described-section-loses-its-gist"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.TheCommandersOutlinesCutTheVideoWhereTheTalkTurns"
+  [[mutant.edit]]
+  from = '''            outline.sections[index].gist = description->gist;'''
+  to = ''''''
+
+[[mutant]]
+name = "a-section-without-a-gist-is-listed-with-an-empty-one"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.ASectionTheModelsDeclineToDescribeHasNoGistAndTheBriefGoesOn"
+  [[mutant.edit]]
+  from = '''description.has_value() ? ": " + description->gist : "");'''
+  to = '''description.has_value() ? ": " + description->gist : ": ");'''
+
+[[mutant]]
+name = "the-video-is-summed-up-without-gists"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.AJobCeilingMakesTheResultThisJobsAlone"
+  [[mutant.edit]]
+  from = '''        if (!any) {'''
+  to = '''        if (!any && false) {'''
+
+[[mutant]]
+name = "a-ceiling-leaves-the-result-reusable"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.AJobCeilingMakesTheResultThisJobsAlone"
+  [[mutant.edit]]
+  from = '''            output_.reusable = false;'''
+  to = '''            output_.reusable = true;'''
+
+[[mutant]]
+name = "the-chapters-are-ignored"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.TheCreatorsChaptersAreTheSectionsWhenThereAreTwoOrMore"
+  [[mutant.edit]]
+  from = '''    read.chapters = read.tier.outline.chapters && read.source.video.chapters.size() >= kLeastChapters;'''
+  to = '''    read.chapters = read.tier.outline.chapters && read.source.video.chapters.size() >= kLeastChapters && false;'''
+
+[[mutant]]
+name = "one-chapter-is-enough"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.TheCreatorsChaptersAreTheSectionsWhenThereAreTwoOrMore"
+  [[mutant.edit]]
+  from = '''constexpr std::size_t kLeastChapters = 2;'''
+  to = '''constexpr std::size_t kLeastChapters = 1;'''
+
+[[mutant]]
+name = "long-sections-stand"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.AChapterLongerThanEightMinutesIsCutWhereTheSpeakerPausedLongest"
+  [[mutant.edit]]
+  from = '''    cuts = cut_long(std::move(cuts), read.transcript);'''
+  to = '''    cuts = std::vector<Cut>(cuts);'''
+
+[[mutant]]
+name = "without-a-pod-long-chapters-stand"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.WithoutAPodTheVideoIsCutWhereTheSpeakerPausedAndItsBriefIsEmpty"
+  [[mutant.edit]]
+  from = '''                                      ? cut_long(chapter_cuts(source.video.chapters, transcript), transcript)'''
+  to = '''                                      ? chapter_cuts(source.video.chapters, transcript)'''
+
+[[mutant]]
+name = "the-key-forgets-the-tier"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.TheKeyHoldsTheTierThePromptsTheArmyAndWhatTheCommanderHolds"
+  [[mutant.edit]]
+  from = '''    json::Json fingerprint{{"tier", tier.canonical(reason::Stage::outline)},'''
+  to = '''    json::Json fingerprint{{"tier", tier.canonical(reason::Stage::outline).substr(0, 0)},'''
+
+[[mutant]]
+name = "the-key-forgets-the-longest-section"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.TheKeyHoldsTheTierThePromptsTheArmyAndWhatTheCommanderHolds"
+  [[mutant.edit]]
+  from = '''                           {"longest_ms", kLongestSection.count()},'''
+  to = '''                           {"longest_ms", 0},'''
+
+[[mutant]]
+name = "the-key-forgets-what-the-commander-holds"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.TheKeyHoldsTheTierThePromptsTheArmyAndWhatTheCommanderHolds"
+  [[mutant.edit]]
+  from = '''                   {"holds", commander == nullptr ? 0 : commander->ctx_per_slot},'''
+  to = '''                   {"holds", commander == nullptr ? 0 : 0 * commander->ctx_per_slot},'''
+
+[[mutant]]
+name = "no-pod-asks-the-army-anyway"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.WithoutAPodTheVideoIsCutWhereTheSpeakerPausedAndItsBriefIsEmpty"
+  [[mutant.edit]]
+  from = '''    if (!context.army) {
+        return fingerprint;'''
+  to = '''    if (!context.army && false) {
+        return fingerprint;'''
+
+[[mutant]]
+name = "an-empty-transcript-is-outlined"
+file = "src/pipeline/outline_stage.cpp"
+expect = "OutlineStageTest.ATranscriptWithoutSentencesIsNothingToOutline"
+  [[mutant.edit]]
+  from = '''    if (read.transcript.sentences.empty()) {'''
+  to = '''    if (read.transcript.sentences.empty() && false) {'''

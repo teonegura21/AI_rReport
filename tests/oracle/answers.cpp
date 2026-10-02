@@ -1,6 +1,7 @@
 #include <rr/oracle/answers.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <cstddef>
 #include <format>
 #include <memory>
@@ -138,6 +139,45 @@ std::string annotation(json::Json facts) {
         {"facts", std::move(facts)}, {"must_quotes", json::Json::array()}, {"terms", json::Json::array()}});
 }
 
+// A word without the punctuation around it: "Ada," is "Ada".
+std::string_view trimmed(std::string_view word) {
+    const auto letter = [](char character) {
+        const auto byte = static_cast<unsigned char>(character);
+        return std::isalnum(byte) != 0 || byte >= 0x80U;
+    };
+    while (!word.empty() && !letter(word.front())) {
+        word.remove_prefix(1);
+    }
+    while (!word.empty() && !letter(word.back())) {
+        word.remove_suffix(1);
+    }
+    return word;
+}
+
+// Two capitals or more, and nothing else: "NASA", "DNA".
+bool acronym(std::string_view word) {
+    return word.size() >= 2 && std::ranges::all_of(word, [](char character) {
+               return std::isupper(static_cast<unsigned char>(character)) != 0;
+           });
+}
+
+// The section titles of a brief mission's lines, "1. [0:00] Title: gist":
+// what follows "] ", up to ": ".
+std::vector<std::string> titles_in(std::string_view lines) {
+    std::vector<std::string> titles;
+    std::size_t at = 0;
+    while (at < lines.size()) {
+        const std::size_t end = std::min(lines.find('\n', at), lines.size());
+        const std::string_view line = lines.substr(at, end - at);
+        if (const std::size_t open = line.find("] "); open != std::string_view::npos) {
+            const std::string_view title = line.substr(open + 2);
+            titles.emplace_back(title.substr(0, title.find(": ")));
+        }
+        at = end + 1;
+    }
+    return titles;
+}
+
 }  // namespace
 
 Answerer annotate() {
@@ -172,6 +212,66 @@ Answerer annotate_more() {
     };
 }
 
+Answerer outline() {
+    return [](const llm::ChatRequest& request) -> Result<std::string> {
+        RR_TRY_ASSIGN(const std::string lines, block_in(request, "sentences"));
+        json::Json sections = json::Json::array();
+        for (const Said& sentence : said_in(lines)) {
+            if (sentence.id == "S1" || sentence.text.starts_with("Now,") ||
+                sentence.text.starts_with("Next,")) {
+                std::vector<std::string> words = words_of(sentence.text);
+                words.resize(std::min<std::size_t>(5, words.size()));
+                words.back() = std::string{trimmed(words.back())};
+                sections.push_back(
+                    json::Json{{"first", sentence.id}, {"title", joined(words, 0, words.size())}});
+            }
+        }
+        return json::dump(json::Json{{"sections", std::move(sections)}});
+    };
+}
+
+Answerer describe() {
+    return [](const llm::ChatRequest& request) -> Result<std::string> {
+        RR_TRY_ASSIGN(const std::string lines, block_in(request, "sentences"));
+        const std::vector<Said> sentences = said_in(lines);
+        if (sentences.empty()) {
+            return fail(Errc::invalid_argument, "the section has no sentences to describe");
+        }
+        json::Json speakers = json::Json::array();
+        json::Json lexicon = json::Json::array();
+        std::vector<std::string> listed;
+        for (const Said& sentence : sentences) {
+            const std::vector<std::string> words = words_of(sentence.text);
+            for (std::size_t index = 0; index < words.size(); ++index) {
+                const std::string_view word = trimmed(words[index]);
+                if (words[index] == "I'm" && index + 1 < words.size()) {
+                    speakers.push_back(
+                        json::Json{{"name", std::string{trimmed(words[index + 1])}}, {"role", nullptr}});
+                } else if (acronym(word) && !std::ranges::contains(listed, word)) {
+                    listed.emplace_back(word);
+                    lexicon.push_back(json::Json{{"term", std::string{word}}, {"meaning", nullptr}});
+                }
+            }
+        }
+        return json::dump(json::Json{{"speakers", std::move(speakers)},
+                                     {"lexicon", std::move(lexicon)},
+                                     {"gist", sentences.front().text},
+                                     {"genre", "talk"}});
+    };
+}
+
+Answerer brief() {
+    return [](const llm::ChatRequest& request) -> Result<std::string> {
+        RR_TRY_ASSIGN(const std::string lines, block_in(request, "sections"));
+        const std::vector<std::string> titles = titles_in(lines);
+        if (titles.empty()) {
+            return fail(Errc::invalid_argument, "the video has no sections to sum up");
+        }
+        return json::dump(json::Json{{"gist", std::format("A video in {} sections, from {} to {}.",
+                                                          titles.size(), titles.front(), titles.back())}});
+    };
+}
+
 Result<std::string> excerpt_in(const llm::ChatRequest& request) {
     // A repair's conversation ends with its instruction: the excerpt is in
     // the order's message, before it.
@@ -201,6 +301,9 @@ void teach_stages(Oracle& oracle, std::optional<std::string> script) {
     oracle.teach("punctuate", punctuate(std::move(script)));
     oracle.teach("annotate", annotate());
     oracle.teach("annotate_more", annotate_more());
+    oracle.teach("outline", outline());
+    oracle.teach("describe", describe());
+    oracle.teach("brief", brief());
 }
 
 }  // namespace rr::oracle

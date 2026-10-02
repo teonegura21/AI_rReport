@@ -1,0 +1,10 @@
+Answer with JSON: {"speakers": [...], "lexicon": [...], "gist": "...", "genre": "..."}.
+{% if before != "" %}
+The sentences before it, for context only (they are not part of the section):
+{{ before }}
+
+{% endif %}
+The section "{{ section }}", from {{ start }} to {{ end }}:
+<sentences>
+{{ sentences }}
+</sentences>

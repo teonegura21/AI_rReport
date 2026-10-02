@@ -1,0 +1,11 @@
+{
+  "shared": {
+    "title": "How bridges stand up",
+    "channel": "Engineering Hour",
+    "description": "Ada and Ben load a pine bridge until it breaks."
+  },
+  "orders": [
+    {"sections": "1. [0:00] Loading a bridge until it breaks: Ben says that he and Ada will load a pine bridge until it breaks.\n2. [2:40] The bridge itself: Ada presents the bridge she built, a pine arch two meters across."},
+    {"sections": "1. [0:00] Welcome: Ben welcomes the viewers.\n2. [0:09] 0:09–7:58 (1 of 2)\n3. [7:58] 0:09–7:58 (2 of 2): Ada shows how an arch carries a load."}
+  ]
+}

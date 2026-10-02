@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Outline",
+  "description": "Where the sections of a stretch of a transcript start, in order, and their titles (prompts/outline).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sections"],
+  "properties": {
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["first", "title"],
+        "properties": {
+          "first": {"type": "string", "pattern": "^S[1-9][0-9]{0,8}$"},
+          "title": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

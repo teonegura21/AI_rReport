@@ -262,3 +262,43 @@ expect = "RequestLog.KeepsEveryRequestItPassesOn"
   [[mutant.edit]]
   from = '''        requests_.push_back(request);'''
   to = '''        (void)request;'''
+
+[[mutant]]
+name = "outline-starts-no-section-at-s1"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.OutlineStartsASectionAtS1AndWhereTheTalkTurns"
+  [[mutant.edit]]
+  from = '''            if (sentence.id == "S1" || sentence.text.starts_with("Now,")'''
+  to = '''            if (sentence.text.starts_with("Now,")'''
+
+[[mutant]]
+name = "outline-titles-are-whole-sentences"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.OutlineStartsASectionAtS1AndWhereTheTalkTurns"
+  [[mutant.edit]]
+  from = '''                words.resize(std::min<std::size_t>(5, words.size()));'''
+  to = ''''''
+
+[[mutant]]
+name = "describe-lists-an-acronym-twice"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.DescribeNamesWhoSaysImListsTheAcronymsAndGistsTheFirstSentence"
+  [[mutant.edit]]
+  from = '''                } else if (acronym(word) && !std::ranges::contains(listed, word)) {'''
+  to = '''                } else if (acronym(word)) {'''
+
+[[mutant]]
+name = "describe-names-no-speaker"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.DescribeNamesWhoSaysImListsTheAcronymsAndGistsTheFirstSentence"
+  [[mutant.edit]]
+  from = '''                if (words[index] == "I'm" && index + 1 < words.size()) {'''
+  to = '''                if (words[index] == "I'm" && index + 1 < words.size() && false) {'''
+
+[[mutant]]
+name = "brief-miscounts-the-sections"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.BriefSaysHowManySectionsFromWhichToWhich"
+  [[mutant.edit]]
+  from = '''                                                          titles.size(), titles.front(), titles.back())}});'''
+  to = '''                                                          titles.size() + 1, titles.front(), titles.back())}});'''

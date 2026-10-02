@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Video gist",
+  "description": "What a whole video says, in a paragraph, from the gists of its sections (prompts/brief).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["gist"],
+  "properties": {
+    "gist": {"type": "string", "minLength": 1}
+  }
+}

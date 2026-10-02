@@ -353,3 +353,58 @@ expect = "Article.AHeadingIsOneToSixHashesAndASpace"
   from = '''if (level == 0 || level > kMaxLevel || (at < line.size() && !is_space(line[at]))) {'''
   to = '''if (level == 0 || level > kMaxLevel + 2 || (at < line.size() && !is_space(line[at]))) {'''
 
+[[mutant]]
+name = "a-section-may-start-anywhere"
+file = "src/knowledge/outline.cpp"
+expect = "Outline.SectionsRunInOrderFromS1EachRightAfterTheOneBefore"
+  [[mutant.edit]]
+  from = '''        if (section.first.number() != next) {'''
+  to = '''        if (section.first.number() != next && false) {'''
+
+[[mutant]]
+name = "a-section-may-end-before-it-starts"
+file = "src/knowledge/outline.cpp"
+expect = "Outline.ASectionEndsWhereOrAfterItStarts"
+  [[mutant.edit]]
+  from = '''        if (section.last < section.first) {'''
+  to = '''        if (section.last < section.first && false) {'''
+
+[[mutant]]
+name = "the-next-section-starts-at-the-last"
+file = "src/knowledge/outline.cpp"
+expect = "Outline.RoundTripsThroughItsArtifact"
+  [[mutant.edit]]
+  from = '''        next = section.last.number() + 1;'''
+  to = '''        next = section.last.number();'''
+
+[[mutant]]
+name = "a-gist-is-never-read"
+file = "src/knowledge/outline.cpp"
+expect = "Outline.RoundTripsThroughItsArtifact"
+  [[mutant.edit]]
+  from = '''                        .gist = fields::optional_string(item.at("gist"))};'''
+  to = '''                        .gist = std::nullopt};'''
+
+[[mutant]]
+name = "a-transcript-longer-than-its-sections-is-fine"
+file = "src/knowledge/outline.cpp"
+expect = "Outline.SaysWhereItAndItsTranscriptDisagree"
+  [[mutant.edit]]
+  from = '''    } else if (covered < said) {'''
+  to = '''    } else if (covered < said && false) {'''
+
+[[mutant]]
+name = "sections-past-the-end-are-fine"
+file = "src/knowledge/outline.cpp"
+expect = "Outline.SaysWhereItAndItsTranscriptDisagree"
+  [[mutant.edit]]
+  from = '''    if (covered > said) {'''
+  to = '''    if (covered > said && false) {'''
+
+[[mutant]]
+name = "no-word-names-a-genre"
+file = "src/knowledge/outline.cpp"
+expect = "Outline.NamesItsGenresAndWhereItsSectionsCameFrom"
+  [[mutant.edit]]
+  from = '''    return genre.has_value() ? std::optional<Genre>{*genre} : std::nullopt;'''
+  to = '''    return genre.has_value() && false ? std::optional<Genre>{*genre} : std::nullopt;'''
