@@ -767,6 +767,31 @@ TEST_F(EndToEnd, AnInfantrySureOfEveryReadingReadsEachWindowOnce) {
     EXPECT_THAT(ingested.stderr_text, Not(HasSubstr("wave 2")));
 }
 
+// A variant that fuses each section's drafts into one more (P29), through
+// the real executables: the fake engine's oracle answers the fusions too.
+TEST_F(EndToEnd, AFusingVariantWritesOneDraftMoreOfEachSection) {
+    const OracleRuntime runtime;
+    const Library library = this->library("fuse");
+    const proc::RunResult ingested =
+        run({"ingest", captions().string(), "--tier", "max+write.fuse=true"}, library, runtime);
+    ASSERT_EQ(ingested.status.code, 0) << ingested.stderr_text;
+    const std::map<std::string, std::int64_t> missions = library.missions(job_in(ingested.stderr_text));
+    std::size_t written = 0;
+    std::size_t fused = 0;
+    for (const auto& [mission, samples] : missions) {
+        if (mission.starts_with("write-")) {
+            ++written;
+        } else if (mission.starts_with("fuse-")) {
+            ++fused;
+            EXPECT_EQ(samples, 1) << mission << ": one draft more";
+        }
+    }
+    EXPECT_GT(written, 0U);
+    EXPECT_EQ(fused, written) << "every writing mission's drafts fused";
+    EXPECT_THAT(ingested.stderr_text, HasSubstr("write: the commander fuses the drafts of"));
+    EXPECT_THAT(ingested.stderr_text, HasSubstr("fused drafts kept")) << "the fusions answered, and passed";
+}
+
 // A sweep of one variant: one draft instead of four. The variant shares
 // every stage before the writer with the baseline, under its salts.
 constexpr std::string_view kSweep = R"toml(name = "s"

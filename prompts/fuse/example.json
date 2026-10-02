@@ -1,0 +1,32 @@
+{
+  "shared": {
+    "title": "How bridges stand up",
+    "channel": "Engineering Hour",
+    "gist": "Ada and Ben load a pine bridge until it breaks, then show why an arch carries more.",
+    "speakers": "- Ada, lecturer\n- Ben",
+    "lexicon": "- proof load: the most a bridge carries without bending for good\n- arch",
+    "sections": "1. [0:00] Loading the bridge until it fails\n2. [2:40] The bridge itself"
+  },
+  "orders": [
+    {
+      "number": 1,
+      "heading": "Loading the bridge until it fails",
+      "start": "0:00",
+      "end": "2:39",
+      "part": "",
+      "count": 2,
+      "paragraphs": "Paragraph 1: The first bridge failed at four tons, to the speaker's surprise.\nA2 [1:02] number: The first bridge the team tried failed at four tons.\nA3 [1:03] opinion, aside, high: The speaker was surprised that it failed.",
+      "drafts": "Draft 1:\n<draft>\nThe first bridge the team tried failed at four tons [A2]. The speaker was surprised by this [A3].\n</draft>\nDraft 2:\n<draft>\nAt four tons, the team's first bridge gave way [A2], which, the speaker says in passing, came as a real surprise [A3].\n</draft>"
+    },
+    {
+      "number": 2,
+      "heading": "The bridge itself",
+      "start": "2:40",
+      "end": "4:10",
+      "part": "Its paragraphs are too many to write at once: write paragraphs 2 to 3 here; the others are written apart.",
+      "count": 3,
+      "paragraphs": "Paragraph 2: Tell its atoms in the order given.\nA5 [2:44] claim, said by Ada: Ada built the bridge from pine. Names: Ada.\nParagraph 3: What a bridge's proof load is.\nA6 [2:50] definition: The most a bridge carries is called its proof load. To quote: \"We call the most a bridge carries its proof load.\". Terms: proof load.",
+      "drafts": "Draft 1:\n<draft>\nAda built the bridge from pine [A5].\n\nIn her words, \"We call the most a bridge carries its proof load.\" [A6]\n</draft>\nDraft 2:\n<draft>\nThe bridge, Ada says, was built of pine [A5].\n\n\"We call the most a bridge carries its proof load.\" [A6]\n</draft>\nDraft 3:\n<draft>\nAda made the bridge out of pine [A5].\n\nThe most a bridge carries is its proof load: \"We call the most a bridge carries its proof load.\" [A6]\n</draft>"
+    }
+  ]
+}

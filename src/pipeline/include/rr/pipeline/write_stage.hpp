@@ -26,7 +26,16 @@
 //      a sentence that cites no atom; and every error of Ledger B, held to
 //      the section's atoms (a marker of another section's atom is one)
 //      (rr/pipeline/drafting.hpp).
-//   3. Of the drafts that pass, Ledger B ranks them (its one warning: the
+//   3. Where the tier fuses (`fuse`), the commander writes one draft more
+//      from those that pass, two or more (Self-MoA: Li, Lin, Xia and Jin,
+//      2025, found fusing the best model's own samples beats mixing
+//      models'): shown the paragraphs as their writer was, and the drafts
+//      best first, as many as it holds (prompts/fuse). The fused draft is
+//      held to what a draft is, repaired as one is, never escalated: one
+//      that fails is said, and the drafts stand as drawn. One that passes
+//      joins them, first among those with as few warnings, since it was
+//      written from them all.
+//   4. Of the drafts that pass, Ledger B ranks them (its one warning: the
 //      talk's order), and where the tier asks for a judge (`judge_top`), the
 //      best are read by a model of another family than the writer's: each
 //      sentence against its atoms, the evidence quoted before a verdict
@@ -36,12 +45,12 @@
 //      (reason::select_lexicographic()); what the judge reads in it is
 //      published as its reading. Without a judge, or one that holds the
 //      drafts, the first ranked is kept, and it is said.
-//   4. A section the commander does not hold is written in parts, each the
+//   5. A section the commander does not hold is written in parts, each the
 //      most paragraphs it holds, in order.
-//   5. What no draft passed is told as its atoms say it, a paragraph at a
+//   6. What no draft passed is told as its atoms say it, a paragraph at a
 //      time, each atom's words and its marker, with a finding that says why:
 //      plain, but faithful.
-//   6. The sections join into the article, each under its heading, and the
+//   7. The sections join into the article, each under its heading, and the
 //      whole is checked as Ledger B, the plan's duplicates excused. What
 //      still fails is a finding, never hidden.
 //
@@ -49,7 +58,7 @@
 // be resumed once one is set up.
 //
 // Its key holds the tier's write settings; the prompts (the writer's and the
-// judge's); the army and what the commander holds, and where the tier
+// judge's, and the fusion's where the tier fuses); the army and what the commander holds, and where the tier
 // judges, what the judge holds. It samples: the job's salt is in its key.
 //
 // Thread-safety: immutable.

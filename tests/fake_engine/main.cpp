@@ -425,6 +425,9 @@ rr::Result<std::string> mission_kind(const rr::json::Json& body, const rr::llm::
     if (opening.starts_with("Answer with the section's paragraphs only")) {
         return std::string{"write"};
     }
+    if (opening.starts_with("Answer with the one draft that takes the best of the section's drafts")) {
+        return std::string{"fuse"};
+    }
     if (opening.starts_with("Answer with the two paragraphs only")) {
         return std::string{"seam"};
     }

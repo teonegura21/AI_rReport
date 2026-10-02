@@ -188,6 +188,7 @@ What llama-server does at the image's pin (`7fe450e`: `tools/server/server-commo
 - **`post_sampling_probs: true` reports each token's probability after the sampler chain** (temperature, top-k, top-p, min-p), as `prob` and `top_probs`; without it, `logprob` and `top_logprobs`, of the model's raw distribution. After the chain is what a vote asks: the chance that the same chain, from the same prefix, draws the same token again. A token at 0.5 raw may be the only one top-p leaves, and drawn every time. It needs no logits kept from before sampling; the chain's candidates are sorted, few after top-k.
 - **The grammar.** The chain's candidates are the unconstrained ones whenever the first draw fits the grammar, and the grammar's only after a draw it rejected (`common_sampler_sample()`, rejection sampling). A label the model writes unforced is the common case, and its probability is then the model's own.
 - **Streamed, a token's entry rides on its chunk's last delta, and only when the token made one.** A token whose text the server holds back (part of a UTF-8 sequence, the start of a tag) sends no entry: the probabilities are best effort. A reasoning token's entry rides on its reasoning delta.
+- **A token a speculative draft gave was never weighed.** With speculative decoding on (the commander's MTP twins, P29), each draft token the model accepts is streamed with `prob` 1 and no alternatives: its probability is "set later", and never is (`// TODO: set result.probs`). A token the server weighed lists the alternatives asked for, one at least.
 
 How rReport reads them (`ChatStreamReader`):
 
@@ -197,11 +198,12 @@ How rReport reads them (`ChatStreamReader`):
 | A token whose bytes reach back past that content is cut where the content began | Part of its text went elsewhere, a tag the server read |
 | A chunk that adds no content is not read: its entries are the reasoning's | Thinking is not the answer, and how sure a model was while thinking says nothing of it |
 | `prob` is taken as it is; a `logprob` through `exp()`; a probability a rounding above 1 is 1; anything else outside [0, 1], or an entry without its text, fails the call (`unsupported`) | A server that sends what is not a probability is not one rReport can read |
+| An entry that lists no alternatives is placed, for the entries before it, but gives its bytes no probability | It was never weighed (a speculative draft's token): its `prob` 1 says nothing |
 | A byte no entry covers is not known | And not known is not sure: a vote treats it as no confidence at all |
 
 The flag is part of a request's key (an answer kept without probabilities has none to give), and only llama-server can carry it: elsewhere, `unsupported`. A response's JSON form, which the memo and the recordings keep, holds them as `[begin, end, probability]` triples, left out when there are none, so that no response kept before P28 reads differently; they are read strictly: in order, apart, within the content, in [0, 1].
 
-The live tests (`EachTokensProbabilityComesWithItAndTheTokensCoverTheAnswer`) check what the placement assumes, on a real llama-server: an answer of ASCII words held to a schema, two of them drawn at once, each covered byte for byte, in order, by probabilities in (0, 1]. Run here against llama.cpp `7fe450e` built for the CPU and the tiny model, it passes.
+The live tests (`EachTokensProbabilityComesWithItAndTheTokensCoverTheAnswer`) check what the placement assumes, on a real llama-server: an answer of ASCII words held to a schema, two of them drawn at once, each covered byte for byte, in order, by probabilities in (0, 1]. Run here against llama.cpp `7fe450e` built for the CPU and the tiny model, it passes; and again with P29's reader, which leaves a token that lists no alternatives without a probability: every token llama-server weighed lists one, and the answers are still covered byte for byte.
 
 ## Answers that satisfy a schema
 
@@ -325,6 +327,7 @@ Two findings from these runs were fixed before they counted:
 | Token probabilities are asked: `logprobs`, one alternative, after the sampler chain; of llama-server alone | `AsksHowSureTheModelWasAfterItsSamplerChain` |
 | A token is placed at the end of its chunk's content, and cut where that content began; a `logprob` is exponentiated | `PlacesEachTokensProbabilityOnTheBytesItWrote` |
 | A probability outside [0, 1] is refused, either way; a reasoning token's entry is not read | `RefusesATokenProbabilityThatIsNotOne` |
+| An entry with no alternatives was never weighed: its bytes are left without a probability | `ATokenTheServerNeverWeighedIsLeftUnknown` |
 | The flag is part of the key | `TheRequestKeyIsWhatTheModelSees` |
 | A response keeps its probabilities; overlapping ones, ones past the content, or outside [0, 1] are refused | `AResponsesTokenProbabilitiesSurviveItsJsonForm` |
 | A total reported once is credited to no choice | `AServerThatReportsUsageOnceIsTakenAtItsWord` |
@@ -352,3 +355,5 @@ Two findings from these runs were fixed before they counted:
 **A mutant that crashed instead of failing.** Moving the schema out of `json_schema` first made the test program abort, taking every later test with it. The test read the request body through a `const` JSON value, whose `operator[]` asserts on a missing key. It now reads through a non-`const` one, whose `operator[]` yields null, so the expectation fails and names the difference.
 
 **P28's run** killed 14 of its 15 at once. The fifteenth, a token not cut where its chunk began, did not build: it left the chunk's beginning unused, which `-Werror` refuses. Written to keep it (`begin * 0`), it is killed, by the test that claims it. And clang-tidy, asked to simplify the probability checks by De Morgan's laws, would have let NaN through: `p < 0 || p > 1` holds for no NaN. Each check names NaN now (`std::isnan(p) || p < 0 || p > 1`), as [the rule on ranges](#sampling) wants.
+
+**P29's run** killed its 3, each by `ATokenTheServerNeverWeighedIsLeftUnknown`: a token never weighed read; an entry without the list never read; the list looked for under `prob` alone, so that a drafted token under `logprob` was read. Writing them asked for the last two cases, which the test had not had.

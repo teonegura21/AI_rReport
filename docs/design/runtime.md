@@ -239,11 +239,13 @@ Any failure stops the pod through RunPod's API instead of exiting, because RunPo
 | `32gb` | RTX 5090 | Qwen3.8-27B Q4 and Gemma 4 12B (6 slots), tight |
 | `48gb` | L40S, A40, A6000 | Qwen3.8-27B Q4 (4 slots, one shared pool), Gemma 4 26B-A4B (16 slots), the embedder |
 | `80gb` | A100, H100 | Qwen3.8-27B Q8 (4 slots, one shared pool), Gemma 4 26B-A4B (32 slots), the embedder |
+| `48gb-mtp`, `80gb-mtp` | the same, chosen by name | their size's engines, the commander drafting with its own MTP head (P29) |
 
 - **Every engine runs with the same flags:**
   - every layer on the GPU (`--n-gpu-layers 999`), so a model that does not fit fails loudly instead of running partly on the CPU;
   - an 8-bit attention cache (`--cache-type-k/v q8_0`, which needs `--flash-attn on`);
   - the model's own chat template (`--jinja`).
+- **The MTP twins** (`48gb-mtp`, `80gb-mtp`, P29) are their size's profile with the commander speculating: `--spec-type draft-mtp --spec-draft-n-max 3` drafts up to three tokens a step with the model's own multi-token-prediction head (the GGUF's `nextn` layers, which llama.cpp's converter keeps unless told not to) and checks them in one pass of the model. Decoding reads every weight once a step, so a step that checks three tokens costs about what one costs; but four slots at once already share each step's read, so whether the head pays when the slots are busy is [runbook R1](../runbooks/m1-m2.md#r1-the-commanders-slots-and-the-prompt-cache)'s to measure. Each twin is listed after its profile, at the same size, so `auto` never picks it (the first listed wins a tie), and a test holds each to its profile but for the commander's two flags. No file is added, and none the catalog has not verified is loaded: the head is in the GGUF, and a GGUF without it refuses to start (`context type MTP requested but model doesn't contain MTP layers`), loudly. llama-server 7fe450e never computes a drafted token's probability, so rr_llm leaves its bytes unknown ([llm.md](llm.md#how-sure-the-model-was-token-by-token)).
 - **Contexts and slot counts are estimates** until `rreport bench` measures them: [runbook R1](../runbooks/m1-m2.md#r1-the-commanders-slots-and-the-prompt-cache) settles the commander's.
 - **Two differences from the plan's layout** (§13, M0 step 4):
   - Its `models.toml` and `profiles/*.toml` are one file, `catalog.toml`, because the catalog is validated as a whole: a profile naming an unknown model fails when it is loaded, not when an engine starts.
@@ -382,6 +384,7 @@ Each mechanism was removed on purpose, and the named end-to-end test was confirm
 | …and arrays that are not of tables | `RefusesInvalidDefinitions` (by a crash, without the check) |
 | …and a context that does not fit, a negative `min_vram_mib`, a projector that is not a table | `RefusesInvalidDefinitions` |
 | `kv_unified` is read | `ParsesModelsAndProfiles`, and five other tests |
+| Each MTP twin is its profile but for the commander's MTP flags, listed after it at its size: `auto` picks the profile | `EachMtpTwinIsItsProfileWithTheCommanderSpeculating`, `TheImagesCatalogChoosesAsDocumented` |
 | A shared pool gives one sequence the whole context | `ContextPerSlotIsAShareOrTheWholePool` |
 | The pool is stated on the command line, either way | `ListensOnLocalhostAndCarriesTheProfile` |
 | The engine's own figure for a slot's context wins | `EnginesReportTheContextTheirSlotsReallyHave` |
@@ -407,3 +410,5 @@ For engines' context (P5), writing the mutants showed two gaps, and running them
 - **Reading the figure after the engine was declared ready would have passed** (seen while writing). The fake answered `/props` at once, so no client could catch the engine ready with the catalog's figure. The test's engine now answers slowly (`--fake-props-ms`).
 - **A figure of 0 had no test** (seen while writing). The `odd` profile's engine now reports one.
 - **Ignoring `/props`' status survived the run.** A 404 fails anyway, since its body is not `/props`' answer, so the check's only effect is the warning's wording: "/props answered 404" rather than a parse error. That wording is what an operator reads, so the test now captures the warnings and requires each one.
+
+For the MTP twins (P29), the shipped catalog itself is mutated (`tests/mutants/supervisor.toml`, 4): a twin at a size above its profile's, which `auto` would then pick; a twin without its head; one that drafts more tokens; one whose infantry differs. Each is killed by the test that claims it, `EachMtpTwinIsItsProfileWithTheCommanderSpeculating`, and the first by `TheImagesCatalogChoosesAsDocumented` too.

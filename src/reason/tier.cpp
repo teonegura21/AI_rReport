@@ -190,6 +190,7 @@ Result<WriteCompute> read_write(Section& section) {
     const WriteCompute defaults;
     WriteCompute write;
     RR_TRY_ASSIGN(write.drafts, section.count("drafts", defaults.drafts, 1));
+    RR_TRY_ASSIGN(write.fuse, section.flag("fuse", defaults.fuse));
     RR_TRY_ASSIGN(write.thinking, section.flag("thinking", defaults.thinking));
     RR_TRY_ASSIGN(write.judge_top, section.count("judge_top", defaults.judge_top, 0));
     RR_TRY_ASSIGN(write.repair_rounds, section.count("repair_rounds", defaults.repair_rounds, 0));
@@ -199,6 +200,11 @@ Result<WriteCompute> read_write(Section& section) {
         return std::unexpected(
             invalid(section.where(), std::format("'judge_top' is 0 or from 2 to the drafts ({}), not {}",
                                                  write.drafts, write.judge_top)));
+    }
+    // A fusion is written from the drafts that pass: one alone has nothing to fuse.
+    if (write.fuse && write.drafts < 2) {
+        return std::unexpected(invalid(
+            section.where(), std::format("'fuse' needs 2 drafts or more to fuse, not {}", write.drafts)));
     }
     return write;
 }
@@ -369,6 +375,7 @@ std::string Tier::canonical(Stage stage) const {
             break;
         case Stage::write:
             settings = {{"drafts", write.drafts},
+                        {"fuse", write.fuse},
                         {"thinking", write.thinking},
                         {"judge_top", write.judge_top},
                         {"repair_rounds", write.repair_rounds}};

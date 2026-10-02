@@ -690,3 +690,14 @@ expect = "OracleAnswers.EvalSupportReadsEverySentenceAsNoneQuotingItsFirstEviden
   [[mutant.edit]]
   from = '''std::format("{}: \"{}\"", line.substr(id, line.find(' ', id) - id), line.substr(words + 2));'''
   to = '''std::format("{}: \"{}\"", line.substr(id, line.find(' ', id) - id), line.substr(id));'''
+
+# P29: the oracle fuses as it writes.
+
+[[mutant]]
+name = "fuse-is-not-taught"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.FuseWritesTheParagraphsAsWriteDoesWhateverTheDraftsSay"
+  [[mutant.edit]]
+  from = '''    oracle.teach("fuse", fuse());
+'''
+  to = ''''''

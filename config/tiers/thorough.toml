@@ -29,6 +29,7 @@ thinking_budget = 8192
 
 [write]
 drafts = 2
+fuse = false              # runbook R6 tests one draft more, written from these (Self-MoA)
 thinking = false
 judge_top = 2
 repair_rounds = 2

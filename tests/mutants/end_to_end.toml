@@ -109,3 +109,25 @@ expect = "EndToEnd.AnInfantrySureOfEveryReadingReadsEachWindowOnce"
   [[mutant.edit]]
   from = '''            RR_TRY(read_probabilities(choice, before, answer));'''
   to = '''            (void)before;'''
+
+# P29: a variant that fuses, through the real executables.
+
+[[mutant]]
+name = "fuse-is-not-taught-to-the-fake-engine"
+file = "tests/oracle/answers.cpp"
+expect = "EndToEnd.AFusingVariantWritesOneDraftMoreOfEachSection"
+  [[mutant.edit]]
+  from = '''    oracle.teach("fuse", fuse());
+'''
+  to = ''''''
+
+[[mutant]]
+name = "the-fake-engine-knows-no-fusion"
+file = "tests/fake_engine/main.cpp"
+expect = "EndToEnd.AFusingVariantWritesOneDraftMoreOfEachSection"
+  [[mutant.edit]]
+  from = '''    if (opening.starts_with("Answer with the one draft that takes the best of the section's drafts")) {
+        return std::string{"fuse"};
+    }
+'''
+  to = ''''''

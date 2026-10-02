@@ -1,0 +1,62 @@
+# Mutants of the shipped catalog's MTP twins (P29): each breaks what makes a
+# twin its profile with the commander speculating, and names the test that
+# must fail without it. The catalog is read where the image ships it, so the
+# mutants edit docker/runtime/catalog.toml itself.
+# Run: scripts/mutate.py tests/mutants/supervisor.toml
+# What they found is in docs/design/runtime.md, "How the tests were validated".
+
+target = "rr_supervisor_tests"
+binary = "build/dev/tests/unit/supervisor/rr_supervisor_tests"
+timeout = 300
+
+[[mutant]]
+name = "a-twin-auto-picks"
+file = "docker/runtime/catalog.toml"
+expect = "Catalog.TheImagesCatalogChoosesAsDocumented"
+  [[mutant.edit]]
+  from = '''name = "48gb-mtp"
+min_vram_mib = 44000'''
+  to = '''name = "48gb-mtp"
+min_vram_mib = 44001'''
+
+[[mutant]]
+name = "a-twin-without-its-head"
+file = "docker/runtime/catalog.toml"
+expect = "Catalog.EachMtpTwinIsItsProfileWithTheCommanderSpeculating"
+  [[mutant.edit]]
+  from = '''"--jinja", "--spec-type", "draft-mtp", "--spec-draft-n-max", "3"]
+  [[profile.engine]]
+  model = "gemma-4-26b-a4b"
+  slots = 32'''
+  to = '''"--jinja"]
+  [[profile.engine]]
+  model = "gemma-4-26b-a4b"
+  slots = 32'''
+
+[[mutant]]
+name = "a-twin-drafts-more"
+file = "docker/runtime/catalog.toml"
+expect = "Catalog.EachMtpTwinIsItsProfileWithTheCommanderSpeculating"
+  [[mutant.edit]]
+  from = '''"--spec-draft-n-max", "3"]
+  [[profile.engine]]
+  model = "gemma-4-26b-a4b"
+  slots = 16'''
+  to = '''"--spec-draft-n-max", "8"]
+  [[profile.engine]]
+  model = "gemma-4-26b-a4b"
+  slots = 16'''
+
+[[mutant]]
+name = "a-twins-infantry-differs"
+file = "docker/runtime/catalog.toml"
+expect = "Catalog.EachMtpTwinIsItsProfileWithTheCommanderSpeculating"
+  [[mutant.edit]]
+  from = '''"--spec-draft-n-max", "3"]
+  [[profile.engine]]
+  model = "gemma-4-26b-a4b"
+  slots = 16'''
+  to = '''"--spec-draft-n-max", "3"]
+  [[profile.engine]]
+  model = "gemma-4-26b-a4b"
+  slots = 8'''

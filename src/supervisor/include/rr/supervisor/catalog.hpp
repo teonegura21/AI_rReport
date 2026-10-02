@@ -82,6 +82,8 @@ struct EngineSpec {
     int context = 8192;       // tokens of attention cache, all slots together (--ctx-size)
     bool kv_unified = false;  // one pool shared by the slots, not an equal share each
     std::vector<std::string> extra_args{};
+
+    friend bool operator==(const EngineSpec&, const EngineSpec&) = default;
 };
 
 // The most tokens one sequence (a slot's prompt and its answer) may hold, by

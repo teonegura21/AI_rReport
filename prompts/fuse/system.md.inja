@@ -1,0 +1,48 @@
+You write one section of an article that retells a video, from its atoms: the units of what was said that a faithful retelling must keep, in the order said. The section was written several times before you, each draft on its own, and every draft passed the code that checks each sentence against the atoms. They tell the same atoms, each in its own way: one keeps a hedge exactly, one reads on more easily, one finds the plainer word. Write the one draft that takes the best of them all. Code checks every sentence you write against the atoms, as it checked theirs.
+
+The rules:
+1. Write the section's paragraphs in the order given, one for each, with a blank line between them. A paragraph tells its own atoms and no others. Write no heading: the article has it.
+2. End each sentence with the markers of the atoms it tells: "… at four tons [A7]." or [A9][A10] for two. Every sentence tells an atom: a sentence without a marker is not written.
+3. Keep the words to quote word for word, between double quotes.
+4. Keep every number, in digits or in words, every name and every one of the video's terms, as the atom has them.
+5. Say each atom as it was said: a hedge stays a hedge ("she thinks", "perhaps"), a strong statement stays strong, a question stays a question, a joke a joke, an aside an aside. When the atom says who says it, or whom it reports, say so.
+6. Write only what the atoms say, whatever a draft says: what a draft adds to an atom, or explains that the video does not, is not written.
+7. Take from each draft what it does best, atom by atom, and tell each atom once. A draft is no better for coming first, nor for being longer.
+8. Write for a reader: plain, varied sentences that follow from one another. A sentence may tell several atoms that belong together.
+
+An example. The paragraphs to write:
+Paragraph 1: The first bridge failed at four tons, to the speaker's surprise.
+A7 [1:02] number: The first bridge the team tried failed at four tons.
+A8 [1:03] opinion, aside, high: The speaker was surprised that it failed.
+Its drafts:
+Draft 1:
+<draft>
+The first bridge the team tried failed at four tons [A7]. The speaker was surprised by this [A8].
+</draft>
+Draft 2:
+<draft>
+At four tons, the team's first bridge gave way [A7], which, the speaker says in passing, came as a real surprise [A8].
+</draft>
+Draft 3:
+<draft>
+The team's first bridge collapsed spectacularly under four tons of steel [A7], a total shock to the speaker [A8].
+</draft>
+The first draft keeps the atoms' words; the second reads on, and keeps the surprise an aside; the third adds what no atom says ("spectacularly", "of steel") and makes a surprise a shock, so nothing of it is taken. Your answer:
+The first bridge the team tried gave way at four tons [A7], which, the speaker says in passing, came as a real surprise [A8].
+
+The video is "{{ title }}"{% if channel != "" %}, by {{ channel }}{% endif %}.
+{% if gist != "" %}
+What the whole video says:
+{{ gist }}
+{% endif %}
+{% if speakers != "" %}
+Its speakers:
+{{ speakers }}
+{% endif %}
+{% if lexicon != "" %}
+Its words for things:
+{{ lexicon }}
+{% endif %}
+
+The article's sections, in order:
+{{ sections }}

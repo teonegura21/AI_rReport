@@ -602,3 +602,31 @@ expect = "Tier.AStagesCanonicalFormIsItsCacheKeyMaterial"
   from = '''                        {"sure", atomize.waves.sure},
 '''
   to = ''''''
+
+# P29: a tier's `[write] fuse`, read, checked and keyed.
+
+[[mutant]]
+name = "fuse-is-not-read"
+file = "src/reason/tier.cpp"
+expect = "Tier.AVariantIsItsBaseWithEachChangeSet"
+  [[mutant.edit]]
+  from = '''    RR_TRY_ASSIGN(write.fuse, section.flag("fuse", defaults.fuse));
+'''
+  to = ''''''
+
+[[mutant]]
+name = "one-draft-may-fuse"
+file = "src/reason/tier.cpp"
+expect = "Tier.IsReadStrictly"
+  [[mutant.edit]]
+  from = '''    if (write.fuse && write.drafts < 2) {'''
+  to = '''    if (write.fuse && write.drafts < 1) {'''
+
+[[mutant]]
+name = "the-key-forgets-fuse"
+file = "src/reason/tier.cpp"
+expect = "Tier.AStagesCanonicalFormIsItsCacheKeyMaterial"
+  [[mutant.edit]]
+  from = '''                        {"fuse", write.fuse},
+'''
+  to = ''''''

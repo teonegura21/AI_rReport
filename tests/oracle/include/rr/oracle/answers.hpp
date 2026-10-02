@@ -26,7 +26,7 @@
 //   seams (rr/pipeline/seams_stage.hpp), have no single right answer either.
 //   The oracle answers each by a rule a test can predict, and that keeps
 //   every check: see annotate(), outline(), describe(), brief(), atomize(),
-//   plan(), write(), judge(), flow() and seam(), and the eval's frozen
+//   plan(), write(), fuse(), judge(), flow() and seam(), and the eval's frozen
 //   judges' readings, eval_fact(), eval_support() and eval_flow(). A
 //   synthetic video is
 //   written for the rule: its talk turns at a sentence that opens with
@@ -113,6 +113,12 @@ namespace rr::oracle {
 // that an atom's words do not hold, added in parentheses. A draft Ledger B
 // passes, by construction.
 [[nodiscard]] Answerer write();
+
+// Answers fuse missions (prompts/fuse) as write() answers write missions: the
+// right draft, from the paragraphs; the drafts it is shown are not read. So
+// a test that spoils the drafts sees the fusion take the best of them, and
+// one that wants the fusion to fail changes its answer (a fault).
+[[nodiscard]] Answerer fuse();
 
 // Answers judge missions (prompts/judge): every sentence says what its atoms
 // say ("none"), its evidence the words of the atoms it cites, quoted. A test

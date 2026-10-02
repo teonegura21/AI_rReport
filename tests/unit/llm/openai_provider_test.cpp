@@ -236,9 +236,19 @@ std::string token_chunk(std::string_view content, std::string_view logprobs) {
 
 // One token's entry: its bytes and its probability, as `field` names it.
 std::string entry(std::string_view text, std::string_view field, double value) {
-    return std::format(R"({{"id":7,"token":{},"bytes":{},"{}":{},"top_probs":[]}})",
+    const std::string token = json::dump(json::Json(text));
+    const std::string bytes = json::dump(json::Json(std::vector<int>(text.begin(), text.end())));
+    return std::format(R"({{"id":7,"token":{0},"bytes":{1},"{2}":{3},"{4}":[{{"id":7,"token":{0},)"
+                       R"("bytes":{1},"{2}":{3}}}]}})",
+                       token, bytes, field, value, field == "prob" ? "top_probs" : "top_logprobs");
+}
+
+// The entry of a token a speculative draft gave, as llama-server 7fe450e sends
+// it: a probability of 1, "set later" and never set, and no alternatives.
+std::string drafted(std::string_view text) {
+    return std::format(R"({{"id":7,"token":{},"bytes":{},"prob":1.0,"top_probs":[]}})",
                        json::dump(json::Json(text)),
-                       json::dump(json::Json(std::vector<int>(text.begin(), text.end()))), field, value);
+                       json::dump(json::Json(std::vector<int>(text.begin(), text.end()))));
 }
 
 TEST(OpenAiProvider, PlacesEachTokensProbabilityOnTheBytesItWrote) {
@@ -303,6 +313,30 @@ TEST(OpenAiProvider, RefusesATokenProbabilityThatIsNotOne) {
         event("[DONE]")};
     const ModelServer thinking{[&thought](const auto&) { return stream_of(thought); }};
     EXPECT_OK(provider_for(thinking).chat(ask("a"), {}, {}));
+}
+
+// A token a speculative draft gave (the commander's MTP twins, P29) was never
+// weighed: its bytes are left without a probability, not known, which is not
+// sure; the tokens around it are placed as ever. An entry without the list
+// of alternatives is read: its server did not say.
+TEST(OpenAiProvider, ATokenTheServerNeverWeighedIsLeftUnknown) {
+    const std::vector<std::string> stream{
+        token_chunk("The", R"({"content":[{"id":7,"token":"The","bytes":[84,104,101],"prob":0.5}]})"),
+        token_chunk(" arch held",
+                    std::format(R"({{"content":[{},{}]}})", drafted(" arch"), entry(" held", "prob", 0.25))),
+        token_chunk(" again", R"({"content":[{"id":7,"token":" again","bytes":[32,97,103,97,105,110],)"
+                              R"("logprob":0.0,"top_logprobs":[]}]})"),
+        event(R"({"choices":[{"delta":{},"finish_reason":"stop","index":0}]})"), event("[DONE]")};
+    const ModelServer server{[&stream](const auto&) { return stream_of(stream); }};
+    ChatRequest request = ask("an atom");
+    request.token_probabilities = true;
+    const Choice answer = unwrap(provider_for(server).chat(request, {}, {})).first();
+    ASSERT_EQ(answer.content, "The arch held again");
+    EXPECT_EQ(answer.probabilities,
+              (std::vector<TokenProbability>{{.begin = 0, .end = 3, .probability = 0.5},
+                                             {.begin = 8, .end = 13, .probability = 0.25}}))
+        << "\" arch\", bytes 3 to 8, and \" again\", a logprob's draft, have none; \"The\", listing no "
+           "alternatives at all, is read";
 }
 
 // The fake engine's stream, as the end-to-end tests run it, read by the real

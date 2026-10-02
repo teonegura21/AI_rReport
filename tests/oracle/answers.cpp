@@ -632,6 +632,10 @@ Answerer write() {
     };
 }
 
+Answerer fuse() {
+    return write();
+}
+
 Answerer judge() {
     return [](const llm::ChatRequest& request) -> Result<std::string> {
         RR_TRY_ASSIGN(const std::string atoms, block_in(request, "atoms"));
@@ -772,6 +776,7 @@ void teach_stages(Oracle& oracle, std::optional<std::string> script) {
     oracle.teach("atomize", atomize());
     oracle.teach("plan", plan());
     oracle.teach("write", write());
+    oracle.teach("fuse", fuse());
     oracle.teach("judge", judge());
     oracle.teach("flow", flow());
     oracle.teach("seam", seam());

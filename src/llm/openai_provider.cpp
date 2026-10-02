@@ -331,6 +331,21 @@ Result<double> token_probability(const json::Json& entry) {
     return std::min(*found, 1.0);
 }
 
+// Whether llama-server weighed `entry`'s token. Asked for one alternative,
+// it lists one at least for a token it weighed; a token a speculative draft
+// gave comes with a probability of 1 and none, its probability "set later"
+// and never set (llama.cpp 7fe450e). An entry without the list is read: the
+// server that sent it did not say.
+bool weighed(const json::Json& entry) {
+    for (const std::string_view key : {"top_probs", "top_logprobs"}) {
+        if (const auto alternatives = entry.find(key);
+            alternatives != entry.end() && alternatives->is_array()) {
+            return !alternatives->empty();
+        }
+    }
+    return true;
+}
+
 // How many bytes a token is: its "bytes", else its text.
 Result<std::size_t> token_bytes(const json::Json& entry) {
     if (const auto bytes = entry.find("bytes"); bytes != entry.end() && bytes->is_array()) {
@@ -355,14 +370,15 @@ Result<void> ChatStreamReader::read_probabilities(const json::Json& choice, std:
     if (entries == logprobs->end() || !entries->is_array()) {
         return ok();
     }
-    // From the last entry back: each ends where the one after it begins.
+    // From the last entry back: each ends where the one after it begins. A
+    // token never weighed still takes its bytes, and gives them no probability.
     std::vector<TokenProbability> tokens;
     std::size_t end = answer.content.size();
     for (auto entry = entries->rbegin(); entry != entries->rend(); ++entry) {
         RR_TRY_ASSIGN(const double probability, token_probability(*entry));
         RR_TRY_ASSIGN(const std::size_t bytes, token_bytes(*entry));
         const std::size_t first = end - std::min(bytes, end - begin);
-        if (first < end) {
+        if (first < end && weighed(*entry)) {
             tokens.push_back(TokenProbability{.begin = first, .end = end, .probability = probability});
         }
         end = first;

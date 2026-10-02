@@ -678,6 +678,241 @@ TEST_F(WriteStageTest, APodWithoutAJudgeOfAnotherFamilyPicksByLedgerBAndSaysSoOn
     EXPECT_EQ(article_of(output), oracle_article());
 }
 
+// --- The fusion (Self-MoA) ----------------------------------------------------------------------
+
+// `max`, its drafts fused into one more.
+void fusing(reason::Tier& tier) {
+    tier.write.fuse = true;
+}
+
+// The paragraphs the oracle writes of section `index` (from 0), as one draft.
+std::string oracle_draft(std::size_t index) {
+    std::string draft;
+    for (const std::string& paragraph :
+         oracle_paragraphs(lecture_plan().sections.at(index), lecture_ledger())) {
+        draft += (draft.empty() ? "" : "\n\n") + paragraph;
+    }
+    return draft;
+}
+
+TEST_F(WriteStageTest, OnlyATierThatFusesAsksForAFusion) {
+    OracleArmy rig;
+    unwrap(run(rig.raise()));
+    EXPECT_THAT(rig.requests("fuse"), IsEmpty()) << "max does not fuse";
+}
+
+TEST_F(WriteStageTest, AFusingTierHasTheCommanderWriteOneDraftMoreFromThoseThatPass) {
+    use_variant("max-fused", fusing);
+    OracleArmy rig;
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(output.findings, IsEmpty());
+    EXPECT_EQ(article_of(output), oracle_article());
+    EXPECT_THAT(asked(rig, "fuse"), ElementsAre("fuse-1", "fuse-2", "fuse-3"));
+    for (const llm::ChatRequest& request : rig.requests("fuse")) {
+        EXPECT_EQ(request.model, "qwen-commander") << "the writer fuses its own drafts";
+        EXPECT_FALSE(request.thinking.value_or(false)) << "as the tier writes";
+        EXPECT_EQ(request.seed, llm::derived_seed(0, "write", request.tag.mission_id, 0));
+        EXPECT_EQ(request.n.value_or(1), 1) << "one draft more";
+    }
+    // Drafts alike: the fusion, first among them, is judged, and kept.
+    EXPECT_THAT(progress(), ElementsAre("write: the commander writes 3 sections, 4 drafts each",
+                                        "write: the commander fuses the drafts of 3 sections",
+                                        "write: the infantry judges the best 2 drafts of 3 sections",
+                                        "write: 3 of 3 fused drafts kept"));
+}
+
+TEST_F(WriteStageTest, AFusionThatAvoidsAWarningEveryDraftHasIsKept) {
+    // Every draft of the first section tells A1 after A2, a warning; the
+    // fusion does not: it ranks first, and the article has no warning.
+    use_variant("max-fused", fusing);
+    OracleArmy rig{{oracle::edit("reordered", oracle::When{.mission = "write-1", .calls = 0}, reordered)}};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(output.findings, IsEmpty());
+    EXPECT_EQ(article_of(output), oracle_article());
+    EXPECT_THAT(progress(), Contains("write: 3 of 3 fused drafts kept"));
+}
+
+TEST_F(WriteStageTest, TheFusionIsShownTheParagraphsAsTheWriterWasAndTheDraftsBestFirst) {
+    // The first and the last drafts tell A1 after A2, a warning: they are
+    // shown after the second, and the third, which says A1 in other words.
+    use_variant("max-fused", fusing);
+    const auto drafted = [](int number, const std::string& draft) {
+        if (number == 1 || number == 4) {
+            return reordered(draft);
+        }
+        return number == 3 ? in_other_words(draft) : draft;
+    };
+    OracleArmy rig{{on_drafts("write-1", drafted)}, engines({.commander_slots = 1})};
+    unwrap(run(rig.raise()));
+    const std::vector<llm::ChatRequest> fusions = rig.requests("fuse");
+    ASSERT_FALSE(fusions.empty());
+    ASSERT_EQ(fusions.front().tag.mission_id, "fuse-1");
+    const std::string asked = fusions.front().messages.back().text();
+    const std::string written = opened(rig).front().messages.back().text();
+    const auto paragraphs = [](const std::string& text) {
+        const std::size_t begin = text.find("<paragraphs>");
+        return text.substr(begin, text.find("</paragraphs>") - begin);
+    };
+    EXPECT_EQ(paragraphs(asked), paragraphs(written)) << "the paragraphs as their writer was shown them";
+    EXPECT_THAT(asked,
+                HasSubstr("Write section 1, \"Weighing radium\", from 0:00 to 4:55, taking the best of "
+                          "its 4 drafts.\n"));
+    const std::string draft = oracle_draft(0);
+    EXPECT_THAT(asked,
+                HasSubstr(std::format("\n\nIts drafts:\nDraft 1:\n<draft>\n{}\n</draft>\nDraft 2:\n<draft>\n"
+                                      "{}\n</draft>\nDraft 3:\n<draft>\n{}\n</draft>\nDraft 4:\n<draft>\n{}\n"
+                                      "</draft>",
+                                      draft, in_other_words(draft), reordered(draft), reordered(draft))));
+}
+
+TEST_F(WriteStageTest, AFusionWithMoreWarningsThanADraftIsNotKept) {
+    // Unjudged: the first section's fusion tells A1 after A2, a warning its
+    // drafts do not have. It ranks after them, and Ledger B keeps the first.
+    use_variant("max-fused-unjudged", [](reason::Tier& tier) {
+        tier.write.fuse = true;
+        tier.write.judge_top = 0;
+    });
+    OracleArmy rig{{oracle::edit("reordered", oracle::When{.mission = "fuse-1", .calls = 0}, reordered)}};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(output.findings, IsEmpty());
+    EXPECT_EQ(article_of(output), oracle_article());
+    EXPECT_THAT(progress(), Contains("write: 2 of 3 fused drafts kept"));
+}
+
+TEST_F(WriteStageTest, DraftsTheCommanderDoesNotHoldAllAreFusedBestFirstAsManyAsItHolds) {
+    // A commander of 2,264 tokens writes "The samples" in two parts, and holds
+    // three of the first section's drafts at once, two of the second part's,
+    // and of the first part's, or of the last section's, not two. The first
+    // draft drawn tells A1 after A2, a warning: ranked last, it is left out.
+    use_variant("max-fused", fusing);
+    const auto drafted = [](int number, const std::string& draft) {
+        return number == 1 ? reordered(draft) : draft;
+    };
+    OracleArmy rig{{on_drafts("write-1", drafted)},
+                   engines({.commander_holds = 2'264, .commander_slots = 1})};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(missions_of(rig), ElementsAre("write-1", "write-2-1", "write-2-2", "write-3"));
+    EXPECT_THAT(asked(rig, "fuse"), ElementsAre("fuse-1", "fuse-2-2"));
+    const std::vector<llm::ChatRequest> fusions = rig.requests("fuse");
+    ASSERT_FALSE(fusions.empty());
+    const std::string shown = fusions.front().messages.back().text();
+    EXPECT_THAT(shown, HasSubstr("taking the best of its 3 drafts"));
+    EXPECT_THAT(shown, Not(HasSubstr(reordered(oracle_draft(0))))) << "the worst left out";
+    EXPECT_THAT(output.findings,
+                ElementsAre("section 2, \"The samples\": its drafts are not fused: two of them "
+                            "are more than qwen-commander holds at once",
+                            "section 3, \"What they mean\": its drafts are not fused: two of "
+                            "them are more than qwen-commander holds at once"));
+}
+
+TEST_F(WriteStageTest, ACommanderThatHoldsNotEvenTwoDraftsFusesNoneAndSaysSoOnceASection) {
+    // 2,000 tokens: every section written, the last two in two parts each,
+    // and no two drafts of any part held at once, though one of some is.
+    use_variant("max-fused", fusing);
+    OracleArmy rig{{}, engines({.commander_holds = 2'000})};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(missions_of(rig), ElementsAre("write-1", "write-2-1", "write-2-2", "write-3-1", "write-3-2"));
+    EXPECT_THAT(rig.requests("fuse"), IsEmpty());
+    std::vector<std::string> said;
+    for (const SectionPlan& section : lecture_plan().sections) {
+        said.push_back(
+            std::format("section {}, \"{}\": its drafts are not fused: two of them are more than "
+                        "qwen-commander holds at once",
+                        said.size() + 1, section.heading));
+    }
+    EXPECT_EQ(output.findings, said) << "once a section, whatever its parts";
+    EXPECT_EQ(article_of(output), oracle_article());
+}
+
+TEST_F(WriteStageTest, AFusionTheModelsDeclineIsNeverHandedToAnotherFamily) {
+    use_variant("max-fused", fusing);
+    OracleArmy rig{{oracle::refusal(oracle::When{.mission = "fuse-1", .calls = 0})}};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(output.findings,
+                ElementsAre("section 1, \"Weighing radium\": its drafts could not be fused: the "
+                            "models declined to fuse them"));
+    for (const llm::ChatRequest& request : rig.requests("fuse")) {
+        EXPECT_EQ(request.model, "qwen-commander")
+            << request.tag.mission_id << ": a weaker model's would lower them";
+    }
+    EXPECT_EQ(article_of(output), oracle_article());
+}
+
+TEST_F(WriteStageTest, AFusionThatFailsLeavesTheDraftsAsDrawnAndSaysSo) {
+    // Every answer of the first section's fusion cites an atom that is none:
+    // sent back as a draft is, up to the tier's three rounds, and no rung beyond.
+    use_variant("max-fused", fusing);
+    OracleArmy rig{{oracle::bad_marker(oracle::When{.mission = "fuse-1", .calls = 0})}};
+    const StageOutput output = unwrap(run(rig.raise()));
+    ASSERT_EQ(output.findings.size(), 1U);
+    EXPECT_THAT(output.findings.front(), HasSubstr("section 1, \"Weighing radium\": its drafts could not be "
+                                                   "fused: no answer passed its checks"));
+    EXPECT_EQ(article_of(output), oracle_article()) << "the drafts, as drawn";
+    std::size_t calls = 0;
+    for (const llm::ChatRequest& request : rig.requests("fuse")) {
+        if (request.tag.mission_id == "fuse-1") {
+            ++calls;
+            EXPECT_EQ(request.model, "qwen-commander") << "never another family";
+            EXPECT_FALSE(request.thinking.value_or(false)) << "no rung that thinks";
+        }
+    }
+    EXPECT_EQ(calls, 4U) << "the fusion and three repairs";
+    EXPECT_THAT(progress(), Contains("write: 2 of 2 fused drafts kept"));
+}
+
+TEST_F(WriteStageTest, ADraftThatPassesAloneIsNotFused) {
+    // Of the first section's drafts only the first passes: every later answer
+    // of its mission cites an atom that is none, repairs and rungs alike.
+    use_variant("max-fused", fusing);
+    const auto drafted = [](int number, const std::string& draft) {
+        return number == 1 ? draft : replace_all(draft, "[A1]", "[A999]");
+    };
+    OracleArmy rig{{on_drafts("write-1", drafted)}, engines({.commander_slots = 1})};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_EQ(article_of(output), oracle_article()) << "the one that passed";
+    EXPECT_THAT(output.findings, IsEmpty()) << "nothing to fuse, and nothing to say";
+    EXPECT_THAT(asked(rig, "fuse"), ElementsAre("fuse-2", "fuse-3"));
+    EXPECT_THAT(progress(), Contains("write: the commander fuses the drafts of 2 sections"));
+}
+
+TEST_F(WriteStageTest, AFusionThinksAsTheTierWrites) {
+    use_variant("max-fused-thinking", [](reason::Tier& tier) {
+        tier.write.fuse = true;
+        tier.write.thinking = true;
+    });
+    OracleArmy rig;
+    unwrap(run(rig.raise()));
+    const std::vector<llm::ChatRequest> drafts = rig.requests("write");
+    ASSERT_FALSE(drafts.empty());
+    ASSERT_TRUE(drafts.front().thinking_budget.has_value());
+    const std::vector<llm::ChatRequest> fusions = rig.requests("fuse");
+    ASSERT_EQ(fusions.size(), 3U);
+    for (const llm::ChatRequest& request : fusions) {
+        EXPECT_TRUE(request.thinking.value_or(false)) << request.tag.mission_id;
+        EXPECT_EQ(request.thinking_budget, drafts.front().thinking_budget) << "the writer's own budget";
+    }
+}
+
+TEST_F(WriteStageTest, AFusionStoppedByACeilingMakesTheResultThisJobsAlone) {
+    // Unjudged, a token more than writing takes: the first fusion spends past
+    // it, and the fusions after it, one at a time, stop.
+    use_variant("max-fused-unjudged", [](reason::Tier& tier) {
+        tier.write.fuse = true;
+        tier.write.judge_top = 0;
+    });
+    std::int64_t writing = 0;
+    for (std::size_t index = 0; index < lecture_plan().sections.size(); ++index) {
+        writing += 4 * ((static_cast<std::int64_t>(oracle_draft(index).size()) + 3) / 4);
+    }
+    OracleArmy rig{{}, engines({.commander_slots = 1}), agents::Ceilings{.completion_tokens = writing + 1}};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_FALSE(output.reusable) << "a job allowed more would have fused more";
+    EXPECT_THAT(output.findings,
+                Contains("section 2, \"The samples\": its drafts could not be fused: the job "
+                         "reached its completion_tokens ceiling first"));
+    EXPECT_EQ(article_of(output), oracle_article());
+}
+
 // --- What no draft passed ---------------------------------------------------------------------
 
 TEST_F(WriteStageTest, ASectionTheModelsDeclineIsToldAsItsAtomsSayIt) {
@@ -942,6 +1177,14 @@ TEST_F(WriteStageTest, TheKeyHoldsTheTierThePromptTheArmyAndWhatTheCommanderHold
     EXPECT_NE(fingerprint().at("tier"), max.at("tier"));
     EXPECT_EQ(fingerprint().at("prompts"), max.at("prompts"));
     EXPECT_FALSE(fingerprint().contains("judge_holds")) << "a tier that does not judge";
+    EXPECT_FALSE(max.at("prompts").contains("fuse")) << "a tier that does not fuse never asks its prompt";
+
+    use_variant("max-fused", fusing);
+    OracleArmy fused;
+    unwrap(run(fused.raise()));
+    EXPECT_EQ(fingerprint().at("prompts").at("fuse").at("label"), "fuse@1");
+    EXPECT_EQ(fingerprint().at("prompts").at("fuse").at("hash"), unwrap(shipped.content_hash("fuse")));
+    EXPECT_EQ(fingerprint().at("prompts").at("write"), max.at("prompts").at("write"));
 }
 
 }  // namespace

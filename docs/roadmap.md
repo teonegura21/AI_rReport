@@ -47,8 +47,8 @@ The work is cut into thirty phases, each one commit that builds, passes CI and i
 | P26 | Sweeps and the report: tier variants named by what they change (`max+write.thinking=true`), accepted wherever a tier is; a sweep file of variants, each with why, run against one baseline under the same salts on the dev split, and what each moved; every run on one page, quality against minutes per video-hour with each mean's interval, the runs, each run's videos ([eval.md](design/eval.md#sweeps-and-the-report)) | done: `f2611e7` |
 | P27 | Labels and calibration: items the panel read drawn uniformly for a person to label, blind, shown as the judges saw them, a part's two versions in a drawn order; each judge against the labels, kind by kind: Cohen's κ at 0.4, each class's precision and recall above a random judge's by their Wilson lower bounds; position and length bias ([eval.md](design/eval.md#labels-and-calibration)) → **runbooks R5, R6** | done: `467db3b` |
 | **6. Extras, kept only if the eval shows a gain** | | |
-| P28 | Logprob confidence driving adaptive waves: each token's probability after llama-server's sampler chain, asked for and placed on the bytes it wrote; where each value of a JSON answer stands (`rr/json/spans.hpp`, fuzzed against `parse()`); how sure a reading was of each sentence, from the tokens that chose its verdict; a lone sample settling only as sure as the tier's `sure`; atomize drawing waves where readings leave a sentence unsettled, from the window's next seed. No shipped tier changes: runbook R6's sweep measures two variants that draw fewer samples ([reasoning.md](design/reasoning.md#how-sure-a-lone-sample-was), [llm.md](design/llm.md#how-sure-the-model-was-token-by-token)) | done: this commit |
-| P29 | Self-MoA fusion of the commander's drafts; MTP speculative decoding | |
+| P28 | Logprob confidence driving adaptive waves: each token's probability after llama-server's sampler chain, asked for and placed on the bytes it wrote; where each value of a JSON answer stands (`rr/json/spans.hpp`, fuzzed against `parse()`); how sure a reading was of each sentence, from the tokens that chose its verdict; a lone sample settling only as sure as the tier's `sure`; atomize drawing waves where readings leave a sentence unsettled, from the window's next seed. No shipped tier changes: runbook R6's sweep measures two variants that draw fewer samples ([reasoning.md](design/reasoning.md#how-sure-a-lone-sample-was), [llm.md](design/llm.md#how-sure-the-model-was-token-by-token)) | done: `05967c3` |
+| P29 | Self-MoA and the commander's MTP twins: where a tier asks (`[write] fuse`), the commander writes one draft more from its drafts that pass, shown them best first and as many as it holds, the fusion held to what a draft is, never escalated, and kept only if it wins the judge's pick (`prompts/fuse`); profiles `48gb-mtp` and `80gb-mtp`, their size's with the commander drafting from its own multi-token-prediction head, chosen by name; a token a speculative draft gave, never weighed by llama-server, left without a probability. No shipped tier or profile changes: R6's sweep measures `write-fuse`, R1 the twins ([pipeline.md](design/pipeline.md#the-write-stage), [runtime.md](design/runtime.md)) | done: this commit |
 
 ## What only your pod can settle
 
@@ -56,9 +56,9 @@ Some questions need real GPUs and real models. Each runbook says what to run and
 
 | Runbook | After | What it settles |
 |---|---|---|
-| R1 | P5 | Commander slots, unified KV and context, on 48 and 80 GB pods ([deploy/runpod](../deploy/runpod/README.md)) |
+| R1 | P5, P29 | Commander slots, unified KV and context, on 48 and 80 GB pods ([deploy/runpod](../deploy/runpod/README.md)); whether the commander's own MTP head speeds it, at one request and at four |
 | R2 | P16 | The eval set: your approval of the candidates, then silver annotations corrected into gold |
 | R3 | P22 | M1's acceptance: three videos ingested at `max`; 100% of sentences accounted for, atom coverage ≥ 97%, no invalid marker, every must-quote verbatim, numbers ≥ 99% |
 | R4 | P25 | Tiers compared with replicates, and the gate's margins checked against an A/A run |
 | R5 | P27 | Forty labels that calibrate the eval judges |
-| R6 | P27 | Sweeps and the gate on the test split: M2's acceptance, key-fact recall ≥ 90% |
+| R6 | P27, P28, P29 | Sweeps and the gate on the test split: M2's acceptance, key-fact recall ≥ 90%; whether fewer atomize samples (P28) or a fused draft (P29) pay |

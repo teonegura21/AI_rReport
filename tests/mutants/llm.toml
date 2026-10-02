@@ -154,3 +154,37 @@ expect = "Chat.AResponsesTokenProbabilitiesSurviveItsJsonForm"
   [[mutant.edit]]
   from = '''std::isnan(token.probability) || token.probability < 0 || token.probability > 1'''
   to = '''std::isnan(token.probability) || token.probability > 1'''
+
+# P29: a token a speculative draft gave was never weighed (llama.cpp 7fe450e).
+
+[[mutant]]
+name = "a-token-never-weighed-is-read"
+file = "src/llm/openai_provider.cpp"
+expect = "OpenAiProvider.ATokenTheServerNeverWeighedIsLeftUnknown"
+  [[mutant.edit]]
+  from = '''        if (first < end && weighed(*entry)) {'''
+  to = '''        if (first < end && (weighed(*entry) || true)) {'''
+
+[[mutant]]
+name = "an-entry-without-alternatives-is-never-read"
+file = "src/llm/openai_provider.cpp"
+expect = "OpenAiProvider.ATokenTheServerNeverWeighedIsLeftUnknown"
+  [[mutant.edit]]
+  from = '''            return !alternatives->empty();
+        }
+    }
+    return true;
+}'''
+  to = '''            return !alternatives->empty();
+        }
+    }
+    return false;
+}'''
+
+[[mutant]]
+name = "alternatives-under-logprobs-are-not-looked-for"
+file = "src/llm/openai_provider.cpp"
+expect = "OpenAiProvider.ATokenTheServerNeverWeighedIsLeftUnknown"
+  [[mutant.edit]]
+  from = '''{"top_probs", "top_logprobs"}'''
+  to = '''{"top_probs"}'''

@@ -1,11 +1,13 @@
 #include <rr/supervisor/catalog.hpp>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <format>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -258,6 +260,39 @@ TEST(Catalog, TheImagesCatalogChoosesAsDocumented) {
         EXPECT_TRUE(commander->kv_unified) << name;
         EXPECT_EQ(planned_context_per_slot(*commander), commander->context) << name;
     }
+}
+
+// The MTP twins (P29): each `-mtp` profile is its plain twin's, at the same
+// size and listed after it, so that "auto" never picks it, and the commander
+// alone drafts with its own multi-token-prediction head. What the runbook's
+// benchmark compares between the two is then the head, and nothing else.
+TEST(Catalog, EachMtpTwinIsItsProfileWithTheCommanderSpeculating) {
+    const Catalog catalog =
+        unwrap(load_catalog(std::filesystem::path{RR_SOURCE_DIR} / "docker/runtime/catalog.toml"));
+    const std::vector<std::string> speculating{"--spec-type", "draft-mtp", "--spec-draft-n-max", "3"};
+    std::vector<std::string> twins;
+    for (std::size_t index = 0; index < catalog.profiles.size(); ++index) {
+        const Profile& twin = catalog.profiles[index];
+        if (!twin.name.ends_with("-mtp")) {
+            continue;
+        }
+        twins.push_back(twin.name);
+        const std::string plain = twin.name.substr(0, twin.name.size() - std::string_view{"-mtp"}.size());
+        const auto found = std::ranges::find(catalog.profiles, plain, &Profile::name);
+        ASSERT_NE(found, catalog.profiles.end()) << twin.name << " has a profile to be the twin of";
+        EXPECT_LT(static_cast<std::size_t>(found - catalog.profiles.begin()), index)
+            << twin.name << ": listed after " << plain << ", which wins the tie";
+        EXPECT_EQ(twin.min_vram_mib, found->min_vram_mib) << twin.name;
+        ASSERT_EQ(twin.engines.size(), found->engines.size()) << twin.name;
+        for (std::size_t engine = 0; engine < twin.engines.size(); ++engine) {
+            EngineSpec expected = found->engines[engine];
+            if (catalog.find_model(expected.model)->role == "commander") {
+                expected.extra_args.insert(expected.extra_args.end(), speculating.begin(), speculating.end());
+            }
+            EXPECT_EQ(twin.engines[engine], expected) << twin.name << ", engine " << engine + 1;
+        }
+    }
+    EXPECT_THAT(twins, ElementsAre("48gb-mtp", "80gb-mtp"));
 }
 
 TEST(LlamaServerCommand, ListensOnLocalhostAndCarriesTheProfile) {

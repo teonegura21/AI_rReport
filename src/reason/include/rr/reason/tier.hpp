@@ -84,6 +84,7 @@ struct PlanCompute {
 // The commander drafts each section.
 struct WriteCompute {
     int drafts = 1;
+    bool fuse = false;  // and writes one draft more, from those that pass (Self-MoA): two or more
     bool thinking = false;
     int judge_top = 0;  // the drafts with fewest ledger violations a judge compares (0: none)
     int repair_rounds = 1;

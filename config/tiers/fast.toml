@@ -27,6 +27,7 @@ thinking_budget = 8192
 
 [write]
 drafts = 1
+fuse = false              # one draft: nothing to fuse
 thinking = false
 judge_top = 0             # one draft: nothing to compare
 repair_rounds = 1

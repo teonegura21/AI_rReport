@@ -185,6 +185,38 @@ min_vram_mib = 44000
   context = 8192
   extra_args = ["--n-gpu-layers", "999", "--pooling", "last", "--batch-size", "2048", "--ubatch-size", "2048"]
 
+# 48 GB, the commander speculating with its own multi-token-prediction head
+# (P29): chosen by name (models.profile = "48gb-mtp") for runbook R1, never
+# by "auto": the 48gb profile, listed first at the same size, wins the tie.
+# Qwen3.8's GGUF keeps the model's MTP layers (its `nextn` tensors), and
+# `--spec-type draft-mtp` drafts with them, up to 3 tokens a step, which the
+# model then checks in one pass: decoding reads every weight once a step, so
+# a step that checks 3 tokens costs about what one costs. Whether that beats
+# 4 slots at once is R1's question. A GGUF without the layers does not start
+# ("context type MTP requested but model doesn't contain MTP layers"). At
+# llama.cpp 7fe450e a drafted token's probability is never computed:
+# rr_llm leaves it unknown (rr/llm/chat.hpp). Everything else is the 48gb
+# profile's.
+[[profile]]
+name = "48gb-mtp"
+min_vram_mib = 44000
+  [[profile.engine]]
+  model = "qwen3.8-27b-q4"
+  slots = 4
+  context = 32768
+  kv_unified = true
+  extra_args = ["--n-gpu-layers", "999", "--flash-attn", "on", "--cache-type-k", "q8_0", "--cache-type-v", "q8_0", "--jinja", "--spec-type", "draft-mtp", "--spec-draft-n-max", "3"]
+  [[profile.engine]]
+  model = "gemma-4-26b-a4b"
+  slots = 16
+  context = 65536
+  extra_args = ["--n-gpu-layers", "999", "--flash-attn", "on", "--cache-type-k", "q8_0", "--cache-type-v", "q8_0", "--jinja"]
+  [[profile.engine]]
+  model = "qwen3-embedding-0.6b"
+  slots = 4
+  context = 8192
+  extra_args = ["--n-gpu-layers", "999", "--pooling", "last", "--batch-size", "2048", "--ubatch-size", "2048"]
+
 # 80 GB (A100, H100): the commander at 8 bits, with generous context.
 [[profile]]
 name = "80gb"
@@ -195,6 +227,28 @@ min_vram_mib = 79000
   context = 65536
   kv_unified = true
   extra_args = ["--n-gpu-layers", "999", "--flash-attn", "on", "--cache-type-k", "q8_0", "--cache-type-v", "q8_0", "--jinja"]
+  [[profile.engine]]
+  model = "gemma-4-26b-a4b"
+  slots = 32
+  context = 131072
+  extra_args = ["--n-gpu-layers", "999", "--flash-attn", "on", "--cache-type-k", "q8_0", "--cache-type-v", "q8_0", "--jinja"]
+  [[profile.engine]]
+  model = "qwen3-embedding-0.6b"
+  slots = 4
+  context = 8192
+  extra_args = ["--n-gpu-layers", "999", "--pooling", "last", "--batch-size", "2048", "--ubatch-size", "2048"]
+
+# 80 GB, the commander speculating with its own MTP head (P29): the 80gb
+# profile's engines, chosen by name for runbook R1, as 48gb-mtp is.
+[[profile]]
+name = "80gb-mtp"
+min_vram_mib = 79000
+  [[profile.engine]]
+  model = "qwen3.8-27b-q8"
+  slots = 4
+  context = 65536
+  kv_unified = true
+  extra_args = ["--n-gpu-layers", "999", "--flash-attn", "on", "--cache-type-k", "q8_0", "--cache-type-v", "q8_0", "--jinja", "--spec-type", "draft-mtp", "--spec-draft-n-max", "3"]
   [[profile.engine]]
   model = "gemma-4-26b-a4b"
   slots = 32

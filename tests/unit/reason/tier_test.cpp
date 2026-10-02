@@ -41,7 +41,9 @@ TEST(Tier, MaxIsWhatAdr0018Describes) {
                                            .recall_pass = true,
                                            .contested_to_commander = true}));
     EXPECT_EQ(max.plan, (PlanCompute{.mode = PlanMode::assign, .thinking_budget = 16384}));
-    EXPECT_EQ(max.write, (WriteCompute{.drafts = 4, .thinking = false, .judge_top = 2, .repair_rounds = 3}));
+    EXPECT_EQ(
+        max.write,
+        (WriteCompute{.drafts = 4, .fuse = false, .thinking = false, .judge_top = 2, .repair_rounds = 3}));
     EXPECT_EQ(max.seams.mode, SeamsMode::recheck);
 
     EXPECT_EQ(unwrap(builtin_tier("thorough")).seams.mode, SeamsMode::rewrite);
@@ -84,6 +86,8 @@ TEST(Tier, AStagesCanonicalFormIsItsCacheKeyMaterial) {
         << "compact, keys sorted";
     EXPECT_EQ(max.canonical(Stage::seams), R"({"mode":"recheck"})");
     EXPECT_EQ(max.canonical(Stage::plan), R"({"mode":"assign","thinking_budget":16384})");
+    EXPECT_EQ(max.canonical(Stage::write),
+              R"({"drafts":4,"fuse":false,"judge_top":2,"repair_rounds":3,"thinking":false})");
 
     // A default written out changes nothing; a changed value changes its stage only.
     const Tier implicit = unwrap(parse_tier("custom", "[write]\ndrafts = 2\n"));
@@ -116,6 +120,8 @@ TEST(Tier, IsReadStrictly) {
     refused("[write]\ndrafts = 4\njudge_top = 1\n", "'judge_top' is 0 or from 2");
     refused("[write]\ndrafts = 2\njudge_top = 3\n", "'judge_top' is 0 or from 2");
     refused("[write]\nthinking = 1\n", "true or false");
+    refused("[write]\nfuse = \"yes\"\n", "'fuse' must be true or false");
+    refused("[write]\nfuse = true\n", "'fuse' needs 2 drafts or more to fuse, not 1");
     refused("[outline]\nquorum = 1.5\n", "a share in (0, 1]");
     refused("[outline]\nquorum = nan\n", "a share in (0, 1]");
     refused("[atomize]\nquorum = 1.5\n", "a share in (0, 1]");
@@ -156,6 +162,10 @@ TEST(Tier, AVariantIsItsBaseWithEachChangeSet) {
     EXPECT_EQ(several.atomize.waves.quorum, 0.5) << "a number";
     EXPECT_EQ(several.plan.mode, PlanMode::group) << "a word";
     EXPECT_EQ(unwrap(find_tier("fast+seams.mode=recheck")).seams.mode, SeamsMode::recheck);
+
+    const Tier fused = unwrap(find_tier("max+write.fuse=true"));
+    EXPECT_TRUE(fused.write.fuse) << "runbook R6's variant";
+    EXPECT_NE(fused.canonical(Stage::write), max.canonical(Stage::write)) << "keyed";
 }
 
 TEST(Tier, AVariantIsReadAsStrictlyAsATierFile) {
@@ -171,6 +181,8 @@ TEST(Tier, AVariantIsReadAsStrictlyAsATierFile) {
     refused("max+polish.drafts=3", "unknown section [polish]");
     refused("max+write.judge_top=9", "'judge_top' is 0 or from 2");
     refused("max+write.thinking=yes", "true or false");
+    refused("max+write.drafts=1+write.judge_top=0+write.fuse=true",
+            "'fuse' needs 2 drafts or more to fuse, not 1");
     refused("max+write.drafts", "'write.drafts' is not stage.key=value");
     refused("max+drafts=3", "'drafts=3' is not stage.key=value");
     refused("max+.drafts=3", "is not stage.key=value");

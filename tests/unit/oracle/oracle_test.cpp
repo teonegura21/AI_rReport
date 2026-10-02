@@ -358,6 +358,29 @@ TEST(OracleAnswers, WriteTellsEachParagraphsAtomsEachWithItsMarker) {
     EXPECT_ERRC(oracle.chat(asked("write"), {}, {}), Errc::invalid_argument) << "no paragraphs block";
 }
 
+TEST(OracleAnswers, FuseWritesTheParagraphsAsWriteDoesWhateverTheDraftsSay) {
+    Oracle oracle;
+    teach_stages(oracle);
+    const std::string_view paragraphs =
+        "Paragraph 1: The first bridge failed.\n"
+        "A7 [1:02] number: The first bridge failed at four tons. Terms: tons.";
+    const auto fusing = [&](std::string_view drafts) {
+        llm::ChatRequest request = holding("fuse", "paragraphs", paragraphs);
+        request.messages.back() =
+            llm::Message::user(std::format("{}\nIts drafts:\n{}", request.messages.back().text(), drafts));
+        return request;
+    };
+    for (const std::string_view drafts :
+         {"Draft 1:\n<draft>\nAt four tons, the first bridge gave way. [A7]\n</draft>",
+          "Draft 1:\n<draft>\nThe bridge collapsed spectacularly. [A7]\n</draft>\nDraft 2:\n<draft>\nIt "
+          "failed. [A7]\n</draft>"}) {
+        EXPECT_EQ(unwrap(oracle.chat(fusing(drafts), {}, {})).first().content,
+                  "The first bridge failed at four tons. [A7]")
+            << "the right draft, its drafts unread: " << drafts;
+    }
+    EXPECT_ERRC(oracle.chat(asked("fuse"), {}, {}), Errc::invalid_argument) << "no paragraphs block";
+}
+
 // A request whose last message holds two blocks: `first` and `second`.
 llm::ChatRequest holding_both(std::string kind, std::string_view first_tag, std::string_view first,
                               std::string_view second_tag, std::string_view second) {

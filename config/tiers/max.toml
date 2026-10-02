@@ -30,6 +30,7 @@ thinking_budget = 16384
 
 [write]                   # the commander drafts each section
 drafts = 4
+fuse = false              # one draft more, written from those that pass (Self-MoA); runbook R6 tests it
 thinking = false          # thinking adds hallucinations when summarizing (ADR-0018); runbook R6 tests it
 judge_top = 2             # the drafts with fewest ledger violations that a judge then compares
 repair_rounds = 3         # targeted: only the failing sentences, with their evidence

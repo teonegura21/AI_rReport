@@ -2542,8 +2542,8 @@ name = "a-part-numbers-its-paragraphs-from-one"
 file = "src/pipeline/write_stage.cpp"
 expect = "WriteStageTest.ASectionTooLongForTheCommanderIsWrittenInParts"
   [[mutant.edit]]
-  from = '''        Asked asked{.first = begin + 1};'''
-  to = '''        Asked asked{.first = 1};'''
+  from = '''Asked{.first = begin + 1}'''
+  to = '''Asked{.first = 1}'''
 
 [[mutant]]
 name = "a-sentence-without-a-marker-passes"
@@ -2752,28 +2752,26 @@ name = "every-mission-has-one-seed"
 file = "src/pipeline/write_stage.cpp"
 expect = "WriteStageTest.EverySectionIsWrittenByTheCommanderAndEveryAtomTold"
   [[mutant.edit]]
-  from = '''render(kPrompt, shared_, order));
-        const std::int64_t seed = llm::derived_seed(context_->job->salt, WriteStage::kName, id, 0);'''
-  to = '''render(kPrompt, shared_, order));
-        const std::int64_t seed = llm::derived_seed(context_->job->salt, WriteStage::kName, id.substr(0, 5), 0);'''
+  from = '''            .seed = llm::derived_seed(context_->job->salt, WriteStage::kName, id, 0),'''
+  to = '''            .seed = llm::derived_seed(context_->job->salt, WriteStage::kName, id.substr(0, 5), 0),'''
 
 [[mutant]]
 name = "the-infantry-writes"
 file = "src/pipeline/write_stage.cpp"
 expect = "WriteStageTest.ASectionTooLongForTheCommanderIsWrittenInParts"
   [[mutant.edit]]
-  from = '''            .role = "commander",
-            .request = llm::ChatRequest{.messages = {llm::Message::system(rendered.system),'''
-  to = '''            .role = "infantry",
-            .request = llm::ChatRequest{.messages = {llm::Message::system(rendered.system),'''
+  from = '''.prompt = prompts_.write.info->label(),
+                               .role = "commander",'''
+  to = '''.prompt = prompts_.write.info->label(),
+                               .role = "infantry",'''
 
 [[mutant]]
 name = "writing-thinks"
 file = "src/pipeline/write_stage.cpp"
 expect = "WriteStageTest.EverySectionIsWrittenByTheCommanderAndEveryAtomTold"
   [[mutant.edit]]
-  from = '''                                        .thinking = compute_.thinking},'''
-  to = '''                                        .thinking = !compute_.thinking},'''
+  from = '''            .thinking = compute_.thinking};'''
+  to = '''            .thinking = !compute_.thinking};'''
 
 [[mutant]]
 name = "one-draft-only"
@@ -2788,8 +2786,10 @@ name = "no-repair"
 file = "src/pipeline/write_stage.cpp"
 expect = "WriteStageTest.EveryRuleADraftBreaksIsSentBackAndRepaired"
   [[mutant.edit]]
-  from = '''            .repairs = compute_.repair_rounds,'''
-  to = '''            .repairs = 0,'''
+  from = '''.repairs = compute_.repair_rounds,
+                               .samples = compute_.drafts};'''
+  to = '''.repairs = 0,
+                               .samples = compute_.drafts};'''
 
 [[mutant]]
 name = "thinking-has-no-budget"
@@ -2797,9 +2797,9 @@ file = "src/pipeline/write_stage.cpp"
 expect = "WriteStageTest.ATierThatWritesThinkingThinksWithinHalfOfWhatTheCommanderHolds"
   [[mutant.edit]]
   from = '''        if (compute_.thinking) {
-            mission.request.thinking_budget = budget_;'''
+            request.thinking_budget = budget_;'''
   to = '''        if (!compute_.thinking) {
-            mission.request.thinking_budget = budget_;'''
+            request.thinking_budget = budget_;'''
 
 [[mutant]]
 name = "thinking-takes-all-the-commander-holds"
@@ -3083,9 +3083,9 @@ file = "src/pipeline/write_stage.cpp"
 expect = "WriteStageTest.TheBestDraftsAreReadByAnotherFamilyAndComparedInBothOrders"
   [[mutant.edit]]
   from = '''        if (judged < 2) {
-            return drafts;  // nothing to choose between'''
+            return {};  // nothing to choose between'''
   to = '''        if (judged < 5) {
-            return drafts;  // nothing to choose between'''
+            return {};  // nothing to choose between'''
 
 [[mutant]]
 name = "one-draft-is-judged"
@@ -3093,9 +3093,9 @@ file = "src/pipeline/write_stage.cpp"
 expect = "WriteStageTest.ASingleDraftIsNotJudged"
   [[mutant.edit]]
   from = '''        if (judged < 2) {
-            return drafts;  // nothing to choose between'''
+            return {};  // nothing to choose between'''
   to = '''        if (judged < 1) {
-            return drafts;  // nothing to choose between'''
+            return {};  // nothing to choose between'''
 
 [[mutant]]
 name = "judge-top-is-ignored"
@@ -3919,3 +3919,189 @@ expect = "AtomizeStageTest.AnUnsureReadingWithNoWaveLeftGoesToTheCommander"
   [[mutant.edit]]
   from = '''compute_.waves.quorum, compute_.waves.sure);'''
   to = '''compute_.waves.quorum, 0.0);'''
+
+# P29: the commander fuses its own drafts into one more (Self-MoA), where the tier asks
+# (rr/pipeline/write_stage.hpp).
+
+[[mutant]]
+name = "fusion-is-never-asked"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AFusingTierHasTheCommanderWriteOneDraftMoreFromThoseThatPass"
+  [[mutant.edit]]
+  from = '''        if (compute_.fuse) {'''
+  to = '''        if (compute_.fuse && false) {'''
+
+[[mutant]]
+name = "every-tier-fuses"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.OnlyATierThatFusesAsksForAFusion"
+  [[mutant.edit]]
+  from = '''        if (compute_.fuse) {'''
+  to = '''        if (compute_.fuse || true) {'''
+  [[mutant.edit]]
+  from = '''    if (read.tier.write.fuse) {'''
+  to = '''    if (read.tier.write.fuse || true) {'''
+
+[[mutant]]
+name = "a-fusion-ranks-after-its-equals"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AFusingTierHasTheCommanderWriteOneDraftMoreFromThoseThatPass"
+  [[mutant.edit]]
+  from = '''std::ranges::lower_bound(drafts.warnings, warnings)'''
+  to = '''std::ranges::upper_bound(drafts.warnings, warnings)'''
+
+[[mutant]]
+name = "a-fusion-ranks-first-however-it-warns"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AFusionWithMoreWarningsThanADraftIsNotKept"
+  [[mutant.edit]]
+  from = '''std::ranges::lower_bound(drafts.warnings, warnings)'''
+  to = '''std::ranges::lower_bound(drafts.warnings, warnings * 0)'''
+
+[[mutant]]
+name = "the-drafts-are-shown-worst-first"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheFusionIsShownTheParagraphsAsTheWriterWasAndTheDraftsBestFirst"
+  [[mutant.edit]]
+  from = '''drafts[index]->value.get<std::string>());'''
+  to = '''drafts[drafts.size() - 1 - index]->value.get<std::string>());'''
+
+[[mutant]]
+name = "the-best-are-left-out-first"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.DraftsTheCommanderDoesNotHoldAllAreFusedBestFirstAsManyAsItHolds"
+  [[mutant.edit]]
+  from = '''std::span{drafts.ranked}.first(shown)'''
+  to = '''std::span{drafts.ranked}.last(shown)'''
+
+[[mutant]]
+name = "a-fusion-the-commander-does-not-hold-is-asked"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.DraftsTheCommanderDoesNotHoldAllAreFusedBestFirstAsManyAsItHolds"
+  [[mutant.edit]]
+  from = '''            if (army_->holds(mission)) {'''
+  to = '''            if (army_->holds(mission) || true) {'''
+
+[[mutant]]
+name = "one-draft-is-fused-where-two-are-not-held"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ACommanderThatHoldsNotEvenTwoDraftsFusesNoneAndSaysSoOnceASection"
+  [[mutant.edit]]
+  from = '''shown >= 2; --shown'''
+  to = '''shown >= 1; --shown'''
+
+[[mutant]]
+name = "a-lone-draft-is-fused"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ADraftThatPassesAloneIsNotFused"
+  [[mutant.edit]]
+  from = '''        if (drafts.ranked.size() < 2) {'''
+  to = '''        if (drafts.ranked.size() < 1) {'''
+
+[[mutant]]
+name = "a-failed-fusion-is-not-said"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AFusionThatFailsLeavesTheDraftsAsDrawnAndSaysSo"
+  [[mutant.edit]]
+  from = '''output_.findings.push_back(std::format("section {}, \"{}\": its drafts could not be fused: {}",'''
+  to = '''(void)(std::format("section {}, \"{}\": its drafts could not be fused: {}",'''
+
+[[mutant]]
+name = "a-failed-fusion-thinks"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AFusionThatFailsLeavesTheDraftsAsDrawnAndSaysSo"
+  [[mutant.edit]]
+  from = '''kFuseEscalation{.thinking = false,'''
+  to = '''kFuseEscalation{.thinking = true,'''
+
+[[mutant]]
+name = "a-declined-fusion-goes-to-another-family"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AFusionTheModelsDeclineIsNeverHandedToAnotherFamily"
+  [[mutant.edit]]
+  from = '''.commander = false, .other_family = false};'''
+  to = '''.commander = false, .other_family = true};'''
+
+[[mutant]]
+name = "a-fusion-draws-as-many-as-the-drafts"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AFusingTierHasTheCommanderWriteOneDraftMoreFromThoseThatPass"
+  [[mutant.edit]]
+  from = '''                               .samples = 1,'''
+  to = '''                               .samples = compute_.drafts,'''
+
+[[mutant]]
+name = "the-fusion-is-shown-no-drafts"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheFusionIsShownTheParagraphsAsTheWriterWasAndTheDraftsBestFirst"
+  [[mutant.edit]]
+  from = '''        brief.order["drafts"] = std::move(shown);'''
+  to = '''        brief.order["drafts"] = std::string{};'''
+
+[[mutant]]
+name = "the-drafts-are-miscounted"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheFusionIsShownTheParagraphsAsTheWriterWasAndTheDraftsBestFirst"
+  [[mutant.edit]]
+  from = '''        brief.order["count"] = drafts.size();'''
+  to = '''        brief.order["count"] = drafts.size() + 1;'''
+
+[[mutant]]
+name = "a-fusion-kept-is-not-counted"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AFusingTierHasTheCommanderWriteOneDraftMoreFromThoseThatPass"
+  [[mutant.edit]]
+  from = '''        if (drafts.fused == kept) {'''
+  to = '''        if (drafts.fused == kept && false) {'''
+
+[[mutant]]
+name = "every-tier-keys-the-fusion"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheKeyHoldsTheTierThePromptTheArmyAndWhatTheCommanderHolds"
+  [[mutant.edit]]
+  from = '''    if (tier.write.fuse) {'''
+  to = '''    if (tier.write.fuse || true) {'''
+
+[[mutant]]
+name = "the-fusion-is-not-keyed"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheKeyHoldsTheTierThePromptTheArmyAndWhatTheCommanderHolds"
+  [[mutant.edit]]
+  from = '''    if (tier.write.fuse) {'''
+  to = '''    if (tier.write.fuse && false) {'''
+
+[[mutant]]
+name = "a-fusions-ceiling-is-not-noted"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AFusionStoppedByACeilingMakesTheResultThisJobsAlone"
+  [[mutant.edit]]
+  from = '''        noted(outcome);
+        if (outcome.answers.empty()) {
+            output_.findings.push_back(std::format("section {}, \"{}\": its drafts could not be fused'''
+  to = '''        (void)outcome;
+        if (outcome.answers.empty()) {
+            output_.findings.push_back(std::format("section {}, \"{}\": its drafts could not be fused'''
+
+[[mutant]]
+name = "not-fused-is-said-for-every-part"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ACommanderThatHoldsNotEvenTwoDraftsFusesNoneAndSaysSoOnceASection"
+  [[mutant.edit]]
+  from = '''        if (std::ranges::find(output_.findings, unheld) == output_.findings.end()) {
+            output_.findings.push_back(unheld);
+        }
+        return std::nullopt;'''
+  to = '''        if (std::ranges::find(output_.findings, unheld) == output_.findings.end() || true) {
+            output_.findings.push_back(unheld);
+        }
+        return std::nullopt;'''
+
+[[mutant]]
+name = "every-section-is-said-fused"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ADraftThatPassesAloneIsNotFused"
+  [[mutant.edit]]
+  from = '''            if (missions.size() > before) {
+                ++sections_fused;'''
+  to = '''            if (missions.size() >= before) {
+                ++sections_fused;'''

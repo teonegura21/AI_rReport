@@ -98,7 +98,8 @@ A weighted sum would let a fluent draft that drops a must-quote beat a plain one
 
 - **One deviation from ADR-0018's table.** The ADR's `thorough` outline cell omits the video's chapters, and `thorough` uses them as `fast` and `max` do. A video's chapters are its author's sections: no model's outline is truer. The decision is in `thorough.toml`'s header.
 - **How sure a lone sample must be** (`[atomize] sure`, a probability in [0, 1]) is 0 in every shipped tier: a lone sample settles its sentence, as before P28. Runbook R6's sweep tries 0.9.
-- **Read strictly** (`parse_tier()`). An unknown section or key, a value of the wrong type or out of range, `judge_top` of 1 (a judge compares at least two drafts), or waves that cannot draw their max are errors naming the tier, the section and the key. A key left out takes its default.
+- **One draft more, fused from the others** (`[write] fuse`, P29) is off in every shipped tier: where it is on, the commander writes one draft more from its drafts that pass, taking the best of each (Self-MoA: Li, Lin, Xia and Jin, 2025), and the judge's pick decides whether it is kept ([pipeline.md](pipeline.md#the-write-stage)). Runbook R6's sweep measures it (`write-fuse`).
+- **Read strictly** (`parse_tier()`). An unknown section or key, a value of the wrong type or out of range, `judge_top` of 1 (a judge compares at least two drafts), `fuse` with fewer than two drafts (one has nothing to fuse), or waves that cannot draw their max are errors naming the tier, the section and the key. A key left out takes its default.
 - **Canonical per stage.** `Tier::canonical(stage)` is the stage's settings as compact JSON, keys sorted, every value present. It enters the stage's cache key (plan P15), so changing one value re-runs exactly that stage and the stages after it, while writing out a default changes nothing.
 - **Compute only rises** from `fast` to `max`, stage by stage, and a test checks it: a higher tier never buys less.
 - **Variants, named by what they change** (`find_tier()`, P26): `max+write.thinking=true` is `max` with `[write] thinking = true`, and `thorough+write.drafts=3+plan.mode=group` changes two stages of `thorough`. Each change, `stage.key=value`, is set in the base's own file, its value read as TOML would read it (true or false, a whole number, a number, else a word), and the result is read by `parse_tier()`'s strict reader: a variant is refused exactly where a tier file would be, naming the variant whole. Its stages' canonical forms are its settings', so it shares every stage it leaves alone with its base. The eval sweeps variants against a baseline ([eval.md](eval.md#sweeps-and-the-report)).
@@ -119,7 +120,8 @@ All of it is pure, so all of it is unit-tested, with exact expectations:
   - a variant: its base with each change set (true, a whole number, a number, a word), only the stage it changes keyed apart;
   - a variant read as strictly as a tier file: each malformed change, an unknown section, a key changed twice; every shipped tier writing out every section;
   - the compiled-in tiers are the source tree's;
-  - `sure` read as a probability: 0 and 1 are ones, 1.5, −0.1, NaN and a word are not.
+  - `sure` read as a probability: 0 and 1 are ones, 1.5, −0.1, NaN and a word are not;
+  - `fuse` read as true or false, refused with one draft, in a variant too, and keyed.
 
 ### How the tests were validated
 
@@ -143,6 +145,7 @@ Each rule was removed on purpose (69 mutants: 14 of them P26's for variants, 11 
 | Samples that agree settle their item, their confidences aside | `SamplesThatAgreeSettleTheirItemHoweverUnsureEachWas` |
 | A wave reads settledness from the vote's winner, not from the counts alone | `AnUnsureLoneSampleDrawsASecond` |
 | `sure` is a probability: neither above 1 nor NaN; the tiers read it, 0 included, and key it | `Waves.AreChecked`, `Tier.IsReadStrictly`, `AStagesCanonicalFormIsItsCacheKeyMaterial` |
+| `fuse` is read, keyed, and refused with fewer than two drafts | `Tier.IsReadStrictly`, `AStagesCanonicalFormIsItsCacheKeyMaterial`, `AVariantIsReadAsStrictlyAsATierFile` |
 
 **What writing the mutants found, before any ran:** no test had a winner that was not voted first, so counts that were never sorted would have passed. That test exists now.
 
@@ -153,3 +156,5 @@ Each rule was removed on purpose (69 mutants: 14 of them P26's for variants, 11 
 - **The `thorough` tier's seams mode.** It was never asserted directly. Mapping "rewrite" to "recheck" would have kept compute rising from fast to max, and passed.
 
 **P28's run** killed 12 of 13: its 11, and the 2 whose code moved (a wave reading settledness from the vote's winner, a share written as a whole number). One survived, a gap of the same kind as a share's: `sure` above 1 is refused twice, by the tier's reader and then by `waves_problems()`, in words that both end "a probability in [0, 1]", and the test read only those words. It reads the reader's own now (`'sure' must be a probability in [0, 1]`), and the final run kills it.
+
+**P29's run** killed its 3, each by the test that claims it: `fuse` not read, so that every tier file that writes it is refused; one draft let fuse; `fuse` left out of the key.

@@ -166,6 +166,21 @@ failure_modes = [
   note = "first version"
 
 [[prompt]]
+name = "fuse"
+purpose = "Write one section of the article once more, from its plan and from the drafts of it that passed every check: the one draft that takes the best of each, held to the same checks as theirs (Self-MoA; rr/pipeline/write_stage.hpp)."
+shared = ["title", "channel", "gist", "speakers", "lexicon", "sections"]
+failure_modes = [
+  "one draft copied whole, the others unread",
+  "what a draft adds to an atom carried over, since that draft passed the checks",
+  "an atom told twice, once in each draft's way, or moved to another paragraph",
+  "sentences of two drafts spliced so that they no longer read on",
+]
+  [[prompt.version]]
+  number = 1
+  hash = "d42eb33bc6764e95afd74b290ab56a553e100ff5db9d03f2812cb8323ef15587"
+  note = "first version"
+
+[[prompt]]
 name = "judge"
 purpose = "Read each sentence of a draft against the atoms it cites, the evidence quoted before a verdict: whether it says only what they say, or adds, softens, intensifies, misattributes or contradicts; asked of another family than the writer's (rr/pipeline/judging.hpp)."
 schema = "schemas/missions/judge.json"
