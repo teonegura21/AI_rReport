@@ -1,25 +1,37 @@
 // End-to-end tests: a real HttpServer on an ephemeral loopback port, driven
 // by the real HttpClient.
+#include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <cstddef>
 #include <format>
 #include <latch>
+#include <limits>
 #include <mutex>
+#include <optional>
 #include <random>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <vector>
 
+#include <sys/socket.h>
+#include <sys/time.h>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <netinet/in.h>
 
 #include <rr/core/hash.hpp>
 #include <rr/core/scope_exit.hpp>
+#include <rr/core/unique_fd.hpp>
 #include <rr/net/http_client.hpp>
 #include <rr/net/http_server.hpp>
 #include <rr/net/retry.hpp>
 #include <rr/net/sse.hpp>
+#include <rr/testkit/ports.hpp>
 #include <rr/testkit/result.hpp>
 #include <rr/testkit/temp_dir.hpp>
 
@@ -44,11 +56,71 @@ std::string random_payload(std::size_t size) {
     return payload;
 }
 
+// The padding of /heavy-head's head: far more than one loopback connection
+// holds on its way (the sender's buffer grows to 4 MB by default, and a
+// SlowReader's is pinned small), so the head waits for its client to read.
+constexpr std::size_t kHeavyHead = std::size_t{32} << 20U;
+
+// A client that reads only when told to: a raw connection whose receive
+// buffer is pinned small, so what the server sends waits in the server's own
+// buffer, and a write larger than both waits for the client.
+class SlowReader {
+public:
+    SlowReader(int port, std::string_view path) : fd_(::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0)) {
+        if (!fd_.valid()) {
+            ADD_FAILURE() << "cannot open a socket: " << std::system_category().message(errno);
+            return;
+        }
+        const int small = 4096;  // pinned: the kernel no longer grows it
+        (void)::setsockopt(fd_.get(), SOL_SOCKET, SO_RCVBUF, &small, sizeof(small));
+        const timeval patience{.tv_sec = 20, .tv_usec = 0};  // a broken test fails, and never hangs
+        (void)::setsockopt(fd_.get(), SOL_SOCKET, SO_RCVTIMEO, &patience, sizeof(patience));
+        const sockaddr_in address = testkit::detail::loopback(port);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) — the sockets API
+        if (::connect(fd_.get(), reinterpret_cast<const sockaddr*>(&address), sizeof(address)) != 0) {
+            ADD_FAILURE() << "cannot connect: " << std::system_category().message(errno);
+            return;
+        }
+        const std::string request =
+            std::format("GET {} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n", path);
+        if (::send(fd_.get(), request.data(), request.size(), MSG_NOSIGNAL) !=
+            static_cast<ssize_t>(request.size())) {
+            ADD_FAILURE() << "cannot send the request: " << std::system_category().message(errno);
+        }
+    }
+
+    // Up to `count` bytes, as they come: fewer when the server closes first.
+    std::string read(std::size_t count) {
+        std::string received;
+        std::vector<char> buffer(std::size_t{1} << 16U);
+        while (received.size() < count) {
+            const ssize_t got =
+                ::recv(fd_.get(), buffer.data(), std::min(buffer.size(), count - received.size()), 0);
+            if (got < 0) {
+                ADD_FAILURE() << "cannot read: " << std::system_category().message(errno);
+            }
+            if (got <= 0) {
+                break;
+            }
+            received.append(buffer.data(), static_cast<std::size_t>(got));
+        }
+        return received;
+    }
+
+    // Everything until the server closes the connection.
+    std::string read_to_end() { return read(std::numeric_limits<std::size_t>::max()); }
+
+private:
+    UniqueFd fd_;
+};
+
 // State the routes share with the tests.
 struct ServerState {
     std::atomic<int> private_uploads_run{0};
     std::atomic<int> flaky_calls{0};
     std::atomic<bool> slow_stream_ended{false};
+    std::atomic<bool> unheeding_released{false};
+    std::atomic<bool> waiting_to_stream{false};
     std::atomic<bool> head_seen{false};
     std::atomic<bool> waiting_for_leave{false};
     std::atomic<bool> noticed_leave{false};
@@ -191,6 +263,48 @@ void ClientServer::add_routes(HttpServer& server, ServerState& state) {
             }
             return ok();
         });
+    });
+    server.route(Method::get, "/unheeding-sse", [&state](const auto&) {
+        // Runs until the test lets it end, never asking stopping().
+        return Response::event_stream([&state](HttpServer::ChunkWriter& writer) -> Result<void> {
+            if (!writer.write(format_sse_event("first"))) {
+                return fail(Errc::cancelled, "the client went away");
+            }
+            const auto deadline = Clock::now() + 5s;
+            while (!state.unheeding_released && Clock::now() < deadline) {
+                std::this_thread::sleep_for(5ms);
+            }
+            if (!writer.write(format_sse_event("last"))) {
+                return fail(Errc::cancelled, "the client went away");
+            }
+            return ok();
+        });
+    });
+    server.route(Method::get, "/stream-after-leave", [&state](const HttpServer::Request& request) {
+        // Answers with a stream once its client has left: its body never begins.
+        state.waiting_to_stream = true;
+        const auto deadline = Clock::now() + 5s;
+        while (!(request.client_gone && request.client_gone()) && Clock::now() < deadline) {
+            std::this_thread::sleep_for(5ms);
+        }
+        return Response::event_stream([](HttpServer::ChunkWriter& writer) -> Result<void> {
+            if (!writer.write(format_sse_event("never read"))) {
+                return fail(Errc::cancelled, "the client went away");
+            }
+            return ok();
+        });
+    });
+    server.route(Method::get, "/heavy-head", [](const auto&) {
+        // A stream whose head is too large to leave at once: answered, and
+        // its body not begun, until its client reads (SlowReader).
+        Response stream = Response::event_stream([](HttpServer::ChunkWriter& writer) -> Result<void> {
+            if (!writer.write(format_sse_event(writer.stopping() ? "stopping" : "serving"))) {
+                return fail(Errc::cancelled, "the client went away");
+            }
+            return ok();
+        });
+        stream.headers.add("X-Padding", std::string(kHeavyHead, 'p'));
+        return stream;
     });
     server.route(Method::get, "/wait-for-leave", [&state](const HttpServer::Request& request) {
         state.waiting_for_leave = true;
@@ -614,6 +728,108 @@ TEST_F(ClientServer, StopFinishesPromptlyWhileAStreamIsOpen) {
     server().stop();
     EXPECT_LT(Clock::now() - started, 3s);
     EXPECT_TRUE(state().slow_stream_ended.load()) << "the producer saw stopping()";
+}
+
+// httplib begins no streamed body once its listening socket is closed. A
+// stream answered just before the stop, its head on its way and its producer
+// not yet called, must still end whole, with its producer's last word: its
+// client would take a truncated transfer for a broken one. Here the head is
+// held on its way by a client that reads nothing of a head larger than the
+// connection holds. A stream asked for meanwhile is refused, whole too.
+TEST_F(ClientServer, AStreamAnsweredBeforeTheStopEndsWhole) {
+    SlowReader heavy{server().port(), "/heavy-head"};
+    EXPECT_EQ(heavy.read(1), "H") << "the head is on its way: the stream is answered";
+    std::atomic<bool> stopped{false};
+    std::jthread stopper{[&] {
+        server().stop();
+        stopped = true;
+    }};
+    std::this_thread::sleep_for(300ms);
+    EXPECT_FALSE(stopped.load()) << "the stop waits for the stream to begin (or the head was not held: is "
+                                    "kHeavyHead more than the connection holds?)";
+    EXPECT_ERRC(expect_success(get("/sse")), Errc::unavailable) << "a stream asked for while stopping";
+    const std::string rest = heavy.read_to_end();
+    stopper.join();
+    const std::size_t head_end = rest.find("\r\n\r\n");
+    ASSERT_NE(head_end, std::string::npos) << "the head arrives whole";
+    const std::string event = format_sse_event("stopping");
+    EXPECT_EQ(rest.substr(head_end + 4), std::format("{:x}\r\n{}\r\n0\r\n\r\n", event.size(), event))
+        << "the producer's last word arrives, in a body that ends whole";
+}
+
+// A stream already begun needs the door open no longer: the stop closes it
+// at once, however long the stream still runs, and the stream runs its course.
+TEST_F(ClientServer, TheStopClosesTheDoorOnceTheStreamsAnsweredHaveBegun) {
+    std::latch begun{1};
+    std::string received;
+    std::optional<Result<HttpClient::Response>> streamed;
+    std::jthread reader{[&] {
+        bool counted = false;  // a latch must not be counted below zero
+        streamed = client().stream({.url = url("/unheeding-sse")},
+                                   {.on_chunk = [&](std::string_view chunk) -> Result<void> {
+                                       received.append(chunk);
+                                       if (!counted) {
+                                           counted = true;
+                                           begun.count_down();
+                                       }
+                                       return ok();
+                                   }});
+    }};
+    begun.wait();
+    const int port = server().port();
+    std::jthread stopper{[&] { server().stop(); }};
+    const auto deadline = Clock::now() + 2s;
+    while (testkit::can_connect(port) && Clock::now() < deadline) {
+        std::this_thread::sleep_for(10ms);
+    }
+    EXPECT_FALSE(testkit::can_connect(port)) << "the door closes while the stream runs its course";
+    state().unheeding_released = true;
+    stopper.join();
+    reader.join();
+    ASSERT_TRUE(streamed.has_value());
+    ASSERT_OK(expect_success(*streamed));
+    EXPECT_EQ(received, format_sse_event("first") + format_sse_event("last"));
+}
+
+// A stream whose client left before its body began is let go of unbegun:
+// it holds up no stop.
+TEST_F(ClientServer, AStreamWhoseClientLeftHoldsUpNoStop) {
+    std::stop_source cancel;
+    std::jthread canceller{[&] {
+        const auto deadline = Clock::now() + 5s;
+        while (!state().waiting_to_stream && Clock::now() < deadline) {
+            std::this_thread::sleep_for(5ms);
+        }
+        cancel.request_stop();
+    }};
+    EXPECT_ERRC(client().send({.url = url("/stream-after-leave")}, cancel.get_token()), Errc::cancelled);
+    canceller.join();
+    const auto answered = [&] {  // httplib logs a response once it is answered, before its head goes out
+        const std::lock_guard lock(state().log_mutex);
+        return std::ranges::any_of(state().log, [](const HttpServer::AccessLogEntry& entry) {
+            return entry.path == "/stream-after-leave";
+        });
+    };
+    const auto deadline = Clock::now() + 5s;
+    while (!answered() && Clock::now() < deadline) {
+        std::this_thread::sleep_for(5ms);
+    }
+    ASSERT_TRUE(answered());
+    const auto started = Clock::now();
+    server().stop();
+    EXPECT_LT(Clock::now() - started, 2s) << "nothing waits for a body that will never begin";
+}
+
+TEST_F(ClientServer, AServerStartedAgainStreamsAgain) {
+    server().stop();
+    ASSERT_OK(server().start());
+    std::string received;
+    ASSERT_OK(expect_success(
+        client().stream({.url = url("/sse")}, {.on_chunk = [&](std::string_view chunk) -> Result<void> {
+                            received.append(chunk);
+                            return ok();
+                        }})));
+    EXPECT_THAT(received, HasSubstr(format_sse_event("[DONE]"))) << "its streams are not refused";
 }
 
 // ---------------------------------------------------------------------------

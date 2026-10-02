@@ -23,6 +23,9 @@
 //     complete one: when the producer fails (or throws), the connection is
 //     closed without the final chunk, and the client sees a truncated
 //     transfer (curl: CURLE_PARTIAL_FILE; our client: Errc::network).
+//   * A stop never cuts a stream short: a stream already answered begins
+//     before the listening socket closes (httplib begins no body after),
+//     and one asked for during the stop is refused whole (see stop()).
 //   * A handler that waits (e.g. for a slow upstream) can ask whether its
 //     client is still connected: Request::client_gone.
 //   * An exception escaping a handler becomes a 500 with a structured body,
@@ -184,6 +187,10 @@ public:
     // The bound port (useful with port 0). 0 before start().
     [[nodiscard]] int port() const noexcept;
     // Stops accepting, lets running handlers finish, joins. Idempotent.
+    // Producers are told (ChunkWriter::stopping()) and finish up; a stream
+    // answered before the stop still ends whole, its body begun before the
+    // socket closes (within a few seconds, for a client that reads nothing),
+    // and one asked for during it is refused, Errc::unavailable.
     void stop();
 
 private:

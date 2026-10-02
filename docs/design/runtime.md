@@ -98,6 +98,7 @@ The hub always streams long calls. The relay's job is to make the stream survive
   - the shutdown token;
   - whether the client is still there (`Request::client_gone` in the handler; an empty write, which only probes, in the stream);
   - the keep-alive timer.
+- **A stop never cuts an answered stream short.** The server lets every stream already answered begin before it closes its socket, since httplib begins no body after that. So a relay answered a moment before the stop still sends its `unavailable` event and ends cleanly (`docs/design/networking.md`; CI caught `StoppingEndsSilentStreamsPromptly` failing in that gap).
 - **Only `Content-Type` and `Accept` are forwarded.**
   - The hub's bearer token is the pod's secret.
   - llama-server acts on some headers: with `X-Conversation-Id` it keeps generating after the client disconnects, for nobody.

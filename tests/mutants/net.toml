@@ -1,0 +1,56 @@
+# Mutants of rr_net. M0 tested rr_net's mutants by hand; this spec starts
+# with the server's stop (CI found streams answered just before a stop cut
+# short: httplib begins no body once its listening socket is closed).
+# Run: scripts/mutate.py tests/mutants/net.toml
+
+target = "rr_net_tests"
+binary = "build/dev/tests/unit/net/rr_net_tests"
+timeout = 180
+
+[[mutant]]
+name = "the-stop-waits-for-no-stream"
+file = "src/net/http_server.cpp"
+expect = "ClientServer.AStreamAnsweredBeforeTheStopEndsWhole"
+  [[mutant.edit]]
+  from = '''(void)all_begun_.wait_until(lock, deadline, [this] { return pending_ == 0; });'''
+  to = '''(void)all_begun_.wait_until(lock, deadline, [] { return true; });'''
+
+[[mutant]]
+name = "the-stream-is-not-counted"
+file = "src/net/http_server.cpp"
+expect = "ClientServer.AStreamAnsweredBeforeTheStopEndsWhole"
+  [[mutant.edit]]
+  from = '''        ++pending_;'''
+  to = ''''''
+
+[[mutant]]
+name = "streams-are-taken-while-stopping"
+file = "src/net/http_server.cpp"
+expect = "ClientServer.AStreamAnsweredBeforeTheStopEndsWhole"
+  [[mutant.edit]]
+  from = '''        closing_ = true;'''
+  to = '''        closing_ = false;'''
+
+[[mutant]]
+name = "a-stream-begun-holds-the-door"
+file = "src/net/http_server.cpp"
+expect = "ClientServer.TheStopClosesTheDoorOnceTheStreamsAnsweredHaveBegun"
+  [[mutant.edit]]
+  from = '''                place->begin();'''
+  to = '''                (void)place;'''
+
+[[mutant]]
+name = "a-stream-let-go-unbegun-stays-pending"
+file = "src/net/http_server.cpp"
+expect = "ClientServer.AStreamWhoseClientLeftHoldsUpNoStop"
+  [[mutant.edit]]
+  from = '''        ~Place() { begin(); }'''
+  to = '''        ~Place() = default;'''
+
+[[mutant]]
+name = "a-server-started-again-refuses-streams"
+file = "src/net/http_server.cpp"
+expect = "ClientServer.AServerStartedAgainStreamsAgain"
+  [[mutant.edit]]
+  from = '''    impl.pending.open();'''
+  to = ''''''

@@ -105,7 +105,23 @@ A client that trusts status codes, as rReport's model sync does, would then rest
 - **Buffered routes.** They are held to `max_body_bytes` by checking `Content-Length` after routing and before reading. Chunked bodies are refused with 411: a buffered route must know the size up front.
 - **Streaming routes.** They read through `BodyReader` up to `max_stream_bytes`, httplib's global payload limit.
 - **Exceptions.** A handler exception becomes a 500 with a structured body. A stream producer's exception truncates the body; see "A stream's three honest endings".
-- **Stopping.** Streamed responses check `ChunkWriter::stopping()` and a failed `write()`, so producers end when the server stops or the client leaves.
+- **Stopping.** Streamed responses check `ChunkWriter::stopping()` and a failed `write()`, so producers end when the server stops or the client leaves. A stop never cuts an answered stream short: see the next section.
+
+## Server: a stop never cuts an answered stream short
+
+- **The trap.** cpp-httplib begins no streamed body once its listening socket is closed. `write_content_chunked()` loops `while (data_available && !is_shutting_down())`, and `is_shutting_down()` means "the listening socket is closed". So a stream whose head is already out, but whose producer has not been called yet, reaches its client as a head and a truncated body. A relay answered a moment before the runtime stopped would lose its `unavailable` event, and the hub would see a broken transfer instead.
+- **Found by CI.** The supervisor's `StoppingEndsSilentStreamsPromptly` failed once under ASan. The stop came between the relay's early `200` and its body, and the hub saw `transfer closed with outstanding read data remaining`.
+- **What `stop()` does now** (`PendingStreams` in `http_server.cpp`):
+  1. It tells producers to finish up (`ChunkWriter::stopping()`).
+  2. It refuses new streams. A stream answered from then on becomes a whole `503` (`unavailable`, "the server is stopping"), which needs no body loop.
+  3. It waits until every stream already answered has begun: either its producer was called, or httplib let go of it unbegun because its client left. It waits five seconds at most (`kStopGrace`), for a client that reads nothing and whose head never finishes leaving.
+  4. Only then does it close the socket and join the workers, which finish the streams already running.
+- **Why wait only for streams to begin, not to end.** A producer, once called, runs to its end whatever the socket's state, and the workers are joined anyway. Waiting for streams to end would hold the door open, still serving plain requests, for as long as a producer that ignores `stopping()` runs.
+- **Tests.**
+  - `AStreamAnsweredBeforeTheStopEndsWhole` holds a stream exactly in that gap. Its head is larger than the connection holds: 32 MB, against a sender's buffer of 4 MB at most and a receiver's pinned small. Its client reads one byte, then nothing until the stop has begun. The body must be the producer's last word and the final chunk, and a stream asked for meanwhile must get the `503`. Without the fix, the body is empty and the second request finds the door shut.
+  - `TheStopClosesTheDoorOnceTheStreamsAnsweredHaveBegun`: a stream that ignores `stopping()` does not keep the door open.
+  - `AStreamWhoseClientLeftHoldsUpNoStop`: a stream let go of unbegun counts as begun.
+  - `AServerStartedAgainStreamsAgain`: a server started again takes streams again.
 
 ## SSE parsing details that matter
 
@@ -144,6 +160,14 @@ Every mechanism above was mutation-tested: removed on purpose, and the named tes
 | A CRLF counted as one line ending | `EventsWhereverItAllowsLeaveTheOthersIntact` |
 | Events only between events (any line start) | `EventsWhereverItAllowsLeaveTheOthersIntact` |
 | Integer status codes in error events | `DecodeOurShapeAndLlamaCpps` |
+| Waiting for the streams answered before closing the socket | `AStreamAnsweredBeforeTheStopEndsWhole` |
+| Counting a stream once answered | `AStreamAnsweredBeforeTheStopEndsWhole`, and three more |
+| Refusing streams while stopping | `AStreamAnsweredBeforeTheStopEndsWhole` |
+| A stream begun leaves the count | `TheStopClosesTheDoorOnceTheStreamsAnsweredHaveBegun` |
+| A stream let go of unbegun leaves the count | `AStreamWhoseClientLeftHoldsUpNoStop` |
+| A server started again takes streams again | `AServerStartedAgainStreamsAgain` |
+
+The last six are kept in `tests/mutants/net.toml` (all killed). The others were applied by hand in M0.
 
 Mutants are applied by pattern, and a pattern must match exactly once. An ambiguous one once mutated `format_sse_event()` instead of `format_sse_comment()`, and the mutant "survived" for the wrong reason.
 

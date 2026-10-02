@@ -6,6 +6,7 @@
 #include <deque>
 #include <exception>
 #include <format>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <thread>
@@ -21,6 +22,10 @@ using Clock = std::chrono::steady_clock;
 
 // Longest start() waits for the listening thread to come up.
 constexpr std::chrono::seconds kStartTimeout{5};
+// Longest stop() waits for the streams already answered to begin (see
+// PendingStreams): a client that reads nothing holds its stream's head on
+// the way, and so the stop, this long at most.
+constexpr std::chrono::seconds kStopGrace{5};
 // Extra workers (beyond Options::worker_threads) exit after idling this long.
 constexpr std::chrono::seconds kWorkerIdleExit{30};
 
@@ -180,6 +185,79 @@ private:
     bool stopping_ = false;
 };
 
+// The streams answered whose bodies have not begun: each head is handed to
+// httplib, its producer not yet called. httplib calls no producer once its
+// listening socket is closed, so such a stream would reach its client as a
+// head and a truncated body, without the producer's last word (a relay's
+// "the runtime is shutting down"). So stop() refuses new streams, and closes
+// the socket only once the streams already answered have begun
+// (HttpServer::stop()).
+class PendingStreams {
+public:
+    // A stream's place among them, from its answer until its producer begins,
+    // or until httplib lets go of it unbegun (its client left).
+    class Place {
+    public:
+        explicit Place(PendingStreams& streams) noexcept : streams_(&streams) {}
+        Place(const Place&) = delete;
+        Place& operator=(const Place&) = delete;
+        Place(Place&&) = delete;
+        Place& operator=(Place&&) = delete;
+        ~Place() { begin(); }
+
+        // The producer begins: the stream needs the socket open no longer.
+        void begin() {
+            if (!begun_.exchange(true)) {
+                streams_->left();
+            }
+        }
+
+    private:
+        PendingStreams* streams_;
+        std::atomic<bool> begun_{false};
+    };
+
+    // A place for a stream about to be answered; none while closing, when
+    // the stream is refused.
+    [[nodiscard]] std::shared_ptr<Place> enter() {
+        const std::lock_guard lock(mutex_);
+        if (closing_) {
+            return nullptr;
+        }
+        auto place = std::make_shared<Place>(*this);  // counted only once made: it may throw
+        ++pending_;
+        return place;
+    }
+
+    // Refuses new streams, then waits until every stream answered has begun,
+    // or until `deadline`.
+    void close(Clock::time_point deadline) {
+        std::unique_lock lock(mutex_);
+        closing_ = true;
+        (void)all_begun_.wait_until(lock, deadline, [this] { return pending_ == 0; });
+    }
+
+    // Takes streams again: the server starts anew.
+    void open() {
+        const std::lock_guard lock(mutex_);
+        closing_ = false;
+    }
+
+private:
+    void left() {
+        {
+            const std::lock_guard lock(mutex_);
+            --pending_;
+        }
+        all_begun_.notify_all();
+    }
+
+    std::mutex mutex_;
+    std::condition_variable all_begun_;
+    std::size_t pending_ = 0;
+    bool closing_ = false;
+};
+
 HttpServer::Request convert(const httplib::Request& in, bool with_body) {
     HttpServer::Request out;
     out.method = method_from(in.method).value_or(Method::get);
@@ -256,15 +334,28 @@ private:
     bool consumed_ = false;
 };
 
-void apply(HttpServer::Response response, httplib::Response& out, const std::atomic<bool>& stopping) {
+// Hands `response` to httplib. A stream takes a place among the pending
+// ones until its producer begins; while the server stops, it is refused.
+void apply(HttpServer::Response response, httplib::Response& out, const std::atomic<bool>& stopping,
+           PendingStreams& pending) {
+    std::shared_ptr<PendingStreams::Place> place;
+    if (response.stream) {
+        place = pending.enter();
+        if (!place) {
+            // Its body would never begin: say so in a whole answer instead.
+            response = HttpServer::Response::error(Error{Errc::unavailable, "the server is stopping"});
+        }
+    }
     out.status = response.status;
     for (const auto& [name, value] : response.headers) {
         out.headers.emplace(name, value);
     }
     if (response.stream) {
         out.set_chunked_content_provider(
-            response.content_type, [produce = std::move(response.stream), &stopping](
-                                       std::size_t /*offset*/, httplib::DataSink& sink) {
+            response.content_type,
+            [produce = std::move(response.stream), &stopping, place = std::move(place)](
+                std::size_t /*offset*/, httplib::DataSink& sink) {
+                place->begin();
                 SinkWriter writer{sink, stopping};
                 bool complete = false;
                 try {
@@ -288,7 +379,8 @@ void apply(HttpServer::Response response, httplib::Response& out, const std::ato
 
 // Runs a handler; an exception becomes a 500 with a structured body.
 template <class Produce>
-void answer(httplib::Response& out, const std::atomic<bool>& stopping, Produce&& produce) {
+void answer(httplib::Response& out, const std::atomic<bool>& stopping, PendingStreams& pending,
+            Produce&& produce) {
     HttpServer::Response response;
     try {
         response = std::forward<Produce>(produce)();
@@ -298,7 +390,7 @@ void answer(httplib::Response& out, const std::atomic<bool>& stopping, Produce&&
     } catch (...) {
         response = HttpServer::Response::error(Error{Errc::internal, "handler threw"});
     }
-    apply(std::move(response), out, stopping);
+    apply(std::move(response), out, stopping, pending);
 }
 
 }  // namespace
@@ -362,6 +454,7 @@ struct HttpServer::Impl {
     AccessLog access_log;
     std::set<std::pair<std::string, std::string>> streaming_routes;  // (method, pattern)
     std::atomic<bool> stopping{false};
+    PendingStreams pending;
     std::atomic<bool> listen_returned{false};
     int port = 0;
     std::jthread listener;  // declared last: joined before the members it uses go away
@@ -405,7 +498,7 @@ struct HttpServer::Impl {
             if (!verdict.has_value()) {
                 return httplib::Server::HandlerResponse::Unhandled;
             }
-            apply(std::move(*verdict), response, stopping);
+            apply(std::move(*verdict), response, stopping, pending);
             return httplib::Server::HandlerResponse::Handled;
         });
 
@@ -418,7 +511,7 @@ struct HttpServer::Impl {
             const auto reject = [&](int status, std::string message) {
                 Response answer = Response::error(Error{Errc::invalid_argument, std::move(message)});
                 answer.status = status;
-                apply(std::move(answer), response, stopping);
+                apply(std::move(answer), response, stopping, pending);
                 return httplib::Server::HandlerResponse::Handled;
             };
             if (request.has_header("Transfer-Encoding")) {
@@ -465,7 +558,8 @@ void HttpServer::route(Method method, const std::string& pattern, Handler handle
     impl_->register_route(
         method, pattern,
         [this, handler = std::move(handler)](const httplib::Request& request, httplib::Response& response) {
-            answer(response, impl_->stopping, [&] { return handler(convert(request, true)); });
+            answer(response, impl_->stopping, impl_->pending,
+                   [&] { return handler(convert(request, true)); });
         });
 }
 
@@ -474,7 +568,7 @@ void HttpServer::route_streaming(Method method, const std::string& pattern, Stre
     auto adapter = [this, handler = std::move(handler)](const httplib::Request& request,
                                                         httplib::Response& response,
                                                         const httplib::ContentReader& content) {
-        answer(response, impl_->stopping, [&] {
+        answer(response, impl_->stopping, impl_->pending, [&] {
             ContentBodyReader body{content};
             return handler(convert(request, false), body);
         });
@@ -550,6 +644,7 @@ Result<void> HttpServer::start() {
     }
     impl.port = port;
     impl.stopping = false;
+    impl.pending.open();
     impl.listen_returned = false;
     impl.listener = std::jthread{[&impl] {
         (void)impl.server.listen_after_bind();
@@ -577,7 +672,10 @@ void HttpServer::stop() {
     if (!impl.listener.joinable()) {
         return;
     }
-    impl.stopping = true;
+    impl.stopping = true;  // producers finish up (ChunkWriter::stopping())
+    // httplib begins no streamed body once its listening socket is closed:
+    // new streams are refused, and those already answered begin first.
+    impl.pending.close(Clock::now() + kStopGrace);
     impl.server.stop();
     impl.listener.join();
 }
