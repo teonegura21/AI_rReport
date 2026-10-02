@@ -97,13 +97,14 @@ Then **[docs/runbooks/m1-m2.md](docs/runbooks/m1-m2.md)** lists what only the po
 
 ## Using it
 
-So far a job reads its source, makes its transcript, outlines the video, writes Ledger A, what became of every sentence, plans the article, which paragraph tells which atoms, and writes it, every sentence citing the atoms it tells ([docs/design/pipeline.md](docs/design/pipeline.md)). A judge of another family than the writer reads the best drafts, sentence by sentence, and picks one. Where two sections meet, the commander rewrites the two paragraphs together so the article reads on, and the rewrite is kept only where the judge reads it no less faithful. The HTML report arrives next. What needs no model runs without a pod: the source and the transcript of a video with its creator's captions, or of a caption file. The atoms need the pod: without one, a job stops there and says so, and `rreport resume` takes it up once a pod is set up.
+So far a job reads its source, makes its transcript, outlines the video, writes Ledger A, what became of every sentence, plans the article, which paragraph tells which atoms, and writes it, every sentence citing the atoms it tells ([docs/design/pipeline.md](docs/design/pipeline.md)). A judge of another family than the writer reads the best drafts, sentence by sentence, and picks one. Where two sections meet, the commander rewrites the two paragraphs together so the article reads on, and the rewrite is kept only where the judge reads it no less faithful. Each job's article is one web page, written by `rreport report`: every sentence starts the video where it was said, and the Fidelity Report under it says what was kept, against M1's targets, and what was left out, and why ([docs/design/report.md](docs/design/report.md)). What needs no model runs without a pod: the source and the transcript of a video with its creator's captions, or of a caption file. The atoms need the pod: without one, a job stops there and says so, and `rreport resume` takes it up once a pod is set up.
 
 ```bash
 rreport ingest 'https://www.youtube.com/watch?v=…'   # or a caption file: .vtt, .srt, .json3, .txt
 rreport jobs                                          # the library's jobs, newest first
 rreport jobs show <job>                               # each stage, and what it could not do
 rreport resume <job>                                  # a stopped job, taken up where it stopped
+rreport report <job>                                  # its article as a web page, with the Fidelity Report
 ```
 
 Automatic captions come without punctuation: the pod's infantry punctuates them, without changing a word. Without a pod, they are cut where the speaker paused, and the job says so.

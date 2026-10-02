@@ -407,6 +407,33 @@ TEST_F(Hub, IngestsACaptionFileWithoutAPodUntilItNeedsOne) {
     EXPECT_THAT(resumed.stdout_text, HasSubstr(std::format("job {} needs you: atomizing needs models", job)));
 }
 
+// A job's page needs no pod: it shows what the job has, and says what is
+// missing.
+TEST_F(Hub, ReportsAJobAsAPageWhereverItStands) {
+    const std::vector<std::string> no_pod{"runtime.url=", "runpod.pod_id="};
+    const std::filesystem::path captions = home().write_file("On radium.vtt", kCaptions);
+    const std::string job = job_in(rreport({"ingest", captions.string()}, no_pod).stdout_text);
+    ASSERT_FALSE(job.empty());
+
+    const proc::RunResult reported = rreport({"report", job}, no_pod);
+    ASSERT_EQ(reported.status.code, 0) << reported.stderr_text;
+    const std::filesystem::path page{reported.stdout_text.substr(0, reported.stdout_text.find('\n'))};
+    EXPECT_EQ(page.filename(), job + ".html");
+    EXPECT_EQ(page.parent_path().filename(), "reports") << "beside the library";
+    const std::string html = unwrap(read_file(page));
+    EXPECT_THAT(html, HasSubstr("<title>On radium</title>"));
+    EXPECT_THAT(html, HasSubstr("The article is not written yet"));
+    EXPECT_THAT(html, HasSubstr("Pierre Curie heated it until it glowed.")) << "its transcript";
+    EXPECT_THAT(html, HasSubstr("<h4>outline</h4>")) << "what the outline stage could not do";
+
+    const std::filesystem::path elsewhere = home() / "pages" / "radium.html";
+    const proc::RunResult chosen = rreport({"report", job, "--out", elsewhere.string()}, no_pod);
+    ASSERT_EQ(chosen.status.code, 0) << chosen.stderr_text;
+    EXPECT_EQ(unwrap(read_file(elsewhere)), html) << "a view of the same artifacts, the same each time";
+
+    EXPECT_EQ(rreport({"report", "01JNOSUCHJOB0000000000000000"}, no_pod).status.code, 1);
+}
+
 TEST_F(Hub, UnpunctuatedCaptionsWithoutAPodSaySo) {
     const std::filesystem::path captions =
         home().write_file("auto.vtt",
@@ -500,6 +527,9 @@ TEST_F(Hub, TheEvalKeepsItsVideosAndDraftsTheirGold) {
     const proc::RunResult resumed = rreport({"resume", job_in(waiting.stdout_text)});
     EXPECT_EQ(resumed.status.code, 2) << "an annotation runs other stages than an article";
     EXPECT_THAT(resumed.stderr_text, HasSubstr("`rreport eval annotate` takes it up again"));
+    const proc::RunResult paged = rreport({"report", job_in(waiting.stdout_text)});
+    EXPECT_EQ(paged.status.code, 2) << "an annotation has no article to show";
+    EXPECT_THAT(paged.stderr_text, HasSubstr("`rreport eval sheet` shows what it drafted"));
 
     // The gold file a person corrected.
     const std::string snapshot =

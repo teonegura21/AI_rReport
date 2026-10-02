@@ -86,6 +86,8 @@
 #include <rr/proc/termination_signals.hpp>
 #include <rr/prompt/library.hpp>
 #include <rr/reason/tier.hpp>
+#include <rr/report/contents.hpp>
+#include <rr/report/page.hpp>
 #include <rr/runpod/runpod.hpp>
 #include <rr/runtime_client/pod_manager.hpp>
 #include <rr/runtime_client/runtime_client.hpp>
@@ -460,8 +462,8 @@ std::function<Result<std::chrono::milliseconds>()> video_length_of(db::Database&
     };
 }
 
-// The stages a job runs, so far (plan P20): its source, its transcript, its
-// outline, its atoms, its plan, its article, then its seams smoothed.
+// The stages a job runs: its source, its transcript, its outline, its atoms,
+// its plan, its article, then its seams smoothed (plan P15–P20).
 Result<pipeline::Executor> job_stages(const HubSettings& settings) {
     std::vector<std::unique_ptr<pipeline::Stage>> stages;
     stages.push_back(std::make_unique<pipeline::SourceStage>(
@@ -695,6 +697,45 @@ int show_job(const Global& global, const std::string& id) {
             (void)std::printf("    could not do: %s\n", finding.c_str());
         }
     }
+    return kOk;
+}
+
+// ---------------------------------------------------------------------------------------
+// report
+// ---------------------------------------------------------------------------------------
+
+int report_job(const Global& global, const std::string& id, const std::optional<std::filesystem::path>& out) {
+    auto hub = load(global);
+    if (!hub.has_value()) {
+        return failed(kBadConfiguration, hub.error());
+    }
+    auto database = library::open_database(hub->settings.library_database());
+    if (!database.has_value()) {
+        return failed(kFailure, database.error());
+    }
+    const library::Jobs jobs{*database, SystemClock::instance()};
+    auto job = jobs.find(id);
+    if (!job.has_value()) {
+        return failed(kFailure, job.error());
+    }
+    const library::StageStore store{*database, SystemClock::instance()};
+    auto contents = report::contents_of(*job, store);
+    if (!contents.has_value()) {
+        // An eval annotation has no article: asking for its page is a usage error.
+        return failed(contents.error().code() == Errc::invalid_argument ? kBadConfiguration : kFailure,
+                      contents.error());
+    }
+    const std::filesystem::path page =
+        out.value_or(hub->settings.library_database().parent_path() / "reports" / (job->id + ".html"));
+    if (std::error_code made;
+        page.has_parent_path() && !std::filesystem::create_directories(page.parent_path(), made) && made) {
+        return failed(kFailure, Error{Errc::io, std::format("cannot create '{}': {}",
+                                                            page.parent_path().string(), made.message())});
+    }
+    if (auto written = write_file_atomically(page, report::render_page(*contents)); !written.has_value()) {
+        return failed(kFailure, written.error());
+    }
+    (void)std::printf("%s\n", page.string().c_str());
     return kOk;
 }
 
@@ -995,6 +1036,13 @@ int run(int argc, char** argv) {
     auto* job_show = jobs_command->add_subcommand("show", "A job's stages, and what they could not do");
     job_show->add_option("job", job_id, "The job")->required();
 
+    std::optional<std::filesystem::path> report_out;
+    auto* report_command =
+        app.add_subcommand("report", "A job's article as a web page, with its Fidelity Report");
+    report_command->add_option("job", job_id, "The job (rreport jobs lists them)")->required();
+    report_command->add_option("--out", report_out,
+                               "Where to write the page (default: reports/<job>.html beside the library)");
+
     EvalFlags eval_flags;
     auto* eval_group = app.add_subcommand("eval", "The evaluation's data: snapshots and gold annotations")
                            ->require_subcommand(1);
@@ -1084,6 +1132,9 @@ int run(int argc, char** argv) {
     }
     if (*job_show) {
         return show_job(global, job_id);
+    }
+    if (*report_command) {
+        return report_job(global, job_id, report_out);
     }
     if (*jobs_command) {
         return list_jobs(global, limit);

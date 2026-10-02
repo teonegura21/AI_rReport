@@ -1,6 +1,6 @@
 # The hub's command line: `rreport`
 
-`rreport` runs on your own machine. It owns every piece of state (ADR-0001), captures videos, and sends the GPU work to the pod. It carries the operator's tools (the checks, the pod's controls and the benchmark) and, since P15, jobs: `ingest`, `resume` and `jobs`, whose stages are described in [pipeline.md](pipeline.md). This note describes how the tools work and why. The pod's side is described in [runtime.md](runtime.md); the model calls in [llm.md](llm.md).
+`rreport` runs on your own machine. It owns every piece of state (ADR-0001), captures videos, and sends the GPU work to the pod. It carries the operator's tools (the checks, the pod's controls and the benchmark) and, since P15, jobs: `ingest`, `resume`, `jobs` and, since P21, `report`, whose stages are described in [pipeline.md](pipeline.md). This note describes how the tools work and why. The pod's side is described in [runtime.md](runtime.md); the model calls in [llm.md](llm.md).
 
 ## Pieces
 
@@ -24,6 +24,7 @@
 | `ingest SOURCE [--tier] [--salt]` | A new job for a video's address or a caption file, through the stages so far ([pipeline.md](pipeline.md#the-commands)) | 0 the job is done; 1 it is not (failed, stopped, needing you) |
 | `resume JOB` | The job taken up again where it stopped | as `ingest` |
 | `jobs [--limit N]`, `jobs show JOB` | The library's jobs, newest first, with their kind; one job's stages and findings | 0; 1 on failure |
+| `report JOB [--out FILE]` | The job's article as one web page, with its Fidelity Report, wherever the job stands; it says where it wrote it ([report.md](report.md#the-command)) | 0; 1 for an unknown job, an artifact that cannot be read, or a page that cannot be written |
 | `eval fetch [ID…] [--again]` | Each video of the eval set read once through the source stage and kept with the eval, pinned by hash ([eval.md](eval.md#the-commands)) | 0; 1 when a video could not be fetched |
 | `eval annotate [ID…] [--replace]` | Each video's gold annotation drafted by the pod's models, as silver, for a person to correct (runbook R2) | as `ingest`, per video |
 | `eval sheet ID [--out FILE]` | The sheet a person corrects a gold file with: each fact beside its moment, and what to correct | 0; 1 when the snapshot or gold file is missing or broken |

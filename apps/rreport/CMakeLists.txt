@@ -1,5 +1,6 @@
 # rreport — the hub (ADR-0001). Thin: it parses arguments and wires rr_hub,
-# rr_pipeline, rr_eval, rr_runtime_client and rr_library together (see main.cpp).
+# rr_pipeline, rr_report, rr_eval, rr_runtime_client and rr_library together
+# (see main.cpp).
 rr_add_executable(rreport
     SOURCES
         main.cpp
@@ -12,6 +13,7 @@ rr_add_executable(rreport
         rr::pipeline
         rr::prompt
         rr::reason
+        rr::report
         rr::runpod
         rr::runtime_client
         rr::config

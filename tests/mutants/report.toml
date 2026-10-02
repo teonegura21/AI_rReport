@@ -1,0 +1,178 @@
+# Mutants of rr_report (P21): the page of a job, each a rule of it removed,
+# and the test that must fail without it.
+# Run: scripts/mutate.py tests/mutants/report.toml
+
+target = "rr_report_tests"
+binary = "build/dev/tests/unit/report/rr_report_tests"
+timeout = 120
+
+[[mutant]]
+name = "an-ampersand-is-html"
+file = "src/report/page.cpp"
+expect = "Escaped.EscapesWhatHtmlReads"
+  [[mutant.edit]]
+  from = '''                out += "&amp;";'''
+  to = '''                out += "&";'''
+
+[[mutant]]
+name = "a-tag-is-html"
+file = "src/report/page.cpp"
+expect = "Page.NothingFromTheVideoIsTakenAsHtml"
+  [[mutant.edit]]
+  from = '''                out += "&lt;";'''
+  to = '''                out += "<";'''
+
+[[mutant]]
+name = "a-tag-closes"
+file = "src/report/page.cpp"
+expect = "Escaped.EscapesWhatHtmlReads"
+  [[mutant.edit]]
+  from = '''                out += "&gt;";'''
+  to = '''                out += ">";'''
+
+[[mutant]]
+name = "a-double-quote-ends-an-attribute"
+file = "src/report/page.cpp"
+expect = "Escaped.EscapesWhatHtmlReads"
+  [[mutant.edit]]
+  from = '''                out += "&quot;";'''
+  to = '''                out += "\"";'''
+
+[[mutant]]
+name = "a-single-quote-ends-an-attribute"
+file = "src/report/page.cpp"
+expect = "Escaped.EscapesWhatHtmlReads"
+  [[mutant.edit]]
+  from = '''                out += "&#39;";'''
+  to = '''                out += "'";'''
+
+[[mutant]]
+name = "an-id-of-any-length-links"
+file = "src/report/page.cpp"
+expect = "Page.OnlyAnIdOfYouTubesFormMakesAVideoLink"
+  [[mutant.edit]]
+  from = '''    return id.size() == 11 && std::ranges::all_of(id, allowed);'''
+  to = '''    return id.size() >= 10 && std::ranges::all_of(id, allowed);'''
+
+[[mutant]]
+name = "an-id-of-any-characters-links"
+file = "src/report/page.cpp"
+expect = "Page.OnlyAnIdOfYouTubesFormMakesAVideoLink"
+  [[mutant.edit]]
+  from = '''    return id.size() == 11 && std::ranges::all_of(id, allowed);'''
+  to = '''    return id.size() == 11 && (std::ranges::all_of(id, allowed) || true);'''
+
+[[mutant]]
+name = "a-caption-files-moments-link-nowhere"
+file = "src/report/page.cpp"
+expect = "Page.ACaptionFilesMomentsLinkToItsTranscript"
+  [[mutant.edit]]
+  from = '''        return std::format("#{}", sentence);'''
+  to = '''        return std::format("#{}", sentence).substr(0, 1);'''
+
+[[mutant]]
+name = "a-sentence-starts-at-its-last-atom"
+file = "src/report/page.cpp"
+expect = "Page.ASentenceOfSeveralAtomsStartsAtItsFirst"
+  [[mutant.edit]]
+  from = '''    const std::optional<Millis> at = timeline.said(sentence.markers.front().atom);'''
+  to = '''    const std::optional<Millis> at = timeline.said(sentence.markers.back().atom);'''
+
+[[mutant]]
+name = "every-heading-starts-the-video"
+file = "src/report/page.cpp"
+expect = "Page.EachSectionIsHeadedWithItsStartAndListedInTheContents"
+  [[mutant.edit]]
+  from = '''time_link(timeline, starts[section - 1])'''
+  to = '''time_link(timeline, starts[0])'''
+
+[[mutant]]
+name = "a-share-is-turned-over"
+file = "src/report/page.cpp"
+expect = "Page.WhatWasKeptIsCountedOnTheArticleAsItIs"
+  [[mutant.edit]]
+  from = '''    return std::format("{:.1f}%", 100.0 * static_cast<double>(part) / static_cast<double>(whole));'''
+  to = '''    return std::format("{:.1f}%", 100.0 * static_cast<double>(part + 1) / static_cast<double>(whole + 1));'''
+
+[[mutant]]
+name = "a-stage-that-could-do-all-is-listed"
+file = "src/report/page.cpp"
+expect = "Page.WhatTheStagesCouldNotDoIsShown"
+  [[mutant.edit]]
+  from = '''        if (stage.findings.empty()) {'''
+  to = '''        if (false) {'''
+
+[[mutant]]
+name = "the-usual-labels-are-said"
+file = "src/report/page.cpp"
+expect = "Page.TheLedgerShowsEachAtomsTimeLabelsWordsAndWhoSaidIt"
+  [[mutant.edit]]
+  from = '''        if (more != usual && more != knowledge::to_string(atom.kind)) {'''
+  to = '''        if ((more != usual || !usual.empty()) && more != knowledge::to_string(atom.kind)) {'''
+
+[[mutant]]
+name = "a-heading-keeps-its-hashes"
+file = "src/report/page.cpp"
+expect = "Page.EachSectionIsHeadedWithItsStartAndListedInTheContents"
+  [[mutant.edit]]
+  from = '''            heading.erase(0, heading.find_first_not_of("# "));'''
+  to = ''''''
+
+[[mutant]]
+name = "an-untitled-video-has-no-title"
+file = "src/report/page.cpp"
+expect = "Page.AJobBeforeItsSourceIsAPageToo"
+  [[mutant.edit]]
+  from = '''                                  : std::string{"A video without a title"};'''
+  to = '''                                  : std::string{};'''
+
+# What a page shows, read back from the library (src/report/contents.cpp).
+
+[[mutant]]
+name = "an-annotation-is-a-page"
+file = "src/report/contents.cpp"
+expect = "ContentsTest.AnEvalAnnotationHasNoArticleToShow"
+  [[mutant.edit]]
+  from = '''    if (job.kind != library::JobKind::article) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-failed-stage-is-listed"
+file = "src/report/contents.cpp"
+expect = "ContentsTest.AFailedRunMadeNothingEvenWhereAnEarlierRunHadDoneIt"
+  [[mutant.edit]]
+  from = '''            continue;  // it failed: it made nothing'''
+  to = '''            contents.findings.push_back(StageFindings{.stage = run.stage});
+            continue;'''
+
+[[mutant]]
+name = "findings-are-not-shown"
+file = "src/report/contents.cpp"
+expect = "ContentsTest.AJobDoneShowsEachStagesArtifactAndWhatItCouldNotDo"
+  [[mutant.edit]]
+  from = '''        contents.findings.push_back(StageFindings{.stage = run.stage, .findings = run.findings});'''
+  to = '''        contents.findings.push_back(StageFindings{.stage = run.stage});'''
+
+[[mutant]]
+name = "the-write-article-wins"
+file = "src/report/contents.cpp"
+expect = "ContentsTest.TheArticleIsTheSeamsStagesWhereItRanElseTheWriteStages"
+  [[mutant.edit]]
+  from = '''    if (!contents.article.has_value()) {'''
+  to = '''    if (written.has_value()) {'''
+
+[[mutant]]
+name = "the-seams-article-is-not-read"
+file = "src/report/contents.cpp"
+expect = "ContentsTest.TheArticleIsTheSeamsStagesWhereItRanElseTheWriteStages"
+  [[mutant.edit]]
+  from = '''    } else if (stage == pipeline::SeamsStage::kName) {'''
+  to = '''    } else if (stage == "seam") {'''
+
+[[mutant]]
+name = "the-write-article-is-not-read"
+file = "src/report/contents.cpp"
+expect = "ContentsTest.TheArticleIsTheSeamsStagesWhereItRanElseTheWriteStages"
+  [[mutant.edit]]
+  from = '''    } else if (stage == pipeline::WriteStage::kName) {'''
+  to = '''    } else if (stage == "writing") {'''
