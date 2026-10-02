@@ -99,3 +99,13 @@ expect = "EndToEnd.TwoRunsOfOnePipelineAreComparedAndGatedAndAnAaRunHoldsTheGate
   [[mutant.edit]]
   from = '''    return calibration->passes() ? kOk : kFailure;'''
   to = '''    return kOk;'''
+
+# P28: a variant that asks how sure each answer was, end to end.
+
+[[mutant]]
+name = "probabilities-are-lost-on-their-way"
+file = "src/llm/openai_provider.cpp"
+expect = "EndToEnd.AnInfantrySureOfEveryReadingReadsEachWindowOnce"
+  [[mutant.edit]]
+  from = '''            RR_TRY(read_probabilities(choice, before, answer));'''
+  to = '''            (void)before;'''

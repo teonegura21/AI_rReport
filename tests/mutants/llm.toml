@@ -25,3 +25,132 @@ expect = "Sampling.APresetIsWrittenWhole"
   [[mutant.edit]]
   from = '''                      {"reasoning_effort", std::move(effort)}};'''
   to = '''                      {"reasoning_effort", effort.is_null()}};'''
+
+# P28: how likely each token of an answer was (ChatRequest::token_probabilities), asked of
+# llama-server, placed on the bytes it wrote, kept in a response's JSON form.
+
+[[mutant]]
+name = "probabilities-are-not-sent"
+file = "src/llm/openai_provider.cpp"
+expect = "OpenAiProvider.AsksHowSureTheModelWasAfterItsSamplerChain"
+  [[mutant.edit]]
+  from = '''    if (request.token_probabilities) {
+        body["logprobs"] = true;'''
+  to = '''    if (request.token_probabilities && false) {
+        body["logprobs"] = true;'''
+
+[[mutant]]
+name = "probabilities-before-the-sampler-chain"
+file = "src/llm/openai_provider.cpp"
+expect = "OpenAiProvider.AsksHowSureTheModelWasAfterItsSamplerChain"
+  [[mutant.edit]]
+  from = '''        body["post_sampling_probs"] = true;
+'''
+  to = ''''''
+
+[[mutant]]
+name = "twenty-alternatives-a-token"
+file = "src/llm/openai_provider.cpp"
+expect = "OpenAiProvider.AsksHowSureTheModelWasAfterItsSamplerChain"
+  [[mutant.edit]]
+  from = '''        body["top_logprobs"] = 1;'''
+  to = '''        body["top_logprobs"] = 20;'''
+
+[[mutant]]
+name = "probabilities-asked-of-any-server"
+file = "src/llm/openai_provider.cpp"
+expect = "OpenAiProvider.AsksHowSureTheModelWasAfterItsSamplerChain"
+  [[mutant.edit]]
+  from = '''        fields.emplace_back("token_probabilities");
+'''
+  to = ''''''
+
+[[mutant]]
+name = "a-token-is-not-cut-where-its-chunk-began"
+file = "src/llm/openai_provider.cpp"
+expect = "OpenAiProvider.PlacesEachTokensProbabilityOnTheBytesItWrote"
+  [[mutant.edit]]
+  from = '''const std::size_t first = end - std::min(bytes, end - begin);'''
+  to = '''const std::size_t first = end - std::min(bytes, end - (begin * 0));'''
+
+[[mutant]]
+name = "a-reasoning-tokens-entry-is-read"
+file = "src/llm/openai_provider.cpp"
+expect = "OpenAiProvider.RefusesATokenProbabilityThatIsNotOne"
+  [[mutant.edit]]
+  from = '''        if (answer.content.size() > before) {'''
+  to = '''        if (answer.content.size() >= before) {'''
+
+[[mutant]]
+name = "a-logprob-is-a-probability"
+file = "src/llm/openai_provider.cpp"
+expect = "OpenAiProvider.PlacesEachTokensProbabilityOnTheBytesItWrote"
+  [[mutant.edit]]
+  from = '''            found = std::exp(*logarithm);'''
+  to = '''            found = *logarithm + 1;'''
+
+[[mutant]]
+name = "a-probability-above-one-is-one"
+file = "src/llm/openai_provider.cpp"
+expect = "OpenAiProvider.RefusesATokenProbabilityThatIsNotOne"
+  [[mutant.edit]]
+  from = '''std::isnan(*found) || *found < 0 || *found > 1 + 1e-6'''
+  to = '''std::isnan(*found) || *found < 0'''
+
+[[mutant]]
+name = "a-negative-probability-is-one"
+file = "src/llm/openai_provider.cpp"
+expect = "OpenAiProvider.RefusesATokenProbabilityThatIsNotOne"
+  [[mutant.edit]]
+  from = '''std::isnan(*found) || *found < 0 || *found > 1 + 1e-6'''
+  to = '''std::isnan(*found) || *found > 1 + 1e-6'''
+
+[[mutant]]
+name = "the-key-forgets-token-probabilities"
+file = "src/llm/chat.cpp"
+expect = "Chat.TheRequestKeyIsWhatTheModelSees"
+  [[mutant.edit]]
+  from = '''        document["token_probabilities"] = true;
+'''
+  to = ''''''
+
+[[mutant]]
+name = "a-response-forgets-its-probabilities"
+file = "src/llm/chat.cpp"
+expect = "Chat.AResponsesTokenProbabilitiesSurviveItsJsonForm"
+  [[mutant.edit]]
+  from = '''        document["probabilities"] = std::move(probabilities);
+'''
+  to = ''''''
+
+[[mutant]]
+name = "overlapping-tokens-are-read"
+file = "src/llm/chat.cpp"
+expect = "Chat.AResponsesTokenProbabilitiesSurviveItsJsonForm"
+  [[mutant.edit]]
+  from = '''if (token.begin < previous_end || token.end <= token.begin'''
+  to = '''if (token.begin < previous_end * 0 || token.end <= token.begin'''
+
+[[mutant]]
+name = "a-token-past-the-content-is-read"
+file = "src/llm/chat.cpp"
+expect = "Chat.AResponsesTokenProbabilitiesSurviveItsJsonForm"
+  [[mutant.edit]]
+  from = '''|| token.end > content_size ||'''
+  to = '''|| token.end > content_size + 100 ||'''
+
+[[mutant]]
+name = "a-probability-above-one-is-read"
+file = "src/llm/chat.cpp"
+expect = "Chat.AResponsesTokenProbabilitiesSurviveItsJsonForm"
+  [[mutant.edit]]
+  from = '''std::isnan(token.probability) || token.probability < 0 || token.probability > 1'''
+  to = '''std::isnan(token.probability) || token.probability < 0'''
+
+[[mutant]]
+name = "a-negative-probability-is-read"
+file = "src/llm/chat.cpp"
+expect = "Chat.AResponsesTokenProbabilitiesSurviveItsJsonForm"
+  [[mutant.edit]]
+  from = '''std::isnan(token.probability) || token.probability < 0 || token.probability > 1'''
+  to = '''std::isnan(token.probability) || token.probability > 1'''

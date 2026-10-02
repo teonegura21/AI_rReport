@@ -96,6 +96,15 @@ private:
                                                           const ProviderCaps& caps);
 
 // Assembles a streamed answer, every choice of it, from its events' data.
+//
+// Token probabilities (ChatRequest::token_probabilities) come as
+// llama-server sends them: on a chunk, under "logprobs": {"content": [...]},
+// an entry a token with its bytes and its "prob" (after the sampler chain)
+// or "logprob" (before it). A chunk's entries are its last tokens, so they
+// are placed at the end of the content the chunk adds, one after another;
+// a token whose bytes reach back past that content (part of its text went
+// elsewhere, a tag the server read) is cut where the content began. Entries
+// on a chunk that adds no content (reasoning, a role) are not kept.
 class ChatStreamReader {
 public:
     // `choices`: how many answers the request asked for (n, at least 1).
@@ -122,6 +131,10 @@ private:
     };
 
     [[nodiscard]] Result<void> read_choice(const json::Json& choice);
+    // The probabilities `choice` carries, of the tokens of `answer`'s content
+    // from `begin` on: the piece this chunk added.
+    [[nodiscard]] static Result<void> read_probabilities(const json::Json& choice, std::size_t begin,
+                                                         Choice& answer);
     void read_report(const json::Json& chunk);
     // One piece of text, reasoning or content: the first token if it is one,
     // kept in `answer`, and passed to `listener` with its choice.

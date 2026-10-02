@@ -28,6 +28,16 @@ tier = "max+atomize.first=1+atomize.max=1"
 why = "Atomizing votes on three samples of each window. Does one sample lose atoms, or invent them?"
 
 [[variant]]
+label = "atomize-waves"
+tier = "max+atomize.first=2+atomize.step=1"
+why = "Two samples of each window, and a third only where they disagree (Adaptive-Consistency: Aggarwal et al., 2023). How much of the third sample's GPU time does it save, and what does it lose?"
+
+[[variant]]
+label = "atomize-sure"
+tier = "max+atomize.first=1+atomize.step=1+atomize.sure=0.9"
+why = "One sample of each window where the infantry is sure of every sentence (the probability of the tokens that chose its verdict, 0.9 or more), more where it is not (P28). Does the model's own confidence spend samples as well as their agreement does?"
+
+[[variant]]
 label = "no-commander-ruling"
 tier = "max+atomize.contested_to_commander=false"
 why = "What the samples still disagree on goes to the commander, thinking. Does its ruling beat the vote?"

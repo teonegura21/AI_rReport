@@ -15,3 +15,61 @@ expect = "Parse.ANumberTooLargeIsAnErrorNotAThrow"
         return fail(Errc::invalid_argument, std::format("invalid JSON: {}", error.what()));
     }'''
   to = '''    }'''
+
+# P28: where each value of a JSON text was written (rr/json/spans.hpp).
+
+[[mutant]]
+name = "a-key-written-twice-keeps-both"
+file = "src/json/spans.cpp"
+expect = "Spans.AreOnlyOfTheValuesParseKeeps"
+  [[mutant.edit]]
+  from = '''                    drop(earlier->second);  // parse() keeps the later value'''
+  to = '''                    (void)earlier;  // parse() keeps the later value'''
+
+[[mutant]]
+name = "a-dropped-value-keeps-what-is-in-it"
+file = "src/json/spans.cpp"
+expect = "Spans.AreOnlyOfTheValuesParseKeeps"
+  [[mutant.edit]]
+  from = '''within < found_.size() && found_[within].begin < end;'''
+  to = '''within <= index && end > 0;'''
+
+[[mutant]]
+name = "a-tilde-is-not-escaped"
+file = "src/json/spans.cpp"
+expect = "Spans.NameKeysAsJsonPointersDo"
+  [[mutant.edit]]
+  from = '''            token += "~0";'''
+  to = '''            token += "~";'''
+
+[[mutant]]
+name = "a-slash-is-not-escaped"
+file = "src/json/spans.cpp"
+expect = "Spans.NameKeysAsJsonPointersDo"
+  [[mutant.edit]]
+  from = '''            token += "~1";'''
+  to = '''            token += "/";'''
+
+[[mutant]]
+name = "a-byte-order-mark-is-read"
+file = "src/json/spans.cpp"
+expect = "Spans.CoverAValuesOwnBytesNeverTheSpaceAroundItNorItsKey"
+  [[mutant.edit]]
+  from = '''        if (text_.starts_with(kByteOrderMark)) {'''
+  to = '''        if (text_.starts_with(kByteOrderMark) && false) {'''
+
+[[mutant]]
+name = "an-escape-is-not-skipped"
+file = "src/json/spans.cpp"
+expect = "Spans.ReadStringsToTheirClosingQuoteThroughEveryEscape"
+  [[mutant.edit]]
+  from = '''at += byte(at) == '\\' ? std::size_t{2}'''
+  to = '''at += byte(at) == '\\' && false ? std::size_t{2}'''
+
+[[mutant]]
+name = "an-exponent-ends-a-number"
+file = "src/json/spans.cpp"
+expect = "Spans.CoverAValuesOwnBytesNeverTheSpaceAroundItNorItsKey"
+  [[mutant.edit]]
+  from = '''c == '.' || c == 'e' || c == 'E';'''
+  to = '''c == '.';'''

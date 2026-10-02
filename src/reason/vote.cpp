@@ -67,6 +67,10 @@ std::vector<std::string> waves_problems(const Waves& waves) {
     if (std::isnan(waves.quorum) || waves.quorum <= 0.0 || waves.quorum > 1.0) {
         problems.push_back(std::format("a quorum is a share in (0, 1], not {}", waves.quorum));
     }
+    if (std::isnan(waves.sure) || waves.sure < 0.0 || waves.sure > 1.0) {
+        problems.push_back(
+            std::format("how sure a lone sample must be is a probability in [0, 1], not {}", waves.sure));
+    }
     return problems;
 }
 
@@ -80,7 +84,7 @@ bool settled(std::span<const Count> counts, double quorum) noexcept {
 }
 
 Result<std::vector<Consensus>> vote_keyed(std::span<const std::string> items, std::span<const Ballot> ballots,
-                                          double quorum) {
+                                          double quorum, double sure) {
     std::map<std::string_view, std::size_t> position;
     std::vector<Consensus> votes(items.size());
     for (std::size_t index = 0; index < items.size(); ++index) {
@@ -121,6 +125,10 @@ Result<std::vector<Consensus>> vote_keyed(std::span<const std::string> items, st
         if (!settled(consensus.counts, quorum)) {
             continue;
         }
+        // A lone sample settles its item only when it was sure of its answer.
+        if (consensus.votes == 1 && cast[index].front()->confidence.value_or(0.0) + kSlack < sure) {
+            continue;
+        }
         consensus.winner = consensus.counts.front().value;
         std::vector<std::string> texts;
         std::vector<int> samples;
@@ -143,7 +151,7 @@ int next_wave(std::span<const Consensus> items, int drawn, const Waves& waves) n
         return 0;
     }
     const bool could_settle = std::ranges::any_of(items, [&](const Consensus& item) {
-        if (settled(item.counts, waves.quorum)) {
+        if (item.winner.has_value()) {
             return false;
         }
         // At best, every sample still to come agrees with the leader.

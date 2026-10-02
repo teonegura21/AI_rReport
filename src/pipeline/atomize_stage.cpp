@@ -326,6 +326,8 @@ Reading accepted(const agents::Answer& answer) {
 struct Atomized {
     SentenceWindow window{};
     std::vector<SentenceId> ids{};
+    std::size_t number = 0;            // its mission's, atomize-<number>; 0: too long to read
+    int drawn = 0;                     // the samples asked of it, every wave's
     std::vector<Reading> readings{};   // the answers accepted
     std::optional<Reading> reading{};  // the one kept; none: no answer read the window
     std::vector<Stretch> unsettled{};  // where the kept reading is not settled
@@ -391,7 +393,9 @@ public:
         }
     }
 
-    // Steps 1 to 3: each window read, its readings voted on, one kept.
+    // Steps 1 to 3: each window read, in waves while its readings leave a
+    // sentence unsettled that more could settle; its readings voted on, and
+    // one kept.
     Result<std::vector<Atomized>> read() {
         RR_TRY_ASSIGN(WindowPlan plan, plan_windows(
                                            *transcript_, kWindowBytes, *army_,
@@ -404,12 +408,20 @@ public:
                              compute_.waves.first == 1 ? "time" : "times each"));
         std::vector<Atomized> windows;
         windows.reserve(plan.windows.size() + plan.too_long.size());
-        for (const SentenceWindow& window : plan.windows) {
-            windows.push_back(Atomized{.window = window, .ids = ids_between(window.begin, window.end)});
+        for (std::size_t index = 0; index < plan.windows.size(); ++index) {
+            const SentenceWindow& window = plan.windows[index];
+            windows.push_back(Atomized{.window = window,
+                                       .ids = ids_between(window.begin, window.end),
+                                       .number = index + 1,  // plan_windows() numbers its missions so
+                                       .drawn = compute_.waves.first});
         }
         RR_TRY_ASSIGN(const std::vector<agents::Outcome> outcomes, fight(std::move(plan.missions)));
         for (std::size_t index = 0; index < outcomes.size(); ++index) {
             take(windows[index], outcomes[index]);
+        }
+        RR_TRY(draw_waves(windows));
+        for (Atomized& window : windows) {
+            keep(window);
         }
         // Set aside, after the windows read: no answer read them, so where
         // they stand among the others changes nothing.
@@ -635,6 +647,20 @@ private:
                                  asked_about(indices_of(window.begin, window.end),
                                              indices_of(window.context_begin, window.context_end))));
         mission.samples = compute_.waves.first;
+        // How sure each answer was, when a lone sample must be sure to count.
+        mission.request.token_probabilities = compute_.waves.sure > 0;
+        return mission;
+    }
+
+    // Wave `wave` of `window`: `samples` more of its reading, drawn after
+    // those drawn, from its own seed on (sample j draws seed + j), as one
+    // request for them all would have drawn them.
+    [[nodiscard]] Result<agents::Mission> wave_mission(const Atomized& window, int wave, int samples) const {
+        RR_TRY_ASSIGN(agents::Mission mission, read_mission(window.window, window.number));
+        RR_ASSERT(mission.request.seed.has_value(), "every mission has a seed (mission_of())");
+        mission.id = std::format("{}-wave-{}", mission.id, wave);
+        mission.request.seed = *mission.request.seed + window.drawn;
+        mission.samples = samples;
         return mission;
     }
 
@@ -722,31 +748,85 @@ private:
                           "infantry", std::move(asked));
     }
 
-    // Takes `outcome`'s answers as `window`'s readings, and keeps one: the
-    // only one, or the base of their vote.
+    // Takes `outcome`'s answers as more of `window`'s readings, each with how
+    // sure its answer was of each sentence. A window no answer of any wave
+    // read is a finding.
     void take(Atomized& window, const agents::Outcome& outcome) {
-        window.readings.reserve(outcome.answers.size());
         for (const agents::Answer& answer : outcome.answers) {
-            window.readings.push_back(accepted(answer));
+            Reading reading = accepted(answer);
+            reading.confidence = confidence_of(answer.choice.content, answer.choice.probabilities);
+            window.readings.push_back(std::move(reading));
         }
         if (window.readings.empty()) {
             output_.findings.push_back(std::format(
                 "{} no atoms: {}", sentences_have(*transcript_, window.window.begin, window.window.end),
                 why_unanswered(outcome, *army_, "read them")));
-            return;
         }
-        // One reading wins every vote: the vote is the same, whatever the number.
+    }
+
+    // The votes of `window`'s readings on its sentences.
+    [[nodiscard]] std::vector<reason::Consensus> votes_of(const Atomized& window) const {
         std::vector<std::string> items;
         items.reserve(window.ids.size());
         for (const SentenceId id : window.ids) {
             items.push_back(id.str());
         }
-        const Result<std::vector<reason::Consensus>> votes =
-            reason::vote_keyed(items, ballots_of(window.readings, window.ids), compute_.waves.quorum);
+        Result<std::vector<reason::Consensus>> votes = reason::vote_keyed(
+            items, ballots_of(window.readings, window.ids), compute_.waves.quorum, compute_.waves.sure);
         RR_ASSERT(votes.has_value(), "the readings' ballots are on the window's sentences, one a sample");
-        const std::size_t base = base_of(window.readings, window.ids, *votes);
+        return std::move(*votes);
+    }
+
+    // Step 3's waves: `step` more samples of each window that has a reading
+    // and a sentence unsettled that more could settle, up to the tier's
+    // `max` (reason::next_wave()). A window no answer read gets none: the
+    // same question would get no better answer.
+    Result<void> draw_waves(std::vector<Atomized>& windows) {
+        for (int wave = 2;; ++wave) {
+            std::vector<std::size_t> asked;  // the window of each mission
+            std::vector<agents::Mission> missions;
+            for (std::size_t index = 0; index < windows.size(); ++index) {
+                const Atomized& window = windows[index];
+                if (window.readings.empty()) {
+                    continue;
+                }
+                const int more = reason::next_wave(votes_of(window), window.drawn, compute_.waves);
+                if (more > 0) {
+                    RR_TRY_ASSIGN(agents::Mission mission, wave_mission(window, wave, more));
+                    missions.push_back(std::move(mission));
+                    asked.push_back(index);
+                }
+            }
+            if (missions.empty()) {
+                return ok();
+            }
+            progress(
+                std::format("atomize: the infantry reads {} {} again, wave {}: their readings left a "
+                            "sentence unsettled",
+                            missions.size(), missions.size() == 1 ? "window" : "windows", wave));
+            std::vector<int> samples;
+            samples.reserve(missions.size());
+            for (const agents::Mission& mission : missions) {
+                samples.push_back(mission.samples);
+            }
+            RR_TRY_ASSIGN(const std::vector<agents::Outcome> outcomes, fight(std::move(missions)));
+            for (std::size_t at = 0; at < asked.size(); ++at) {
+                windows[asked[at]].drawn += samples[at];
+                take(windows[asked[at]], outcomes[at]);
+            }
+        }
+    }
+
+    // Keeps one of `window`'s readings: the only one, or the base of their
+    // vote; and says where it is not settled.
+    void keep(Atomized& window) const {
+        if (window.readings.empty()) {
+            return;
+        }
+        const std::vector<reason::Consensus> votes = votes_of(window);
+        const std::size_t base = base_of(window.readings, window.ids, votes);
         window.reading = window.readings[base];
-        window.unsettled = unsettled(window.readings[base], window.ids, *votes);
+        window.unsettled = unsettled(window.readings[base], window.ids, votes);
     }
 
     // The commander's reading of `stretch` replaces the base's there; without
@@ -818,19 +898,6 @@ struct Read {
     reason::Tier tier{};
 };
 
-// The job's tier, which must ask for no waves (the header comment).
-Result<reason::Tier> atomize_tier(const StageContext& context) {
-    RR_TRY_ASSIGN(reason::Tier tier, job_tier(context));
-    if (tier.atomize.waves.step > 0) {
-        return fail(
-            Errc::unsupported,
-            std::format("the tier '{}' asks for more waves of samples where the first disagree, which "
-                        "the atomize stage does not draw yet: set its atomize.step to 0",
-                        tier.name));
-    }
-    return tier;
-}
-
 Result<Read> read_input(const StageContext& context) {
     RR_ASSERT(context.job != nullptr, "a stage runs for a job");
     Read read;
@@ -847,7 +914,7 @@ Result<Read> read_input(const StageContext& context) {
         return fail(Errc::internal,
                     std::format("the outline does not cover its transcript: {}", problems.front()));
     }
-    RR_TRY_ASSIGN(read.tier, atomize_tier(context));
+    RR_TRY_ASSIGN(read.tier, job_tier(context));
     return read;
 }
 
@@ -855,7 +922,7 @@ Result<Read> read_input(const StageContext& context) {
 
 Result<json::Json> AtomizeStage::fingerprint(const StageContext& context) const {
     RR_ASSERT(context.job != nullptr, "a stage runs for a job");
-    RR_TRY_ASSIGN(const reason::Tier tier, atomize_tier(context));
+    RR_TRY_ASSIGN(const reason::Tier tier, job_tier(context));
     if (!context.army) {
         return fail(
             Errc::needs_user,

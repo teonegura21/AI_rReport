@@ -103,7 +103,7 @@ name = "waves-for-settled-items"
 file = "src/reason/vote.cpp"
 expect = "Waves.DrawMoreOnlyWhereItCanHelp"
   [[mutant.edit]]
-  from = '''        if (settled(item.counts, waves.quorum)) {
+  from = '''        if (item.winner.has_value()) {
             return false;
         }
         // At best'''
@@ -336,8 +336,8 @@ name = "tier-share-no-integer"
 file = "src/reason/tier.cpp"
 expect = "Tier.IsReadStrictly"
   [[mutant.edit]]
-  from = '''        } else if (const auto* whole = value->as_integer()) {'''
-  to = '''        } else if (const auto* whole = value->as_integer(); whole != nullptr && false) {'''
+  from = '''        if (const auto* whole = value->as_integer()) {'''
+  to = '''        if (const auto* whole = value->as_integer(); whole != nullptr && false) {'''
 
 [[mutant]]
 name = "tier-canonical-drops-a-key"
@@ -509,3 +509,96 @@ expect = "Tier.AVariantIsReadAsStrictlyAsATierFile"
   [[mutant.edit]]
   from = '''    if (!changed.emplace(change.substr(0, equals)).second) {'''
   to = '''    if (!changed.emplace(change.substr(0, equals)).second && false) {'''
+
+# P28: a lone sample settles its item only as sure as the waves say (rr/reason/vote.hpp), and
+# the tiers' `sure` (rr/reason/tier.hpp).
+
+[[mutant]]
+name = "a-lone-sample-needs-no-confidence"
+file = "src/reason/vote.cpp"
+expect = "Vote.ALoneSampleSettlesItsItemOnlyWhenSure"
+  [[mutant.edit]]
+  from = '''if (consensus.votes == 1 && cast[index].front()->confidence.value_or(0.0) + kSlack < sure) {'''
+  to = '''if (consensus.votes == 1 && sure < 0) {'''
+
+[[mutant]]
+name = "an-unknown-confidence-is-sure"
+file = "src/reason/vote.cpp"
+expect = "Vote.ALoneSampleSettlesItsItemOnlyWhenSure"
+  [[mutant.edit]]
+  from = '''cast[index].front()->confidence.value_or(0.0) + kSlack < sure'''
+  to = '''cast[index].front()->confidence.value_or(1.0) + kSlack < sure'''
+
+[[mutant]]
+name = "agreeing-samples-need-confidence-too"
+file = "src/reason/vote.cpp"
+expect = "Vote.SamplesThatAgreeSettleTheirItemHoweverUnsureEachWas"
+  [[mutant.edit]]
+  from = '''if (consensus.votes == 1 && cast[index]'''
+  to = '''if (consensus.votes >= 1 && cast[index]'''
+
+[[mutant]]
+name = "the-sure-bar-has-no-slack"
+file = "src/reason/vote.cpp"
+expect = "Vote.ALoneSampleSettlesItsItemOnlyWhenSure"
+  [[mutant.edit]]
+  from = '''confidence.value_or(0.0) + kSlack < sure'''
+  to = '''confidence.value_or(0.0) < sure'''
+
+[[mutant]]
+name = "a-wave-reads-the-vote-not-its-winner"
+file = "src/reason/vote.cpp"
+expect = "Waves.AnUnsureLoneSampleDrawsASecond"
+  [[mutant.edit]]
+  from = '''        if (item.winner.has_value()) {'''
+  to = '''        if (settled(item.counts, waves.quorum)) {'''
+
+[[mutant]]
+name = "sure-may-exceed-one"
+file = "src/reason/vote.cpp"
+expect = "Waves.AreChecked"
+  [[mutant.edit]]
+  from = '''if (std::isnan(waves.sure) || waves.sure < 0.0 || waves.sure > 1.0) {'''
+  to = '''if (std::isnan(waves.sure) || waves.sure < 0.0) {'''
+
+[[mutant]]
+name = "sure-may-be-nan"
+file = "src/reason/vote.cpp"
+expect = "Waves.AreChecked"
+  [[mutant.edit]]
+  from = '''if (std::isnan(waves.sure) || waves.sure < 0.0 || waves.sure > 1.0) {'''
+  to = '''if (waves.sure < 0.0 || waves.sure > 1.0) {'''
+
+[[mutant]]
+name = "a-tier-refuses-sure"
+file = "src/reason/tier.cpp"
+expect = "Tier.IsReadStrictly"
+  [[mutant.edit]]
+  from = '''    RR_TRY_ASSIGN(atomize.waves.sure, section.probability("sure", defaults.waves.sure));
+'''
+  to = ''''''
+
+[[mutant]]
+name = "a-probability-of-zero-is-refused"
+file = "src/reason/tier.cpp"
+expect = "Tier.IsReadStrictly"
+  [[mutant.edit]]
+  from = '''if (std::isnan(probability) || probability < 0.0 || probability > 1.0) {'''
+  to = '''if (std::isnan(probability) || probability <= 0.0 || probability > 1.0) {'''
+
+[[mutant]]
+name = "a-probability-is-unbounded"
+file = "src/reason/tier.cpp"
+expect = "Tier.IsReadStrictly"
+  [[mutant.edit]]
+  from = '''if (std::isnan(probability) || probability < 0.0 || probability > 1.0) {'''
+  to = '''if (std::isnan(probability) || probability < 0.0) {'''
+
+[[mutant]]
+name = "the-key-forgets-sure"
+file = "src/reason/tier.cpp"
+expect = "Tier.AStagesCanonicalFormIsItsCacheKeyMaterial"
+  [[mutant.edit]]
+  from = '''                        {"sure", atomize.waves.sure},
+'''
+  to = ''''''

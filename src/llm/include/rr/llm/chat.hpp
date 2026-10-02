@@ -14,7 +14,10 @@
 //       answer is validated against the full schema afterwards
 //       (rr/llm/structured.hpp), never trusted because a grammar was sent;
 //     * `tag` says why a call was made (accounting, logs). It is never sent
-//       to the model and is not part of a call's identity (request_key()).
+//       to the model and is not part of a call's identity (request_key());
+//     * `token_probabilities` asks how sure the model was of each token it
+//       wrote, so that a vote can draw more samples only where a model was
+//       unsure (rr/reason/vote.hpp, P28).
 //
 //   Every call streams (plan §4.1): RunPod's proxy cuts silent connections,
 //   and a streamed answer that ends without its "[DONE]" is detectably
@@ -143,6 +146,11 @@ struct ChatRequest {
     // How long and how hard to think. Both need thinking = true.
     std::optional<ThinkingBudget> thinking_budget{};
     std::optional<ReasoningEffort> reasoning_effort{};
+    // Ask how likely each token of each answer was (Choice::probabilities):
+    // how sure the model was of what it wrote. llama-server only: it reports
+    // each token's probability after its sampler chain, the chance that the
+    // same chain, from the same prefix, draws the same token again.
+    bool token_probabilities = false;
     // Fields merged into the request body as they are, for server-specific
     // parameters (llama-server: "cache_prompt", "id_slot"). A JSON object;
     // a key the provider sets itself is refused rather than overwritten.
@@ -171,12 +179,26 @@ struct Usage {
     friend bool operator==(const Usage&, const Usage&) = default;
 };
 
+// How likely one token of an answer was, when it was drawn.
+struct TokenProbability {
+    std::size_t begin = 0;  // the token's bytes in its choice's content: [begin, end)
+    std::size_t end = 0;
+    double probability = 0;  // in [0, 1]
+
+    friend bool operator==(const TokenProbability&, const TokenProbability&) = default;
+};
+
 // One answer of a call: the only one, or one of the request's n.
 struct Choice {
     std::string content{};
     std::string reasoning{};  // chain of thought, when the server reports it apart
     FinishReason finish = FinishReason::other;
     std::int64_t completion_tokens = 0;  // this answer's own, reasoning included, when reported
+    // The content's tokens, in order, each with how likely it was, when the
+    // request asked (ChatRequest::token_probabilities). Best effort: a byte
+    // of the content no entry covers is one whose token's probability the
+    // server did not send. The reasoning's tokens are not kept.
+    std::vector<TokenProbability> probabilities{};
 
     friend bool operator==(const Choice&, const Choice&) = default;
 };

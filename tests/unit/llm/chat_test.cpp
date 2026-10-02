@@ -54,11 +54,12 @@ TEST(Chat, TheJsonFormLeavesUnsetFieldsOut) {
     full.thinking = true;
     full.thinking_budget = ThinkingBudget{.tokens = 512, .closing = "Answer now."};
     full.reasoning_effort = ReasoningEffort::medium;
+    full.token_probabilities = true;
     full.extra = {{"cache_prompt", true}};
     const json::Json document = to_json(full);
     for (const char* field : {"max_tokens", "temperature", "top_p", "top_k", "min_p", "presence_penalty",
                               "repeat_penalty", "seed", "n", "stop", "json_schema", "schema_name", "thinking",
-                              "thinking_budget", "reasoning_effort", "extra"}) {
+                              "thinking_budget", "reasoning_effort", "token_probabilities", "extra"}) {
         EXPECT_TRUE(document.contains(field)) << field;
     }
     EXPECT_EQ(document["thinking_budget"], (json::Json{{"tokens", 512}, {"closing", "Answer now."}}));
@@ -100,6 +101,38 @@ TEST(Chat, TheRequestKeyIsWhatTheModelSees) {
     thinking.thinking_budget->closing = "Answer now.";
     EXPECT_NE(request_key("runtime", thinking), budget_key)
         << "so is what the model is made to say at its end";
+    ChatRequest sure = ask("hi");
+    sure.token_probabilities = true;
+    EXPECT_NE(request_key("runtime", sure), key)
+        << "asking how sure the model was is: an answer kept without them has none to give";
+}
+
+// The memo and recordings keep a response in its JSON form: its token
+// probabilities too, as [begin, end, probability] triples, read strictly.
+TEST(Chat, AResponsesTokenProbabilitiesSurviveItsJsonForm) {
+    const ChatResponse response{
+        .choices = {Choice{.content = R"({"kind":"claim"})",
+                           .finish = FinishReason::stop,
+                           .completion_tokens = 4,
+                           .probabilities = {{.begin = 0, .end = 2, .probability = 1},
+                                             {.begin = 8, .end = 15, .probability = 0.25}}},
+                    Choice{.content = "{}", .finish = FinishReason::stop}},
+        .model = "infantry"};
+    const json::Json document = to_json(response);
+    EXPECT_EQ(document["choices"][0]["probabilities"], json::parse("[[0, 2, 1.0], [8, 15, 0.25]]").value())
+        << "a gap where no token's probability came";
+    EXPECT_FALSE(document["choices"][1].contains("probabilities")) << "none: left out, as before P28";
+    EXPECT_EQ(response_from_json(document).value().choices, response.choices);
+
+    for (const char* probabilities :
+         {R"("all sure")", "[[0, 2]]", R"([["0", 2, 1]])", "[[-1, 2, 1]]", "[[0, 2, 1], [1, 3, 1]]",
+          "[[2, 2, 1]]", "[[0, 17, 1]]", "[[0, 2, 1.5]]", "[[0, 2, -0.5]]"}) {
+        json::Json broken = document;
+        broken["choices"][0]["probabilities"] = json::parse(probabilities).value();
+        const Result<ChatResponse> read = response_from_json(broken);
+        ASSERT_FALSE(read.has_value()) << probabilities;
+        EXPECT_EQ(read.error().code(), Errc::invalid_argument) << probabilities;
+    }
 }
 
 TEST(Chat, TheSchemasFieldOrderIsPartOfTheKey) {

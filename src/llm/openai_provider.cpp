@@ -1,6 +1,7 @@
 #include <rr/llm/openai_provider.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <format>
 #include <utility>
 
@@ -54,6 +55,9 @@ std::vector<std::string_view> llama_server_fields(const ChatRequest& request) {
     }
     if (request.reasoning_effort.has_value()) {
         fields.emplace_back("reasoning_effort");
+    }
+    if (request.token_probabilities) {
+        fields.emplace_back("token_probabilities");
     }
     return fields;
 }
@@ -183,6 +187,19 @@ void add_thinking(const ChatRequest& request, json::OrderedJson& body) {
     }
 }
 
+// How sure the model was, token by token: llama-server reports the sampled
+// token's probability only with at least one alternative (top_logprobs 0
+// sends none, and its default is 20), and after its sampler chain only when
+// asked (post_sampling_probs). After the chain is what a vote needs: the
+// chance that another sample, drawn the same way, writes the same token.
+void add_probabilities(const ChatRequest& request, json::OrderedJson& body) {
+    if (request.token_probabilities) {
+        body["logprobs"] = true;
+        body["top_logprobs"] = 1;
+        body["post_sampling_probs"] = true;
+    }
+}
+
 // Server-specific fields, as they are. One the request already sets is a
 // conflict, refused rather than silently overwritten.
 Result<void> add_extra(const ChatRequest& request, json::OrderedJson& body) {
@@ -218,6 +235,7 @@ Result<json::OrderedJson> chat_request_body(const ChatRequest& request, Dialect 
     add_sampling(request, body);
     RR_TRY(add_schema(request, body));
     add_thinking(request, body);
+    add_probabilities(request, body);
     RR_TRY(add_extra(request, body));
     return body;
 }
@@ -278,13 +296,78 @@ Result<void> ChatStreamReader::read_choice(const json::Json& choice) {
     Choice& answer = response_.choices[index];
     if (const auto delta = choice.find("delta"); delta != choice.end() && delta->is_object()) {
         deliver(index, string_at(*delta, "reasoning_content"), answer.reasoning, sink_->on_reasoning);
+        const std::size_t before = answer.content.size();
         deliver(index, string_at(*delta, "content"), answer.content, sink_->on_content);
+        if (answer.content.size() > before) {
+            RR_TRY(read_probabilities(choice, before, answer));
+        }
     }
     if (const auto finish = string_at(choice, "finish_reason"); finish.has_value()) {
         answer.finish = finish_reason_from_string(*finish);
         finished_[index] = true;
         last_finished_ = index;
     }
+    return ok();
+}
+
+namespace {
+
+// A token's probability: "prob" after the sampler chain, or "logprob" (its
+// logarithm) before it. llama-server writes a probability of 0 as the
+// lowest float's logarithm, which exp() turns back into 0.
+Result<double> token_probability(const json::Json& entry) {
+    std::optional<double> found = number_at(entry, "prob");
+    if (!found.has_value()) {
+        if (const std::optional<double> logarithm = number_at(entry, "logprob"); logarithm.has_value()) {
+            found = std::exp(*logarithm);
+        }
+    }
+    // A probability a rounding above 1 is 1; anything else outside [0, 1] is no probability.
+    if (!found.has_value() || std::isnan(*found) || *found < 0 || *found > 1 + 1e-6) {
+        return fail(Errc::unsupported,
+                    std::format("the server streamed a token probability that is not one: {}",
+                                json::dump(entry).substr(0, 200)));
+    }
+    return std::min(*found, 1.0);
+}
+
+// How many bytes a token is: its "bytes", else its text.
+Result<std::size_t> token_bytes(const json::Json& entry) {
+    if (const auto bytes = entry.find("bytes"); bytes != entry.end() && bytes->is_array()) {
+        return bytes->size();
+    }
+    if (const auto text = string_at(entry, "token"); text.has_value()) {
+        return text->size();
+    }
+    return fail(Errc::unsupported, std::format("the server streamed a token without its text: {}",
+                                               json::dump(entry).substr(0, 200)));
+}
+
+}  // namespace
+
+Result<void> ChatStreamReader::read_probabilities(const json::Json& choice, std::size_t begin,
+                                                  Choice& answer) {
+    const auto logprobs = choice.find("logprobs");
+    if (logprobs == choice.end() || !logprobs->is_object()) {
+        return ok();  // null when none were asked, or none came with this token
+    }
+    const auto entries = logprobs->find("content");
+    if (entries == logprobs->end() || !entries->is_array()) {
+        return ok();
+    }
+    // From the last entry back: each ends where the one after it begins.
+    std::vector<TokenProbability> tokens;
+    std::size_t end = answer.content.size();
+    for (auto entry = entries->rbegin(); entry != entries->rend(); ++entry) {
+        RR_TRY_ASSIGN(const double probability, token_probability(*entry));
+        RR_TRY_ASSIGN(const std::size_t bytes, token_bytes(*entry));
+        const std::size_t first = end - std::min(bytes, end - begin);
+        if (first < end) {
+            tokens.push_back(TokenProbability{.begin = first, .end = end, .probability = probability});
+        }
+        end = first;
+    }
+    answer.probabilities.insert(answer.probabilities.end(), tokens.rbegin(), tokens.rend());
     return ok();
 }
 

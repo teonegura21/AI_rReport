@@ -6,7 +6,7 @@ The models are local and fixed (ADR-0017). Asking a model once is the least it c
 
 | Where | What it is |
 |---|---|
-| `rr/reason/vote.hpp` | Votes per item (`vote_keyed()`); waves of samples only where they disagree (`Waves`, `next_wave()`); the medoid text |
+| `rr/reason/vote.hpp` | Votes per item (`vote_keyed()`); a lone sample settling its item only as sure as the waves ask (`Waves::sure`, P28); waves of samples only where they disagree (`Waves`, `next_wave()`); the medoid text |
 | `rr/reason/boundaries.hpp` | Where several outlines agree a section starts |
 | `rr/reason/pairwise.hpp` | A judge's preference, counted only if it survives swapping the order |
 | `rr/reason/select.hpp` | The best candidate by criteria in order of importance |
@@ -18,7 +18,8 @@ The models are local and fixed (ADR-0017). Asking a model once is the least it c
 | Finding | Rule |
 |---|---|
 | Self-consistency, majority voting over samples, beats a single answer (Wang et al., 2023), and beats LLM verifiers at equal compute (Singhi et al., 2025) | Samples are voted on, not judged |
-| Allocating samples adaptively, where they disagree, is more than 4× as efficient as uniform best-of-N (Snell et al., 2024) | Waves: draw more only while an item is unsettled *and could still settle* |
+| Allocating samples adaptively, where they disagree, is more than 4× as efficient as uniform best-of-N (Snell et al., 2024); stopping once the samples so far agree saves up to 7.9× the samples, at an average accuracy cost under 0.1% (Aggarwal et al., 2023) | Waves: draw more only while an item is unsettled *and could still settle* |
+| A model's own token probabilities say how sure it was; stopping or filtering samples by them saves most of their tokens at little cost (Fu et al., 2025, DeepConf) | A lone sample settles its item only when the tokens that chose its answer were as likely as the tier asks (`sure`) |
 | Judges favour the first (or second) position, longer answers, and their own family (Wang et al., 2023; Zheng et al., 2023; Verga et al., 2024) | Every pairwise judgement in both orders; a disagreement is a tie |
 | Fused answers can invent what no sample said | The medoid, a real answer that the others resemble most, not an average of answers |
 | Fidelity failures are not bought back by style | Lexicographic selection: no weighted sum |
@@ -39,7 +40,21 @@ A sample answers for many items at once: the 25 sentences of a transcript window
 
 `Waves{first, step, max, quorum}` says how many samples a decision gets. The first wave draws `first`. Another `step` are drawn while some item is unsettled and could still settle, up to `max` in all. "Could still settle" is checked: if even every remaining sample agreeing with an item's leader would not reach the quorum, drawing them is futile, and the item goes straight to escalation. 1–1–1 with one sample left can never make two thirds of four votes.
 
-At the `max` tier, atomize draws three samples at once, and what they still disagree on goes to the commander, thinking. The eval's sweep for runbook R6 (`eval/sweeps/r6.toml`) measures what the three samples and the commander's rulings each buy; whether further waves pay before escalation does is a variant to add to it.
+Atomize draws its waves (P28): a window whose readings leave a sentence unsettled, and that more samples could settle, is read `step` more times, up to `max`, the window's other sentences voted on again with every reading. A wave's samples are drawn from the window's own seed on, after those drawn (sample j draws seed + j), so that waves draw exactly the samples one request for them all would: a variant that stops early shares its first samples with the one that does not, and their comparison measures the stopping, not the dice. A window no answer read gets no wave: the same question would get no better answer. What is still unsettled after the last wave goes to the commander, thinking, at `max`.
+
+At the `max` tier, atomize draws three samples at once, and no further wave. The eval's sweep for runbook R6 (`eval/sweeps/r6.toml`) measures what the three samples and the commander's rulings each buy, and two ways to spend fewer samples: `atomize-waves` draws two and a third only where they disagree; `atomize-sure` draws one, a second where the infantry was unsure of a sentence, and a third where those two disagree.
+
+### How sure a lone sample was
+
+One sample alone is a vote of one, and settles nothing by agreement: with a quorum, one ballot of one always "wins". A model can say how sure it was, though. Asked (`ChatRequest::token_probabilities`), llama-server sends each token's probability after its sampler chain: the chance that the same chain, from the same prefix, draws the same token again ([llm.md](llm.md#how-sure-the-model-was-token-by-token)). How sure a sample was of an item's answer is the product of the probabilities of the tokens that chose it, each token once: for an atomize answer, the sentence's filler label, each citing atom's kind, modality and must-quote-or-not, an "also" naming it, and whether its row has another atom (`confidence_of()`, [pipeline.md](pipeline.md)). The atoms' words are not part of it: free text never agrees, and the vote never asks it to.
+
+The rule (`vote_keyed(items, ballots, quorum, sure)`):
+- **A lone ballot settles its item only when its confidence reaches `sure`.** Otherwise the item is contested, and the waves draw another sample where one more could settle it (`next_wave()` reads settledness from the vote's winner, so the rule carries through).
+- **A confidence not known is no confidence.** A byte whose token's probability never came, or a sample from a server that sent none, is unsure: the safe side, which spends a sample rather than trusts a guess.
+- **Two samples or more are voted on, their confidences aside.** Samples that agree are evidence a sample's own probability is not: a model can be confidently wrong, the same way twice only by chance.
+- **`sure` 0, every shipped tier's, lets every lone ballot settle**, as before P28. A slack of 1e-9 keeps a confidence at the bar at it: 0.3 × 3 is 0.8999999999999999.
+
+So the waves become: one sample where the model is sure, more where it is not. Adaptive-Consistency spends samples where they still disagree (Aggarwal et al., 2023); DeepConf stops or filters samples by the model's own token confidence (Fu et al., 2025). Here a lone sample's own confidence decides whether it needs a second, and agreement decides the rest. Whether that spends GPU time better than three samples is the eval's to say: `atomize-sure` in runbook R6's sweep, adopted only if it loses nothing that matters for what it saves.
 
 ### The medoid
 
@@ -82,6 +97,7 @@ A weighted sum would let a fluent draft that drops a must-quote beat a plain one
 | seams | none | rewritten | rewritten, then checked again |
 
 - **One deviation from ADR-0018's table.** The ADR's `thorough` outline cell omits the video's chapters, and `thorough` uses them as `fast` and `max` do. A video's chapters are its author's sections: no model's outline is truer. The decision is in `thorough.toml`'s header.
+- **How sure a lone sample must be** (`[atomize] sure`, a probability in [0, 1]) is 0 in every shipped tier: a lone sample settles its sentence, as before P28. Runbook R6's sweep tries 0.9.
 - **Read strictly** (`parse_tier()`). An unknown section or key, a value of the wrong type or out of range, `judge_top` of 1 (a judge compares at least two drafts), or waves that cannot draw their max are errors naming the tier, the section and the key. A key left out takes its default.
 - **Canonical per stage.** `Tier::canonical(stage)` is the stage's settings as compact JSON, keys sorted, every value present. It enters the stage's cache key (plan P15), so changing one value re-runs exactly that stage and the stages after it, while writing out a default changes nothing.
 - **Compute only rises** from `fast` to `max`, stage by stage, and a test checks it: a higher tier never buys less.
@@ -90,7 +106,7 @@ A weighted sum would let a fluent draft that drops a must-quote beat a plain one
 ## How it is tested
 
 All of it is pure, so all of it is unit-tested, with exact expectations:
-- `vote_test.cpp`: votes per item, the quorum as a share (two thirds is 0.66, and floating point is kept exact), ties, missing votes, the medoid among winners only, refused ballots, waves (more only where it helps, never past max, futility), wave checks;
+- `vote_test.cpp`: votes per item, the quorum as a share (two thirds is 0.66, and floating point is kept exact), ties, missing votes, the medoid among winners only, refused ballots, waves (more only where it helps, never past max, futility), wave checks; a lone sample settling only as sure as asked (a confidence not known is none, the bar reached at it and a hair under it), samples that agree settling however unsure each was, an unsure lone sample drawing a second, `sure` checked;
 - `boundaries_test.cpp`: agreement within the tolerance, support, quorum, the earlier of an even split, order and duplicates in an outline, floating point;
 - `pairwise_test.cpp`: the swap, the tally and its inconsistency count;
 - `select_test.cpp`: lexicographic order, ties, NaN, refusals;
@@ -102,11 +118,12 @@ All of it is pure, so all of it is unit-tested, with exact expectations:
   - strict reading, error by error;
   - a variant: its base with each change set (true, a whole number, a number, a word), only the stage it changes keyed apart;
   - a variant read as strictly as a tier file: each malformed change, an unknown section, a key changed twice; every shipped tier writing out every section;
-  - the compiled-in tiers are the source tree's.
+  - the compiled-in tiers are the source tree's;
+  - `sure` read as a probability: 0 and 1 are ones, 1.5, −0.1, NaN and a word are not.
 
 ### How the tests were validated
 
-Each rule was removed on purpose (58 mutants, 14 of them P26's for variants), and the named test was confirmed to fail.
+Each rule was removed on purpose (69 mutants: 14 of them P26's for variants, 11 P28's for a lone sample's confidence and the tiers' `sure`), and the named test was confirmed to fail.
 
 | Rule removed | Caught by |
 |---|---|
@@ -122,6 +139,10 @@ Each rule was removed on purpose (58 mutants, 14 of them P26's for variants), an
 | Selection: NaN the worst, an earlier key final, sizes checked, a tie to the first | `Select.*` |
 | Tiers: unknown keys and sections, `judge_top` of one, waves, shares (range, NaN, whole numbers), the canonical form, defaults, modes, names | `Tier.*` |
 | Variants: the base found, each change set, each kind of value as TOML reads it, every part of `stage.key=value`, an unknown stage, a key changed twice | `AVariantIsItsBaseWithEachChangeSet`, `AVariantIsReadAsStrictlyAsATierFile` |
+| A lone sample settles only as sure as asked; a confidence not known is none; the bar's slack | `ALoneSampleSettlesItsItemOnlyWhenSure` |
+| Samples that agree settle their item, their confidences aside | `SamplesThatAgreeSettleTheirItemHoweverUnsureEachWas` |
+| A wave reads settledness from the vote's winner, not from the counts alone | `AnUnsureLoneSampleDrawsASecond` |
+| `sure` is a probability: neither above 1 nor NaN; the tiers read it, 0 included, and key it | `Waves.AreChecked`, `Tier.IsReadStrictly`, `AStagesCanonicalFormIsItsCacheKeyMaterial` |
 
 **What writing the mutants found, before any ran:** no test had a winner that was not voted first, so counts that were never sorted would have passed. That test exists now.
 
@@ -130,3 +151,5 @@ Each rule was removed on purpose (58 mutants, 14 of them P26's for variants), an
 - **That a later key never buys back an earlier one.** No fixture had an earlier key favouring the holder while a later key favoured the challenger.
 - **A share's range, and NaN.** The test used atomize's quorum, which the waves check also guards. Outline's quorum, which has no second guard, is tested now.
 - **The `thorough` tier's seams mode.** It was never asserted directly. Mapping "rewrite" to "recheck" would have kept compute rising from fast to max, and passed.
+
+**P28's run** killed 12 of 13: its 11, and the 2 whose code moved (a wave reading settledness from the vote's winner, a share written as a whole number). One survived, a gap of the same kind as a share's: `sure` above 1 is refused twice, by the tier's reader and then by `waves_problems()`, in words that both end "a probability in [0, 1]", and the test read only those words. It reads the reader's own now (`'sure' must be a probability in [0, 1]`), and the final run kills it.

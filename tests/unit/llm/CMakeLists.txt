@@ -9,4 +9,5 @@ rr_add_test_suite(llm
         sampling_test.cpp
         structured_test.cpp
     DEPS
-        rr::llm)
+        rr::llm
+        rr::fake_engine_stream)

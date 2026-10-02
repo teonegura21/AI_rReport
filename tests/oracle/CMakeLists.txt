@@ -8,4 +8,6 @@ rr_add_module(oracle
         oracle.cpp
     PUBLIC_DEPS
         rr::core
-        rr::llm)
+        rr::llm
+    PRIVATE_DEPS
+        rr::json)

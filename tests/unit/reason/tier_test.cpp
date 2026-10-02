@@ -80,7 +80,7 @@ TEST(Tier, AStagesCanonicalFormIsItsCacheKeyMaterial) {
     EXPECT_EQ(
         max.canonical(Stage::atomize),
         R"({"contested_to_commander":true,"first":3,"max":3,"quorum":0.66,"recall_pass":true,"repairs":1,)"
-        R"("step":0,"thinking":false})")
+        R"("step":0,"sure":0.0,"thinking":false})")
         << "compact, keys sorted";
     EXPECT_EQ(max.canonical(Stage::seams), R"({"mode":"recheck"})");
     EXPECT_EQ(max.canonical(Stage::plan), R"({"mode":"assign","thinking_budget":16384})");
@@ -120,12 +120,20 @@ TEST(Tier, IsReadStrictly) {
     refused("[outline]\nquorum = nan\n", "a share in (0, 1]");
     refused("[atomize]\nquorum = 1.5\n", "a share in (0, 1]");
     refused("[atomize]\nquorum = \"half\"\n", "a share in (0, 1]");
+    // The reader's own words: waves_problems() refuses the same values next, in words that end alike.
+    refused("[atomize]\nsure = 1.5\n", "'sure' must be a probability in [0, 1]");
+    refused("[atomize]\nsure = -0.1\n", "'sure' must be a probability in [0, 1]");
+    refused("[atomize]\nsure = nan\n", "'sure' must be a probability in [0, 1]");
+    refused("[atomize]\nsure = \"very\"\n", "'sure' must be a probability in [0, 1]");
     refused("[atomize]\nfirst = 3\nmax = 5\n", "no wave draws the rest");
     refused("[plan]\nmode = \"vote\"\n", "one of: group, assign");
     refused("[seams]\nmode = 2\n", "one of: none, rewrite, recheck");
     refused("[outline]\nboundary_tolerance = -1\n", "at least 0");
     refused("[outline\n", "line 1");
     EXPECT_OK(parse_tier("custom", "[atomize]\nquorum = 1\n")) << "a whole number is a share too";
+    EXPECT_EQ(unwrap(parse_tier("custom", "[atomize]\nsure = 0\n")).atomize.waves.sure, 0.0)
+        << "0 is a probability, though no share";
+    EXPECT_EQ(unwrap(parse_tier("custom", "[atomize]\nsure = 1\n")).atomize.waves.sure, 1.0);
 }
 
 TEST(Tier, AVariantIsItsBaseWithEachChangeSet) {

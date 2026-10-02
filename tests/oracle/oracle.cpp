@@ -1,11 +1,14 @@
 #include <rr/oracle/oracle.hpp>
 
+#include <algorithm>
 #include <charconv>
 #include <cstdint>
 #include <format>
 #include <limits>
 #include <regex>
 #include <utility>
+
+#include <rr/json/spans.hpp>
 
 namespace rr::oracle {
 
@@ -73,14 +76,52 @@ Result<llm::ChatResponse> Oracle::chat(const llm::ChatRequest& request, const ll
         response.usage.prompt_tokens += tokens(message.text());
     }
     for (int choice = 0; choice < request.n.value_or(1); ++choice) {
-        response.choices.push_back(llm::Choice{
-            .content = answer, .finish = llm::FinishReason::stop, .completion_tokens = tokens(answer)});
+        response.choices.push_back(llm::Choice{.content = answer,
+                                               .finish = llm::FinishReason::stop,
+                                               .completion_tokens = tokens(answer),
+                                               .probabilities = request.token_probabilities
+                                                                    ? certain(answer)
+                                                                    : std::vector<llm::TokenProbability>{}});
         response.usage.completion_tokens += tokens(answer);
         if (sink.on_content) {
             sink.on_content(static_cast<std::size_t>(choice), answer);
         }
     }
     return response;
+}
+
+std::vector<llm::TokenProbability> certain(std::string_view content) {
+    std::vector<llm::TokenProbability> tokens;
+    const auto step = static_cast<std::size_t>(kCharactersPerToken);
+    for (std::size_t begin = 0; begin < content.size(); begin += step) {
+        tokens.push_back(llm::TokenProbability{
+            .begin = begin, .end = std::min(begin + step, content.size()), .probability = 1.0});
+    }
+    return tokens;
+}
+
+Fault doubt(When when, std::function<bool(std::string_view pointer)> doubted, double probability) {
+    return Fault{.name = "doubt",
+                 .when = std::move(when),
+                 .change = [doubted = std::move(doubted), probability](llm::Choice& answer) {
+                     const Result<std::vector<json::Span>> spans = json::spans(answer.content);
+                     if (!spans.has_value()) {
+                         return false;
+                     }
+                     bool changed = false;
+                     for (const json::Span& span : *spans) {
+                         if (!doubted(span.pointer)) {
+                             continue;
+                         }
+                         for (llm::TokenProbability& token : answer.probabilities) {
+                             if (token.begin < span.end && token.end > span.begin) {
+                                 token.probability = probability;
+                                 changed = true;
+                             }
+                         }
+                     }
+                     return changed;
+                 }};
 }
 
 Fault refusal(When when) {
@@ -209,7 +250,11 @@ Result<llm::ChatResponse> FaultyProvider::chat(const llm::ChatRequest& request, 
     RR_TRY_ASSIGN(llm::ChatResponse response, inner_->chat(request, sink, stop));
     bool changed = false;
     for (llm::Choice& choice : response.choices) {
+        const std::string before = choice.content;
         changed = fault.change(choice) || changed;  // every choice is changed
+        if (choice.content != before && !choice.probabilities.empty()) {
+            choice.probabilities = certain(choice.content);  // as sure of its new text
+        }
     }
     record(changed);
     return response;

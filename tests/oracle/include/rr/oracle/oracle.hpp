@@ -23,7 +23,9 @@
 //       - a citation marker that cites nothing;
 //       - a dropped sentence reference;
 //       - a server error;
-//       - a stage's own edit (softening a quote, misattributing).
+//       - a stage's own edit (softening a quote, misattributing);
+//       - doubt: the model unsure of some of its answer's fields, its
+//         tokens there improbable (ChatRequest::token_probabilities).
 //     The rule every fault is tested against: it ends repaired, or published
 //     as a finding; never silently in the article.
 //
@@ -65,7 +67,8 @@ public:
     [[nodiscard]] llm::ProviderCaps caps() const noexcept override { return caps_; }
 
     // The answer, once per choice asked for: an oracle has one right answer.
-    // Tokens are counted at four characters each, prompt and answer alike.
+    // Tokens are counted at four characters each, prompt and answer alike;
+    // asked how likely they were, it is certain of each (certain()).
     [[nodiscard]] Result<llm::ChatResponse> chat(const llm::ChatRequest& request, const llm::StreamSink& sink,
                                                  const std::stop_token& stop) const override;
 
@@ -94,7 +97,13 @@ struct Fault {
     std::function<bool(llm::Choice&)> change{};
 };
 
-// The faults. Each changes every choice of the calls it hits.
+// The probabilities of `content`'s tokens as the oracle gives them: a token
+// every four bytes, as it counts them, each certain.
+[[nodiscard]] std::vector<llm::TokenProbability> certain(std::string_view content);
+
+// The faults. Each changes every choice of the calls it hits. A fault that
+// changes an answer's text gives it probabilities anew, certain() of the
+// new text, when it had any: a model is as sure of what it wrote.
 [[nodiscard]] Fault refusal(When when);             // "I'm sorry, but I can't help with that."
 [[nodiscard]] Fault truncation(When when);          // the first half, ended by the token limit
 [[nodiscard]] Fault broken_json(When when);         // the last closing brace or bracket gone
@@ -105,6 +114,11 @@ struct Fault {
 [[nodiscard]] Fault server_error(When when, Errc code);
 // A stage's own fault: `change` rewrites an answer's text.
 [[nodiscard]] Fault edit(std::string name, When when, std::function<std::string(std::string)> change);
+// The model unsure where `doubted` says: the tokens of the answer's JSON
+// values whose pointer it accepts (rr/json/spans.hpp) get `probability`.
+// Changes nothing of an answer without probabilities, or not JSON.
+[[nodiscard]] Fault doubt(When when, std::function<bool(std::string_view pointer)> doubted,
+                          double probability);
 
 // A fault that was made: which, on what.
 struct Injection {

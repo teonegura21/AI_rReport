@@ -18,6 +18,7 @@ first = 3                 # samples drawn at once; each sentence is voted on
 step = 0                  # more samples at a time while a sentence is contested…
 max = 3                   # …up to this many
 quorum = 0.66             # the share of votes a sentence's answer needs (2 of 3)
+sure = 0.0                # a lone sample settles a sentence only this sure (0: always)
 thinking = false          # narrow, schema-bound labelling: thinking adds cost, not accuracy
 repairs = 1
 recall_pass = true        # re-ask the sentences that atoms barely cover

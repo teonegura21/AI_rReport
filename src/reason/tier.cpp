@@ -66,23 +66,38 @@ public:
         return static_cast<int>(number->get());
     }
 
-    [[nodiscard]] Result<double> share(std::string_view key, double fallback) {
+    // A number, written as a decimal or as a whole number; `fallback` when
+    // absent. `what` names what it must be.
+    [[nodiscard]] Result<double> number(std::string_view key, double fallback, std::string_view what) {
         const toml::node* value = node(key);
         if (value == nullptr) {
             return fallback;
         }
-        double share = 0.0;
         if (const auto* real = value->as_floating_point()) {
-            share = real->get();
-        } else if (const auto* whole = value->as_integer()) {
-            share = static_cast<double>(whole->get());
-        } else {
-            return wrong(key, "a share in (0, 1]");
+            return real->get();
         }
+        if (const auto* whole = value->as_integer()) {
+            return static_cast<double>(whole->get());
+        }
+        return wrong(key, what);
+    }
+
+    // A share of votes or outlines: none is no share.
+    [[nodiscard]] Result<double> share(std::string_view key, double fallback) {
+        RR_TRY_ASSIGN(const double share, number(key, fallback, "a share in (0, 1]"));
         if (std::isnan(share) || share <= 0.0 || share > 1.0) {
             return wrong(key, "a share in (0, 1]");
         }
         return share;
+    }
+
+    // A probability: unlike a share, 0 is one.
+    [[nodiscard]] Result<double> probability(std::string_view key, double fallback) {
+        RR_TRY_ASSIGN(const double probability, number(key, fallback, "a probability in [0, 1]"));
+        if (std::isnan(probability) || probability < 0.0 || probability > 1.0) {
+            return wrong(key, "a probability in [0, 1]");
+        }
+        return probability;
     }
 
     [[nodiscard]] Result<std::string> choice(std::string_view key, std::string_view fallback,
@@ -148,6 +163,7 @@ Result<AtomizeCompute> read_atomize(Section& section) {
     RR_TRY_ASSIGN(atomize.waves.step, section.count("step", defaults.waves.step, 0));
     RR_TRY_ASSIGN(atomize.waves.max, section.count("max", defaults.waves.max, 1));
     RR_TRY_ASSIGN(atomize.waves.quorum, section.share("quorum", defaults.waves.quorum));
+    RR_TRY_ASSIGN(atomize.waves.sure, section.probability("sure", defaults.waves.sure));
     RR_TRY_ASSIGN(atomize.thinking, section.flag("thinking", defaults.thinking));
     RR_TRY_ASSIGN(atomize.repairs, section.count("repairs", defaults.repairs, 0));
     RR_TRY_ASSIGN(atomize.recall_pass, section.flag("recall_pass", defaults.recall_pass));
@@ -342,6 +358,7 @@ std::string Tier::canonical(Stage stage) const {
                         {"step", atomize.waves.step},
                         {"max", atomize.waves.max},
                         {"quorum", atomize.waves.quorum},
+                        {"sure", atomize.waves.sure},
                         {"thinking", atomize.thinking},
                         {"repairs", atomize.repairs},
                         {"recall_pass", atomize.recall_pass},

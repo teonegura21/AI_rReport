@@ -21,6 +21,20 @@
 //   the votes cast on it, and strictly more than any other answer. A tie
 //   is never settled: the order the samples came in must not decide.
 //
+//   One sample alone is a vote of one, and settles nothing by agreement. A
+//   model can say how sure it was, though: the probability its tokens gave
+//   its answer (rr/llm/chat.hpp, ChatRequest::token_probabilities), the
+//   chance that another sample, drawn the same way, writes the same. So a
+//   lone ballot settles its item only when that confidence reaches the
+//   waves' `sure`; where it does not, another wave is drawn. One sample
+//   where the model is sure, more where it is not: Adaptive-Consistency
+//   spends samples where they still disagree (Aggarwal et al., 2023), and
+//   DeepConf stops or filters samples by the model's own token confidence
+//   (Fu et al., 2025); here a lone sample's own confidence decides whether
+//   it needs a second. Two samples or more are voted on, their confidences
+//   aside: samples that agree are evidence a sample's own probability is
+//   not. `sure` 0 lets every lone ballot settle its item, as before P28.
+//
 // Thread-safety: pure functions and plain values.
 #pragma once
 
@@ -45,12 +59,16 @@ struct Waves {
     // The share of an item's votes its leading answer needs. Two thirds is
     // 0.66: 0.67 is more than two votes of three.
     double quorum = 0.5;
+    // How sure a lone sample must be to settle its item: the confidence of
+    // its ballot (the header comment). 0: any lone sample settles it.
+    double sure = 0;
 
     friend bool operator==(const Waves&, const Waves&) = default;
 };
 
 // What is wrong with `waves` (empty: nothing): first ≥ 1, step ≥ 0,
-// max ≥ first, max = first when step is 0, and a quorum in (0, 1].
+// max ≥ first, max = first when step is 0, a quorum in (0, 1], and a sure
+// in [0, 1].
 [[nodiscard]] std::vector<std::string> waves_problems(const Waves& waves);
 
 // One sample's answer for one item.
@@ -59,6 +77,9 @@ struct Ballot {
     std::string value{};  // the categorical answer, in a canonical form (e.g. canonical JSON)
     std::string text{};   // free text that comes with it, for medoid(); may be empty
     int sample = 0;
+    // How sure the sample was of `value`: the probability its tokens gave
+    // it, in [0, 1]. None: not known, which is not sure at all.
+    std::optional<double> confidence{};
 };
 
 struct Count {
@@ -82,14 +103,17 @@ struct Consensus {
 [[nodiscard]] bool settled(std::span<const Count> counts, double quorum) noexcept;
 
 // The votes on each of `items`, in that order; an item no ballot is cast on
-// is contested. Errc::invalid_argument for a ballot on an item not listed, or
-// a second ballot of one sample on one item.
+// is contested, and so is one whose lone ballot is less confident than
+// `sure`. Errc::invalid_argument for a ballot on an item not listed, or a
+// second ballot of one sample on one item.
 [[nodiscard]] Result<std::vector<Consensus>> vote_keyed(std::span<const std::string> items,
-                                                        std::span<const Ballot> ballots, double quorum);
+                                                        std::span<const Ballot> ballots, double quorum,
+                                                        double sure = 0);
 
 // How many samples the next wave draws, `drawn` having been drawn: none (0)
-// when every item is settled, when `max` is reached, or when no unsettled item
-// could settle even if every sample still to come agreed with its leader.
+// when every item is settled (has a winner), when `max` is reached, or when
+// no unsettled item could settle even if every sample still to come agreed
+// with its leader.
 [[nodiscard]] int next_wave(std::span<const Consensus> items, int drawn, const Waves& waves) noexcept;
 
 using Distance = std::function<double(std::string_view, std::string_view)>;

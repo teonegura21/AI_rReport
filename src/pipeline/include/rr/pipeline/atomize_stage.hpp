@@ -29,6 +29,15 @@
 //   3. Several readings of a window (the tier's samples, 3 at `max`, drawn
 //      at once) are voted on sentence by sentence (rr/pipeline/readings.hpp):
 //      the reading that wins the most votes gives the window its atoms.
+//      Where the tier asks for waves (its `step`), a window whose readings
+//      leave a sentence unsettled, and that more samples could settle, is
+//      read `step` more times, up to `max` (rr/reason/vote.hpp): each wave's
+//      samples drawn after the last's, from the window's own seed, as one
+//      request for them all would draw them. A lone reading settles a
+//      sentence only as sure as the tier's `sure`: with it set, each answer
+//      comes with its tokens' probabilities, and how sure it was of each
+//      sentence is read from them (confidence_of()). A window no answer
+//      read is not read again: the same question gets no better answer.
 //      Where it does not settle a sentence, the commander reads the stretch
 //      again, thinking, shown what each reading made of it, and its reading
 //      replaces the base's there (the tier's contested_to_commander).
@@ -44,9 +53,7 @@
 //      answer read leaves its sentences unaccounted for, and says why.
 //
 // Without a pod there is no ledger: Errc::needs_user, and the job stops, to
-// be resumed once one is set up. More waves of samples where the first
-// disagree (the tier's `step`) are not drawn yet: no shipped tier asks for
-// them, and a tier that does is refused.
+// be resumed once one is set up.
 //
 // Its key holds the tier's atomize settings; the prompt; the army; what the
 // infantry and the commander hold; the windows' bytes and context; the
@@ -77,7 +84,7 @@ public:
     [[nodiscard]] bool samples() const override { return true; }
 
     // Errc::needs_user without a pod; Errc::not_found for a tier rReport
-    // does not ship; Errc::unsupported for a tier that asks for waves.
+    // does not ship.
     [[nodiscard]] Result<json::Json> fingerprint(const StageContext& context) const override;
 
     // Errc::invalid_argument for a transcript without sentences;

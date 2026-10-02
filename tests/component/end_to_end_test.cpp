@@ -71,6 +71,7 @@ namespace {
 
 using namespace std::chrono_literals;
 using ::testing::HasSubstr;
+using ::testing::Not;
 using testkit::unwrap;
 using Clock = std::chrono::steady_clock;
 
@@ -206,6 +207,21 @@ public:
                             });
         }));
         return by_model;
+    }
+
+    // The missions `job`'s battle log keeps (migrations/0003_missions.sql),
+    // each with the samples it asked for.
+    [[nodiscard]] std::map<std::string, std::int64_t> missions(const std::string& job) const {
+        db::Database database = open();
+        std::map<std::string, std::int64_t> samples;
+        unwrap(database.read([&](db::ReadTx& tx) {
+            return tx.query("SELECT mission, samples FROM missions WHERE job_id = ?1", {job},
+                            [&](const db::Row& row) -> Result<void> {
+                                samples.emplace(row.get_text(0), row.get_int(1));
+                                return ok();
+                            });
+        }));
+        return samples;
     }
 
     // The hash of the article `job`'s seams stage made: equal hashes, equal
@@ -724,6 +740,31 @@ TEST_F(EndToEnd, TwoRunsOfOnePipelineAreComparedAndGatedAndAnAaRunHoldsTheGatesM
     EXPECT_EQ(eval({"label", "r5", "--label", "base", "--against", "cand", "--panel", "e2e-v1"}).status.code,
               2)
         << "a person's verdicts are never written over";
+}
+
+// A tier that reads each window once, and again where the infantry was
+// unsure (P28). The oracle's engines send every token's probability, as
+// llama-server sends them, through the runtime; each is certain, so each
+// window is read once. A probability lost on its way is a sentence not
+// known to be sure, and its window would be read again.
+TEST_F(EndToEnd, AnInfantrySureOfEveryReadingReadsEachWindowOnce) {
+    const OracleRuntime runtime;
+    const Library library = this->library("sure");
+    const proc::RunResult ingested =
+        run({"ingest", captions().string(), "--tier", "max+atomize.first=1+atomize.step=1+atomize.sure=0.9"},
+            library, runtime);
+    ASSERT_EQ(ingested.status.code, 0) << ingested.stderr_text;
+    const std::map<std::string, std::int64_t> missions = library.missions(job_in(ingested.stderr_text));
+    std::size_t windows = 0;
+    for (const auto& [mission, samples] : missions) {
+        EXPECT_THAT(mission, Not(HasSubstr("-wave-"))) << "no window read again";
+        if (mission.starts_with("atomize-")) {
+            ++windows;
+            EXPECT_EQ(samples, 1) << mission << ": one sample, as the tier's first wave asks";
+        }
+    }
+    EXPECT_GT(windows, 0U);
+    EXPECT_THAT(ingested.stderr_text, Not(HasSubstr("wave 2")));
 }
 
 // A sweep of one variant: one draft instead of four. The variant shares

@@ -91,7 +91,7 @@ TEST(Sweep, TheShippedR6SweepIsReadEachVariantATier) {
     const Sweep r6 = unwrap(read_sweep(std::filesystem::path{RR_SOURCE_DIR} / "eval", "r6"));
     EXPECT_EQ(r6.baseline, "max");
     EXPECT_EQ(r6.replicates, kSweepReplicates);
-    EXPECT_EQ(r6.variants.size(), 8U);
+    EXPECT_EQ(r6.variants.size(), 10U);
 }
 
 TEST(Sweep, IsReadFromItsFileByAName) {

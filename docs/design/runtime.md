@@ -307,6 +307,7 @@ Its weights are random, so what it says is noise. That is enough, because what t
 | A grammar keeps the fields in the order written | P1's ordered schemas reach llama.cpp's grammar intact |
 | Several answers report their own usage | P3's per-choice parsing, against llama-server's own stream |
 | A thinking budget ends the thinking | With a budget the model answers; without one it thinks to the end |
+| Each token's probability comes with it, and the tokens cover the answer | P28's placement of a chunk's entry at the end of the content it adds, against llama-server's own stream: two answers held to a schema, each covered byte for byte, in order, by probabilities after the sampler chain |
 | A shared system message is served from the cache | The prompt layout the pipeline relies on |
 | A prompt beyond a slot's share is refused before it starts | The fake's `400 exceed_context_size_error` |
 | Requests that overflow a shared pool all fail, and the engine carries on | The claim behind the army's token budget, and runbook R1's long-prompt step |

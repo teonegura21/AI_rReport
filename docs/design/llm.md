@@ -179,6 +179,30 @@ Two rules guard the request itself:
 - **`n` > 1 needs sampling.** At temperature 0 every choice would be the same answer, so such a request is refused (`sampling_problems()`).
 - **`structured_json()` takes one answer.** Each sample needs its own validation and repair conversation, which the army runs: it asks for a mission's samples in one request, then checks and repairs each on its own ([agents.md](agents.md#samples-share-a-prompt)).
 
+## How sure the model was, token by token
+
+A vote settles an item by the agreement of samples. A sample alone can still say how likely another would have agreed: the probability of each token it wrote (P28, `rr/reason/vote.hpp`). `ChatRequest::token_probabilities` asks for them, and each `Choice` comes back with `probabilities`: its content's tokens, in order, each a range of bytes and how likely it was when it was drawn.
+
+What llama-server does at the image's pin (`7fe450e`: `tools/server/server-common.cpp`, `server-context.cpp`, `server-task.cpp`):
+- **`logprobs: true` asks for them, `top_logprobs` how many alternatives**: 20 when it is absent, and `top_logprobs` without `logprobs` is refused with 400. With none, no token's probability is sent at all (`n_probs` 0). rReport asks for one, the least that sends the sampled token's own.
+- **`post_sampling_probs: true` reports each token's probability after the sampler chain** (temperature, top-k, top-p, min-p), as `prob` and `top_probs`; without it, `logprob` and `top_logprobs`, of the model's raw distribution. After the chain is what a vote asks: the chance that the same chain, from the same prefix, draws the same token again. A token at 0.5 raw may be the only one top-p leaves, and drawn every time. It needs no logits kept from before sampling; the chain's candidates are sorted, few after top-k.
+- **The grammar.** The chain's candidates are the unconstrained ones whenever the first draw fits the grammar, and the grammar's only after a draw it rejected (`common_sampler_sample()`, rejection sampling). A label the model writes unforced is the common case, and its probability is then the model's own.
+- **Streamed, a token's entry rides on its chunk's last delta, and only when the token made one.** A token whose text the server holds back (part of a UTF-8 sequence, the start of a tag) sends no entry: the probabilities are best effort. A reasoning token's entry rides on its reasoning delta.
+
+How rReport reads them (`ChatStreamReader`):
+
+| Rule | Why |
+|---|---|
+| A chunk's entries are placed at the end of the content it adds, one after another, each as long as its `bytes` (else its `token`) | The entry is the chunk's last token: its text ends where the chunk's does |
+| A token whose bytes reach back past that content is cut where the content began | Part of its text went elsewhere, a tag the server read |
+| A chunk that adds no content is not read: its entries are the reasoning's | Thinking is not the answer, and how sure a model was while thinking says nothing of it |
+| `prob` is taken as it is; a `logprob` through `exp()`; a probability a rounding above 1 is 1; anything else outside [0, 1], or an entry without its text, fails the call (`unsupported`) | A server that sends what is not a probability is not one rReport can read |
+| A byte no entry covers is not known | And not known is not sure: a vote treats it as no confidence at all |
+
+The flag is part of a request's key (an answer kept without probabilities has none to give), and only llama-server can carry it: elsewhere, `unsupported`. A response's JSON form, which the memo and the recordings keep, holds them as `[begin, end, probability]` triples, left out when there are none, so that no response kept before P28 reads differently; they are read strictly: in order, apart, within the content, in [0, 1].
+
+The live tests (`EachTokensProbabilityComesWithItAndTheTokensCoverTheAnswer`) check what the placement assumes, on a real llama-server: an answer of ASCII words held to a schema, two of them drawn at once, each covered byte for byte, in order, by probabilities in (0, 1]. Run here against llama.cpp `7fe450e` built for the CPU and the tiny model, it passes.
+
 ## Answers that satisfy a schema
 
 Missions ask for data, not prose, and nothing uses an answer before it is validated (plan §8). `structured<T>()` first refuses a request that sets a penalty ([Sampling](#sampling), rule 3), then:
@@ -235,7 +259,7 @@ Tokens and GPU time are the product's cost (plan §4.3). `AccountedProvider` han
 | Level | What |
 |---|---|
 | Unit, scripted provider | `tests/unit/llm/scripted_provider.hpp` plays answers and errors, and keeps every request it was given. It covers retries, restarts, accounting, record/replay and `structured<T>()`, repair conversation included |
-| Unit, scripted server | `openai_provider_test.cpp` serves exact bytes: llama-server's stream shape, keep-alive comments, a missing `[DONE]`, error events and statuses, silence and cancellation |
+| Unit, scripted server | `openai_provider_test.cpp` serves exact bytes: llama-server's stream shape, keep-alive comments, a missing `[DONE]`, error events and statuses, silence and cancellation; token probabilities asked after the sampler chain, placed on the bytes they wrote, refused when they are not probabilities, and the fake engine's own stream of them read back |
 | End to end | `runtime_client_test.cpp` calls through the real runtime's relay to fake engines. Tokens, reasoning, usage and timings arrive intact; a 400 stays a bad request; a crash mid-answer becomes a retried network error; an engine's error event keeps its class |
 | The library | `call_log_test.cpp` round-trips every field, NULLs included; covers filters, newest first, pruning, and a duplicate refused without a trace |
 
@@ -298,6 +322,11 @@ Two findings from these runs were fixed before they counted:
 | `n` is sent, and is part of the key | `SendsSamplingAndThinkingAsLlamaServerReadsThem`, `TheRequestKeyIsWhatTheModelSees` |
 | The least complete finish is reported | `ReadsEveryChoiceByItsIndex` |
 | Every choice must finish | `AStreamMustFinishEveryChoiceItWasAskedFor` |
+| Token probabilities are asked: `logprobs`, one alternative, after the sampler chain; of llama-server alone | `AsksHowSureTheModelWasAfterItsSamplerChain` |
+| A token is placed at the end of its chunk's content, and cut where that content began; a `logprob` is exponentiated | `PlacesEachTokensProbabilityOnTheBytesItWrote` |
+| A probability outside [0, 1] is refused, either way; a reasoning token's entry is not read | `RefusesATokenProbabilityThatIsNotOne` |
+| The flag is part of the key | `TheRequestKeyIsWhatTheModelSees` |
+| A response keeps its probabilities; overlapping ones, ones past the content, or outside [0, 1] are refused | `AResponsesTokenProbabilitiesSurviveItsJsonForm` |
 | A total reported once is credited to no choice | `AServerThatReportsUsageOnceIsTakenAtItsWord` |
 | `n` ≥ 1, and `n` > 1 needs sampling | `ValuesAreCheckedAndNanFailsEveryRange`, `SeveralAnswersNeedSampling` |
 | `structured()` takes one answer | `TakesOneAnswer` |
@@ -321,3 +350,5 @@ Two findings from these runs were fixed before they counted:
 | Newest first | `ListsNewestFirstAndFilters` |
 
 **A mutant that crashed instead of failing.** Moving the schema out of `json_schema` first made the test program abort, taking every later test with it. The test read the request body through a `const` JSON value, whose `operator[]` asserts on a missing key. It now reads through a non-`const` one, whose `operator[]` yields null, so the expectation fails and names the difference.
+
+**P28's run** killed 14 of its 15 at once. The fifteenth, a token not cut where its chunk began, did not build: it left the chunk's beginning unused, which `-Werror` refuses. Written to keep it (`begin * 0`), it is killed, by the test that claims it. And clang-tidy, asked to simplify the probability checks by De Morgan's laws, would have let NaN through: `p < 0 || p > 1` holds for no NaN. Each check names NaN now (`std::isnan(p) || p < 0 || p > 1`), as [the rule on ranges](#sampling) wants.

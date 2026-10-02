@@ -5,8 +5,10 @@
 
 #include <cstdint>
 #include <format>
+#include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -138,6 +140,113 @@ TEST(Readings, BallotsAreOneASentenceASample) {
     EXPECT_EQ(ballots[3].sample, 1);
     EXPECT_EQ(ballots[3].value, "atoms fact/asserted");
     EXPECT_EQ(ballots[3].text, "Said 2.");
+}
+
+// --- How sure a reading was ----------------------------------------------------------------
+
+// A token a byte, each certain: a test then makes exactly the bytes it names unsure.
+std::vector<llm::TokenProbability> byte_tokens(std::string_view text) {
+    std::vector<llm::TokenProbability> tokens;
+    tokens.reserve(text.size());
+    for (std::size_t at = 0; at < text.size(); ++at) {
+        tokens.push_back(llm::TokenProbability{.begin = at, .end = at + 1, .probability = 1.0});
+    }
+    return tokens;
+}
+
+// `tokens`, the one of the byte `offset` bytes into the `nth` `needle` of `text` given `probability`.
+std::vector<llm::TokenProbability> unsure(std::vector<llm::TokenProbability> tokens, std::string_view text,
+                                          std::string_view needle, double probability, std::size_t offset = 0,
+                                          int nth = 1) {
+    std::size_t found = text.find(needle);
+    for (int seen = 1; seen < nth; ++seen) {
+        found = text.find(needle, found + 1);
+    }
+    EXPECT_NE(found, std::string_view::npos) << needle;
+    tokens.at(found + offset).probability = probability;
+    return tokens;
+}
+
+using Confidence = std::map<SentenceId, double>;
+
+// S1 an atom that also cites S2; S2 nothing of its own; S3 a greeting.
+const std::string kAnswer = json::dump(json::Json{
+    {"sentences",
+     json::Json::array({row("S1", nullptr, {atom("Ada weighs radium.", "claim", "asserted", {"S2"})}),
+                        row("S2", nullptr), row("S3", "greeting")})}});
+
+TEST(Readings, ConfidenceIsHowLikelyTheTokensThatChoseAVerdictWere) {
+    const std::vector<llm::TokenProbability> sure = byte_tokens(kAnswer);
+    EXPECT_EQ(confidence_of(kAnswer, sure),
+              (Confidence{{SentenceId{1}, 1}, {SentenceId{2}, 1}, {SentenceId{3}, 1}}));
+    EXPECT_EQ(confidence_of(kAnswer, unsure(sure, kAnswer, "Ada weighs radium.", 0.1, 4)),
+              (Confidence{{SentenceId{1}, 1}, {SentenceId{2}, 1}, {SentenceId{3}, 1}}))
+        << "an atom's words are not its verdict";
+
+    // Each part of a verdict, made unsure in turn: the sentences whose verdict it chose.
+    EXPECT_EQ(confidence_of(kAnswer, unsure(sure, kAnswer, R"("claim")", 0.5, 1)),
+              (Confidence{{SentenceId{1}, 0.5}, {SentenceId{2}, 0.5}, {SentenceId{3}, 1}}))
+        << "the atom's kind: S1's, and S2's, which it also cites";
+    EXPECT_EQ(confidence_of(kAnswer, unsure(sure, kAnswer, R"("asserted")", 0.5, 1)),
+              (Confidence{{SentenceId{1}, 0.5}, {SentenceId{2}, 0.5}, {SentenceId{3}, 1}}))
+        << "its modality";
+    EXPECT_EQ(confidence_of(kAnswer, unsure(sure, kAnswer, R"("must_quote":null)", 0.5, 13)),
+              (Confidence{{SentenceId{1}, 0.5}, {SentenceId{2}, 0.5}, {SentenceId{3}, 1}}))
+        << "whether it has a must-quote: the value's first byte";
+    EXPECT_EQ(confidence_of(kAnswer, unsure(sure, kAnswer, R"("must_quote":null)", 0.5, 14)),
+              (Confidence{{SentenceId{1}, 1}, {SentenceId{2}, 1}, {SentenceId{3}, 1}}))
+        << "not the rest of null, which the first byte chose";
+    EXPECT_EQ(confidence_of(kAnswer, unsure(sure, kAnswer, R"(["S2"])", 0.5, 1)),
+              (Confidence{{SentenceId{1}, 1}, {SentenceId{2}, 0.5}, {SentenceId{3}, 1}}))
+        << "the also entry that names S2: S2's alone";
+    EXPECT_EQ(confidence_of(kAnswer, unsure(sure, kAnswer, R"(radium."}])", 0.5, 9)),
+              (Confidence{{SentenceId{1}, 0.5}, {SentenceId{2}, 1}, {SentenceId{3}, 1}}))
+        << "the bracket after S1's atom: no atom more, S1's choice";
+    EXPECT_EQ(confidence_of(kAnswer, unsure(sure, kAnswer, R"("atoms":[{)", 0.5, 9)),
+              (Confidence{{SentenceId{1}, 0.5}, {SentenceId{2}, 1}, {SentenceId{3}, 1}}))
+        << "the brace of S1's first atom: an atom at all";
+    EXPECT_EQ(confidence_of(kAnswer, unsure(sure, kAnswer, R"("atoms":[])", 0.5, 8, 1)),
+              (Confidence{{SentenceId{1}, 1}, {SentenceId{2}, 0.5}, {SentenceId{3}, 1}}))
+        << "S2's empty list: no atom of its own";
+    EXPECT_EQ(confidence_of(kAnswer, unsure(sure, kAnswer, R"("filler":null)", 0.5, 9)),
+              (Confidence{{SentenceId{1}, 0.5}, {SentenceId{2}, 1}, {SentenceId{3}, 1}}))
+        << "S1's filler: none";
+    EXPECT_EQ(confidence_of(kAnswer, unsure(unsure(sure, kAnswer, R"("greeting")", 0.8, 1), kAnswer,
+                                            R"("greeting")", 0.5, 4)),
+              (Confidence{{SentenceId{1}, 1}, {SentenceId{2}, 1}, {SentenceId{3}, 0.4}}))
+        << "every token of the label, multiplied";
+}
+
+TEST(Readings, ConfidenceCountsEachTokenOnceAndIsNotKnownWhereATokenIsMissing) {
+    // One token over the whole of S3's row: its filler and its empty list, once.
+    const std::size_t row_begin = kAnswer.find(R"({"atoms":[],"filler":"greeting")");
+    const std::size_t row_end = kAnswer.find('}', row_begin) + 1;
+    std::vector<llm::TokenProbability> tokens;
+    for (const llm::TokenProbability& token : byte_tokens(kAnswer)) {
+        if (token.end <= row_begin || token.begin >= row_end) {
+            tokens.push_back(token);
+        } else if (token.begin == row_begin) {
+            tokens.push_back(llm::TokenProbability{.begin = row_begin, .end = row_end, .probability = 0.5});
+        }
+    }
+    EXPECT_EQ(confidence_of(kAnswer, tokens).at(SentenceId{3}), 0.5) << "not 0.25: one token, one choice";
+
+    // A byte of S1's verdict whose token's probability never came.
+    std::vector<llm::TokenProbability> gap = byte_tokens(kAnswer);
+    gap.erase(gap.begin() + static_cast<std::ptrdiff_t>(kAnswer.find(R"("claim")") + 2));
+    EXPECT_EQ(confidence_of(kAnswer, gap), (Confidence{{SentenceId{3}, 1}}))
+        << "S1, and S2 which S1's atom cites, not known";
+    EXPECT_EQ(confidence_of(kAnswer, {}), Confidence{}) << "no token's probability: nothing is known";
+}
+
+TEST(Readings, BallotsCarryTheirReadingsConfidence) {
+    Reading sure = read({row("S1", "greeting"), row("S2", "greeting")});
+    sure.confidence = {{SentenceId{1}, 0.75}};
+    const std::vector<SentenceId> sentences{SentenceId{1}, SentenceId{2}};
+    const std::vector<reason::Ballot> ballots = ballots_of(std::vector<Reading>{sure}, sentences);
+    ASSERT_EQ(ballots.size(), 2U);
+    EXPECT_EQ(ballots[0].confidence, 0.75);
+    EXPECT_EQ(ballots[1].confidence, std::nullopt) << "not known";
 }
 
 TEST(Readings, TheBaseReadingWinsTheMostVotes) {

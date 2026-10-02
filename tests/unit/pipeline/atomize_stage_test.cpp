@@ -91,6 +91,17 @@ std::vector<llm::ChatRequest> opened(const OracleArmy& rig, std::string_view pre
     return first;
 }
 
+// Every request of the mission `mission`, in the order sent.
+std::vector<llm::ChatRequest> requests_of(const OracleArmy& rig, std::string_view mission) {
+    std::vector<llm::ChatRequest> found;
+    for (const llm::ChatRequest& request : rig.requests("atomize")) {
+        if (request.tag.mission_id == mission) {
+            found.push_back(request);
+        }
+    }
+    return found;
+}
+
 // The last message of every request of `mission`, in the order sent: its
 // order, then what each repair sent back.
 std::vector<std::string> sent_to(const OracleArmy& rig, std::string_view mission) {
@@ -610,6 +621,7 @@ TEST_F(AtomizeStageTest, AFastTierReadsOnceAndNeverAsksAgain) {
     EXPECT_EQ(atoms_of(output), thin);
     for (const llm::ChatRequest& request : opened(rig, "atomize-")) {
         EXPECT_FALSE(request.n.has_value()) << "one sample";
+        EXPECT_FALSE(request.token_probabilities) << "only a tier with a `sure` asks how sure";
     }
     EXPECT_THAT(opened(rig, "recall-"), IsEmpty());
 }
@@ -632,6 +644,105 @@ TEST_F(AtomizeStageTest, AnAnswerMayTakeThreeHundredAndTwentyBytesASentenceBesid
     OracleArmy terse;
     unwrap(run(terse.raise(), transcript_of(texts), outline));
     EXPECT_EQ(opened(terse, "atomize-").at(0).max_tokens, 8'192) << "the most an answer takes";
+}
+
+// --- Waves: more samples only where they could settle what is not ----------------------
+
+// Two samples, a third where they disagree.
+void two_then_a_third(reason::Tier& tier) {
+    tier.atomize.waves = reason::Waves{.first = 2, .step = 1, .max = 3, .quorum = 0.66};
+}
+
+// One sample, a second where it was unsure (and a third where they disagree).
+void one_where_sure(reason::Tier& tier) {
+    tier.atomize.waves = reason::Waves{.first = 1, .step = 1, .max = 3, .quorum = 0.66, .sure = 0.9};
+}
+
+// The model unsure of S5's kind in the first window's first call.
+oracle::Fault s5_unsure() {
+    return oracle::doubt(
+        oracle::When{.mission = "atomize-1"},
+        [](std::string_view pointer) { return pointer == "/sentences/4/atoms/0/kind"; }, 0.5);
+}
+
+TEST_F(AtomizeStageTest, AWindowWhoseReadingsSplitIsReadAgainFromItsNextSeed) {
+    use_variant("waves", two_then_a_third);
+    // One infantry slot: each sample is a call of its own, and a fault hits one.
+    OracleArmy rig{s5_read_otherwise(false), engines({.infantry_slots = 1})};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(output.findings, IsEmpty());
+    EXPECT_EQ(atoms_of(output), lecture_ledger()) << "the third reading breaks S5's tie";
+
+    const std::vector<llm::ChatRequest> first = requests_of(rig, "atomize-1");
+    ASSERT_EQ(first.size(), 2U);
+    const std::vector<llm::ChatRequest> again = requests_of(rig, "atomize-1-wave-2");
+    ASSERT_EQ(again.size(), 1U) << "one more, the wave's step";
+    EXPECT_EQ(again[0].seed, *first[0].seed + 2) << "the sample a request for three would have drawn third";
+    EXPECT_FALSE(again[0].token_probabilities) << "no lone sample needs to be sure";
+    EXPECT_THAT(requests_of(rig, "atomize-2-wave-2"), IsEmpty()) << "its readings agreed";
+    EXPECT_THAT(requests_of(rig, "atomize-1-wave-3"), IsEmpty()) << "two of three settled it";
+    EXPECT_THAT(opened(rig, "settle-"), IsEmpty());
+    EXPECT_THAT(progress(), Contains("atomize: the infantry reads 1 window again, wave 2: their readings "
+                                     "left a sentence unsettled"));
+}
+
+TEST_F(AtomizeStageTest, ALoneReadingIsReadAgainWhereTheModelWasUnsure) {
+    use_variant("sure", one_where_sure);
+    OracleArmy rig{{s5_unsure()}};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(output.findings, IsEmpty());
+    EXPECT_EQ(atoms_of(output), lecture_ledger()) << "two readings that agree settle S5";
+
+    const std::vector<llm::ChatRequest> first = requests_of(rig, "atomize-1");
+    ASSERT_EQ(first.size(), 1U);
+    EXPECT_TRUE(first[0].token_probabilities) << "how sure each answer was, a token at a time";
+    EXPECT_FALSE(first[0].n.has_value()) << "one sample";
+    const std::vector<llm::ChatRequest> again = requests_of(rig, "atomize-1-wave-2");
+    ASSERT_EQ(again.size(), 1U) << "S5 was read at 0.5, under 0.9";
+    EXPECT_EQ(again[0].seed, *first[0].seed + 1);
+    EXPECT_THAT(requests_of(rig, "atomize-2-wave-2"), IsEmpty()) << "the oracle was sure of every sentence";
+    EXPECT_THAT(opened(rig, "settle-"), IsEmpty());
+}
+
+TEST_F(AtomizeStageTest, AnUnsureReadingWithNoWaveLeftGoesToTheCommander) {
+    use_variant("sure-once", [](reason::Tier& tier) {
+        tier.atomize.waves = reason::Waves{.first = 1, .step = 0, .max = 1, .quorum = 0.66, .sure = 0.9};
+    });
+    OracleArmy rig{{s5_unsure()}};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(output.findings, IsEmpty());
+    EXPECT_EQ(atoms_of(output), lecture_ledger());
+    EXPECT_THAT(requests_of(rig, "atomize-1-wave-2"), IsEmpty());
+    const std::vector<llm::ChatRequest> settled = opened(rig, "settle-");
+    ASSERT_EQ(settled.size(), 1U) << "S5, which the lone reading was unsure of";
+    EXPECT_EQ(asked_in(settled[0]), ids(5, 5));
+}
+
+TEST_F(AtomizeStageTest, WavesStopAtTheTiersMaxAndTheCommanderSettlesWhatIsLeft) {
+    use_variant("two-at-most", [](reason::Tier& tier) {
+        tier.atomize.waves = reason::Waves{.first = 1, .step = 1, .max = 2, .quorum = 0.66, .sure = 0.9};
+    });
+    // The first reading unsure of S5, the second reading it otherwise: a tie.
+    OracleArmy rig{{s5_unsure(), reworded("atomize-1-wave-2", [](json::Json& answer) {
+                        row(answer, 5)["atoms"][0]["kind"] = "fact";
+                    })}};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(output.findings, IsEmpty());
+    EXPECT_EQ(atoms_of(output), lecture_ledger());
+    EXPECT_EQ(requests_of(rig, "atomize-1-wave-2").size(), 1U) << "the first was unsure";
+    EXPECT_THAT(requests_of(rig, "atomize-1-wave-3"), IsEmpty())
+        << "two is the max, though a third could break the tie";
+    const std::vector<llm::ChatRequest> settled = opened(rig, "settle-");
+    ASSERT_EQ(settled.size(), 1U) << "the tie, the commander's";
+    EXPECT_EQ(asked_in(settled[0]), ids(5, 5));
+}
+
+TEST_F(AtomizeStageTest, AWindowNoAnswerReadIsNotReadAgain) {
+    use_variant("sure", one_where_sure);
+    OracleArmy rig{{oracle::refusal(oracle::When{.mission = "atomize-2", .calls = 0})}};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(output.findings, ElementsAre(HasSubstr("have no atoms: the models declined to read them")));
+    EXPECT_THAT(requests_of(rig, "atomize-2-wave-2"), IsEmpty()) << "the same question, the same refusal";
 }
 
 // --- What no model could do ------------------------------------------------------------
@@ -688,14 +799,6 @@ TEST_F(AtomizeStageTest, AnOutlineThatDoesNotCoverItsTranscriptIsABug) {
     knowledge::Outline outline = lecture_outline();
     outline.sections.pop_back();
     EXPECT_ERRC(run(rig.raise(), lecture(), outline), Errc::internal);
-}
-
-TEST_F(AtomizeStageTest, ATierThatAsksForWavesIsRefused) {
-    use_variant("max-waves", [](reason::Tier& tier) { tier.atomize.waves.step = 1; });
-    OracleArmy rig;
-    const Result<StageOutput> output = run(rig.raise());
-    EXPECT_ERRC(output, Errc::unsupported);
-    EXPECT_THAT(output.error().message(), HasSubstr("the tier 'max-waves' asks for more waves"));
 }
 
 TEST_F(AtomizeStageTest, ATierRReportDoesNotShipIsNotFound) {

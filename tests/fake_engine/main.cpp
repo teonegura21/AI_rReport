@@ -64,6 +64,12 @@
 //   "replies": [...]        with n: choice i answers replies[i] (default: the
 //                           same answer for every choice)
 //   "reasoning": "text"     think this first (delta.reasoning_content)
+//   "logprobs": true        llama-server's fields: each token's probability,
+//   "post_sampling_probs":  after the sampler chain when true, sent with its
+//                           chunk (rr/fake_engine/stream.hpp); "top_logprobs"
+//                           without "logprobs" is refused with 400, as
+//                           llama-server refuses it
+//   "probability": p        every token's probability (default: 1)
 //   "max_tokens": N         the OpenAI field: at most N pieces, reasoning
 //                           included ("length" when the answer is cut)
 //   "ignore_eos": true      llama-server's field: with no reply and
@@ -238,6 +244,8 @@ T knob(const rr::json::Json& body, const char* name, T fallback) {
     }
     if constexpr (std::is_same_v<T, bool>) {
         return found->is_boolean() ? found->get<bool>() : fallback;
+    } else if constexpr (std::is_floating_point_v<T>) {
+        return found->is_number() ? found->get<T>() : fallback;
     } else {
         return found->is_number_integer() ? found->get<T>() : fallback;
     }
@@ -283,7 +291,7 @@ std::vector<std::string> pieces(std::string_view text) {
 rr::fake_engine::ChoicePlan choice_plan(const std::optional<std::string>& reply,
                                         const std::vector<std::string>& reasoning,
                                         const rr::json::Json& body) {
-    rr::fake_engine::ChoicePlan choice{.reasoning = reasoning};
+    rr::fake_engine::ChoicePlan choice{.reasoning = reasoning, .probability = knob(body, "probability", 1.0)};
     const int max_tokens = knob(body, "max_tokens", -1);
     if (reply.has_value()) {
         choice.content = pieces(*reply);
@@ -438,6 +446,11 @@ rr::Result<std::string> oracle_answer(const rr::oracle::Oracle& oracle, const rr
 rr::fake_engine::StreamPlan plan_for(const rr::json::Json& body, const Prompt& prompt,
                                      const Options& options) {
     rr::fake_engine::StreamPlan plan{.model = options.alias, .token_ms = options.token_ms};
+    if (knob(body, "logprobs", false)) {
+        plan.probabilities = knob(body, "post_sampling_probs", false)
+                                 ? rr::fake_engine::Probabilities::after_sampling
+                                 : rr::fake_engine::Probabilities::before_sampling;
+    }
     if (const auto stream_options = body.find("stream_options");
         stream_options != body.end() && stream_options->is_object()) {
         plan.include_usage = knob(*stream_options, "include_usage", false);
@@ -609,6 +622,11 @@ int main(int argc, char** argv) {
                 ++abandoned_requests;  // the caller gave up while this engine was busy
                 return Response::json(503, R"({"error":{"code":503,"message":"nobody is listening"}})");
             }
+        }
+        if (body->contains("top_logprobs") && !knob(*body, "logprobs", false)) {
+            return Response::json(
+                400,
+                R"({"error":{"code":400,"message":"top_logprobs requires logprobs to be set to true","type":"invalid_request_error"}})");
         }
         if (knob(*body, "fail", false)) {
             return Response::json(

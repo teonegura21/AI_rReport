@@ -15,12 +15,23 @@
 // Every choice chunk carries its "index"; the choices' tokens interleave. One
 // "[DONE]" ends the stream. The fake's chunks are deterministic ("id" and
 // "created" are fixed), so tests can compare events exactly.
+//
+// With "logprobs": true (and "top_logprobs" 1, as rr_llm asks), each token's
+// chunk carries, beside its delta, "logprobs": {"content": [one entry]}: the
+// token's id, text and bytes, its probability, and its alternatives, here
+// itself. The probability is "prob" (and "top_probs") after the sampler
+// chain, with "post_sampling_probs": true, else "logprob" (and
+// "top_logprobs"), its logarithm before it; a probability of 0 has the
+// lowest float's logarithm, since JSON has no -inf (llama-server's
+// completion_token_output::logarithm()). Reasoning tokens carry theirs too.
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -35,11 +46,20 @@ struct ChoicePlan {
     std::vector<std::string> reasoning{};  // reasoning_content pieces, before the content
     std::vector<std::string> content{};
     std::string finish_reason = "stop";
+    double probability = 1;  // each token's, when they are sent
+};
+
+// The token probabilities a stream carries (see the header comment).
+enum class Probabilities : std::uint8_t {
+    none,
+    before_sampling,  // "logprob"
+    after_sampling    // "prob": post_sampling_probs
 };
 
 struct StreamPlan {
     std::string model = "fake";
     std::vector<ChoicePlan> choices{ChoicePlan{}};  // by index
+    Probabilities probabilities = Probabilities::none;
     bool include_usage = false;
     std::int64_t prompt_tokens = 1;
     std::int64_t cached_tokens = 0;  // of the prompt's, served from a cache, not read
@@ -77,12 +97,39 @@ inline std::string role_event(const StreamPlan& plan, std::size_t choice = 0) {
     return chunk(plan, one_choice(json::Json{{"content", nullptr}, {"role", "assistant"}}, nullptr, choice));
 }
 
+// The "logprobs" of one token, `text`, drawn with `probability`.
+inline json::Json token_logprobs(Probabilities kind, std::string_view text, double probability) {
+    json::Json bytes = json::Json::array();
+    for (const char byte : text) {
+        bytes.push_back(static_cast<unsigned char>(byte));
+    }
+    const bool after = kind == Probabilities::after_sampling;
+    const double logarithm =
+        probability > 0 ? std::log(probability) : static_cast<double>(std::numeric_limits<float>::lowest());
+    json::Json token{{"id", 0}, {"token", text}, {"bytes", std::move(bytes)}};
+    token[after ? "prob" : "logprob"] = after ? probability : logarithm;
+    json::Json entry = token;
+    entry[after ? "top_probs" : "top_logprobs"] = json::Json::array({std::move(token)});
+    return json::Json{{"content", json::Json::array({std::move(entry)})}};
+}
+
+// A chunk of one token, `text`, of choice `choice`'s `field`.
+inline std::string token_event(const StreamPlan& plan, std::string_view field, std::string_view text,
+                               std::size_t choice) {
+    json::Json choices = one_choice(json::Json{{std::string{field}, text}}, nullptr, choice);
+    if (plan.probabilities != Probabilities::none) {
+        choices[0]["logprobs"] =
+            token_logprobs(plan.probabilities, text, plan.choices.at(choice).probability);
+    }
+    return chunk(plan, std::move(choices));
+}
+
 inline std::string content_event(const StreamPlan& plan, std::string_view text, std::size_t choice = 0) {
-    return chunk(plan, one_choice(json::Json{{"content", text}}, nullptr, choice));
+    return token_event(plan, "content", text, choice);
 }
 
 inline std::string reasoning_event(const StreamPlan& plan, std::string_view text, std::size_t choice = 0) {
-    return chunk(plan, one_choice(json::Json{{"reasoning_content", text}}, nullptr, choice));
+    return token_event(plan, "reasoning_content", text, choice);
 }
 
 inline std::int64_t completion_tokens(const ChoicePlan& choice) {

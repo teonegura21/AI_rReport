@@ -3,7 +3,9 @@
 // [DONE], error events, error statuses and silences.
 #include <rr/llm/openai_provider.hpp>
 
+#include <array>
 #include <chrono>
+#include <cmath>
 #include <format>
 #include <functional>
 #include <limits>
@@ -15,6 +17,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <rr/fake_engine/stream.hpp>
 #include <rr/net/http_server.hpp>
 #include <rr/net/sse.hpp>
 #include <rr/testkit/result.hpp>
@@ -26,6 +29,7 @@ namespace {
 
 using namespace std::chrono_literals;
 using testing::ask;
+using ::testing::DoubleNear;
 using ::testing::HasSubstr;
 using testkit::unwrap;
 using Response = net::HttpServer::Response;
@@ -203,6 +207,131 @@ TEST(OpenAiProvider, SendsSamplingAndThinkingAsLlamaServerReadsThem) {
     const json::Json plain = unwrap(chat_request_body(request, Dialect::llama_server, {.thinking = true}));
     EXPECT_FALSE(plain.contains("reasoning_budget_message")) << "no closing: the end tag alone";
     EXPECT_FALSE(plain.contains("reasoning_effort")) << "the template's own level";
+}
+
+TEST(OpenAiProvider, AsksHowSureTheModelWasAfterItsSamplerChain) {
+    ChatRequest request = ask("an atom, please");
+    request.token_probabilities = true;
+    json::Json body = unwrap(chat_request_body(request, Dialect::llama_server, {}));
+    EXPECT_EQ(body["logprobs"], true);
+    EXPECT_EQ(body["top_logprobs"], 1) << "the least that sends the sampled token's (its default is 20)";
+    EXPECT_EQ(body["post_sampling_probs"], true) << "after the chain: the chance another sample agrees";
+
+    const json::Json plain = unwrap(chat_request_body(ask("an atom, please"), Dialect::llama_server, {}));
+    for (const char* field : {"logprobs", "top_logprobs", "post_sampling_probs"}) {
+        EXPECT_FALSE(plain.contains(field)) << field << ": not asked, not sent";
+    }
+    const auto elsewhere = chat_request_body(request, Dialect::openai, {});
+    ASSERT_ERRC(elsewhere, Errc::unsupported);
+    EXPECT_THAT(elsewhere.error().message(), HasSubstr("token_probabilities"))
+        << "probabilities after the chain are llama-server's own";
+}
+
+// A chunk whose delta adds `content`, carrying `logprobs` as it is.
+std::string token_chunk(std::string_view content, std::string_view logprobs) {
+    return event(std::format(
+        R"({{"choices":[{{"delta":{{"content":{}}},"finish_reason":null,"index":0,"logprobs":{}}}]}})",
+        json::dump(json::Json(content)), logprobs));
+}
+
+// One token's entry: its bytes and its probability, as `field` names it.
+std::string entry(std::string_view text, std::string_view field, double value) {
+    return std::format(R"({{"id":7,"token":{},"bytes":{},"{}":{},"top_probs":[]}})",
+                       json::dump(json::Json(text)),
+                       json::dump(json::Json(std::vector<int>(text.begin(), text.end()))), field, value);
+}
+
+TEST(OpenAiProvider, PlacesEachTokensProbabilityOnTheBytesItWrote) {
+    const std::vector<std::string> stream{
+        event(
+            R"({"choices":[{"delta":{"content":null,"role":"assistant"},"finish_reason":null,"index":0}]})"),
+        event(std::format(
+            R"({{"choices":[{{"delta":{{"reasoning_content":"Hmm"}},"finish_reason":null,"index":0,"logprobs":{{"content":[{}]}}}}]}})",
+            entry("Hmm", "prob", 0.3))),
+        token_chunk(R"({")", std::format(R"({{"content":[{}]}})", entry(R"({")", "prob", 0.9))),
+        token_chunk("kind", std::format(R"({{"content":[{}]}})", entry("kind", "logprob", std::log(0.5)))),
+        token_chunk(R"(":)", "null"),
+        token_chunk(R"("claim")", std::format(R"({{"content":[{},{}]}})", entry(R"("cl)", "prob", 0.8),
+                                              entry(R"(aim")", "prob", 0.6))),
+        token_chunk("}", std::format(R"({{"content":[{}]}})", entry("\n\n}", "prob", 1.0))),
+        event(R"({"choices":[{"delta":{},"finish_reason":"stop","index":0}]})"),
+        event("[DONE]")};
+    const ModelServer server{[&stream](const auto&) { return stream_of(stream); }};
+    ChatRequest request = ask("an atom");
+    request.token_probabilities = true;
+    const Choice answer = unwrap(provider_for(server).chat(request, {}, {})).first();
+
+    ASSERT_EQ(answer.content, R"({"kind":"claim"})");
+    const std::vector<std::array<std::size_t, 2>> bytes{{0, 2}, {2, 6}, {8, 11}, {11, 15}, {15, 16}};
+    const std::vector<double> probabilities{0.9, 0.5, 0.8, 0.6, 1.0};
+    ASSERT_EQ(answer.probabilities.size(), bytes.size())
+        << "the reasoning's token is not kept, and a chunk of no entry leaves its bytes uncovered";
+    for (std::size_t index = 0; index < bytes.size(); ++index) {
+        EXPECT_EQ(answer.probabilities[index].begin, bytes[index][0]) << index;
+        EXPECT_EQ(answer.probabilities[index].end, bytes[index][1]) << index;
+        EXPECT_THAT(answer.probabilities[index].probability, DoubleNear(probabilities[index], 1e-12))
+            << index;
+    }
+    // "kind": a logprob, its logarithm; "claim": two entries, the last ending where the
+    // chunk's content ends; "}": a token whose text reached back before it, cut there.
+}
+
+TEST(OpenAiProvider, RefusesATokenProbabilityThatIsNotOne) {
+    for (const std::string& logprobs : {std::format(R"({{"content":[{}]}})", entry("a", "prob", 1.5)),
+                                        std::format(R"({{"content":[{}]}})", entry("a", "prob", -0.1)),
+                                        std::string{R"({"content":[{"token":"a","bytes":[97]}]})"},
+                                        std::string{R"({"content":[{"prob":0.5}]})"}}) {
+        const std::vector<std::string> stream{
+            token_chunk("a", logprobs),
+            event(R"({"choices":[{"delta":{},"finish_reason":"stop","index":0}]})"), event("[DONE]")};
+        const ModelServer server{[&stream](const auto&) { return stream_of(stream); }};
+        EXPECT_ERRC(provider_for(server).chat(ask("a"), {}, {}), Errc::unsupported) << logprobs;
+    }
+    const std::vector<std::string> rounded{
+        token_chunk("a", std::format(R"({{"content":[{}]}})", entry("a", "prob", 1.0000001))),
+        event(R"({"choices":[{"delta":{},"finish_reason":"stop","index":0}]})"), event("[DONE]")};
+    const ModelServer server{[&rounded](const auto&) { return stream_of(rounded); }};
+    EXPECT_EQ(unwrap(provider_for(server).chat(ask("a"), {}, {})).first().probabilities,
+              (std::vector<TokenProbability>{{.begin = 0, .end = 1, .probability = 1.0}}))
+        << "a rounding above 1 is 1";
+
+    // A reasoning token's entry is not read at all: no content, nothing to place it on.
+    const std::vector<std::string> thought{
+        event(R"({"choices":[{"delta":{"reasoning_content":"Hm"},"finish_reason":null,"index":0,)"
+              R"("logprobs":{"content":[{"prob":7}]}}]})"),
+        token_chunk("a", "null"), event(R"({"choices":[{"delta":{},"finish_reason":"stop","index":0}]})"),
+        event("[DONE]")};
+    const ModelServer thinking{[&thought](const auto&) { return stream_of(thought); }};
+    EXPECT_OK(provider_for(thinking).chat(ask("a"), {}, {}));
+}
+
+// The fake engine's stream, as the end-to-end tests run it, read by the real
+// reader: the two agree on where each token's probability goes.
+TEST(OpenAiProvider, ReadsTheFakeEnginesProbabilitiesAsLlamaServerSendsThem) {
+    for (const fake_engine::Probabilities kind :
+         {fake_engine::Probabilities::after_sampling, fake_engine::Probabilities::before_sampling}) {
+        const fake_engine::StreamPlan plan{
+            .model = "infantry",
+            .choices = {fake_engine::ChoicePlan{
+                .reasoning = {"So"}, .content = {R"({"a")", ":", "1}"}, .probability = 0.25}},
+            .probabilities = kind};
+        std::vector<std::string> stream;
+        for (const std::string& data : fake_engine::events(plan)) {
+            stream.push_back(event(data));
+        }
+        const ModelServer server{[&stream](const auto&) { return stream_of(stream); }};
+        ChatRequest request = ask("a");
+        request.token_probabilities = true;
+        const Choice answer = unwrap(provider_for(server).chat(request, {}, {})).first();
+        EXPECT_EQ(answer.content, R"({"a":1})");
+        ASSERT_EQ(answer.probabilities.size(), 3U) << "the reasoning's token is not kept";
+        const std::vector<std::array<std::size_t, 2>> bytes{{0, 4}, {4, 5}, {5, 7}};
+        for (std::size_t index = 0; index < bytes.size(); ++index) {
+            EXPECT_EQ(answer.probabilities[index].begin, bytes[index][0]);
+            EXPECT_EQ(answer.probabilities[index].end, bytes[index][1]);
+            EXPECT_THAT(answer.probabilities[index].probability, DoubleNear(0.25, 1e-12));
+        }
+    }
 }
 
 TEST(OpenAiProvider, TheSchemaReachesTheServerInItsOwnOrder) {

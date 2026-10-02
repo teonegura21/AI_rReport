@@ -114,6 +114,43 @@ TEST(Vote, TheMedoidIsTheWinnersMostTypicalText) {
     EXPECT_EQ(unwrap(vote_keyed({kSentences.data(), 1}, ballots, 0.5))[0].medoid, 2);
 }
 
+// One sample of each sentence, each as sure as the probability of its
+// tokens says: S1 sure, S2 not, S3 not known.
+std::vector<Ballot> lone_samples() {
+    return {{.item = "S1", .value = "claim", .sample = 0, .confidence = 0.95},
+            {.item = "S2", .value = "aside", .sample = 0, .confidence = 0.5},
+            {.item = "S3", .value = "claim", .sample = 0}};
+}
+
+TEST(Vote, ALoneSampleSettlesItsItemOnlyWhenSure) {
+    const std::vector<Consensus> votes = unwrap(vote_keyed(kSentences, lone_samples(), 0.66, 0.9));
+    EXPECT_EQ(votes[0].winner, "claim") << "0.95 reaches 0.9";
+    EXPECT_EQ(votes[0].medoid, 0);
+    EXPECT_FALSE(votes[1].winner.has_value()) << "0.5 does not";
+    EXPECT_EQ(votes[1].counts, (std::vector<Count>{{.value = "aside", .votes = 1}}))
+        << "counted all the same";
+    EXPECT_FALSE(votes[2].winner.has_value()) << "a confidence not known is no confidence";
+
+    const std::vector<Ballot> at_the_bar{{.item = "S1", .value = "claim", .sample = 0, .confidence = 0.9}};
+    EXPECT_TRUE(unwrap(vote_keyed({kSentences.data(), 1}, at_the_bar, 0.66, 0.9))[0].winner.has_value())
+        << "the bar is reached at it";
+    // 0.3 × 3 is 0.8999999999999999 in floating point: the vote's slack keeps it at the bar.
+    const std::vector<Ballot> a_hair_under{
+        {.item = "S1", .value = "claim", .sample = 0, .confidence = 0.3 * 3}};
+    EXPECT_TRUE(unwrap(vote_keyed({kSentences.data(), 1}, a_hair_under, 0.66, 0.9))[0].winner.has_value());
+
+    for (const Consensus& vote : unwrap(vote_keyed(kSentences, lone_samples(), 0.66))) {
+        EXPECT_TRUE(vote.winner.has_value()) << vote.item << ": sure 0, every lone sample settles, as before";
+    }
+}
+
+TEST(Vote, SamplesThatAgreeSettleTheirItemHoweverUnsureEachWas) {
+    const std::vector<Ballot> two{{.item = "S1", .value = "claim", .sample = 0, .confidence = 0.1},
+                                  {.item = "S1", .value = "claim", .sample = 1}};
+    EXPECT_EQ(unwrap(vote_keyed({kSentences.data(), 1}, two, 0.66, 0.9))[0].winner, "claim")
+        << "agreement is evidence a sample's own probability is not";
+}
+
 TEST(Vote, RefusesBallotsItCannotCount) {
     const std::vector<Ballot> stray{{.item = "S9", .value = "claim", .sample = 0}};
     EXPECT_ERRC(vote_keyed(kSentences, stray, 0.5), Errc::invalid_argument) << "an item not voted on";
@@ -144,6 +181,20 @@ TEST(Waves, DrawMoreOnlyWhereItCanHelp) {
     EXPECT_EQ(next_wave(three_ways, 3, Waves{.first = 3, .step = 0, .max = 3, .quorum = 0.66}), 0);
 }
 
+TEST(Waves, AnUnsureLoneSampleDrawsASecond) {
+    const Waves waves{.first = 1, .step = 1, .max = 3, .quorum = 0.66, .sure = 0.9};
+    const std::vector<Consensus> votes =
+        unwrap(vote_keyed(kSentences, lone_samples(), waves.quorum, waves.sure));
+    EXPECT_EQ(next_wave(votes, 1, waves), 1) << "S2 and S3 were unsure: a second sample could settle them";
+
+    std::vector<Ballot> sure = lone_samples();
+    for (Ballot& ballot : sure) {
+        ballot.confidence = 1.0;
+    }
+    const std::vector<Consensus> settled = unwrap(vote_keyed(kSentences, sure, waves.quorum, waves.sure));
+    EXPECT_EQ(next_wave(settled, 1, waves), 0) << "every lone sample was sure: one each is enough";
+}
+
 TEST(Waves, AreChecked) {
     EXPECT_TRUE(waves_problems(Waves{.first = 3, .step = 2, .max = 7, .quorum = 0.66}).empty());
     EXPECT_TRUE(waves_problems(Waves{}).empty());
@@ -154,6 +205,11 @@ TEST(Waves, AreChecked) {
     EXPECT_EQ(waves_problems(Waves{.step = -1}).size(), 1U);
     EXPECT_EQ(waves_problems(Waves{.quorum = 0.0}).size(), 1U);
     EXPECT_EQ(waves_problems(Waves{.quorum = std::nan("")}).size(), 1U);
+    EXPECT_TRUE(waves_problems(Waves{.sure = 0.0}).empty()) << "0: any lone sample settles its item";
+    EXPECT_TRUE(waves_problems(Waves{.sure = 1.0}).empty());
+    EXPECT_EQ(waves_problems(Waves{.sure = 1.5}).size(), 1U);
+    EXPECT_EQ(waves_problems(Waves{.sure = -0.1}).size(), 1U);
+    EXPECT_EQ(waves_problems(Waves{.sure = std::nan("")}).size(), 1U);
 }
 
 TEST(Medoid, PicksTheTextClosestToAllOthers) {

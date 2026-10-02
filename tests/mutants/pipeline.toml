@@ -1184,8 +1184,8 @@ name = "ballots-are-numbered-from-one"
 file = "src/pipeline/readings.cpp"
 expect = "Readings.BallotsAreOneASentenceASample"
   [[mutant.edit]]
-  from = '''                                             .sample = static_cast<int>(sample)});'''
-  to = '''                                             .sample = static_cast<int>(sample + 1)});'''
+  from = '''                                             .sample = static_cast<int>(sample),'''
+  to = '''                                             .sample = static_cast<int>(sample + 1),'''
 
 [[mutant]]
 name = "the-base-is-the-last-of-a-tie"
@@ -1608,7 +1608,7 @@ name = "nothing-is-left-unsettled"
 file = "src/pipeline/atomize_stage.cpp"
 expect = "AtomizeStageTest.WhatNoVoteSettlesTheCommanderReadsAgainThinking"
   [[mutant.edit]]
-  from = '''        window.unsettled = unsettled(window.readings[base], window.ids, *votes);'''
+  from = '''        window.unsettled = unsettled(window.readings[base], window.ids, votes);'''
   to = '''        window.unsettled = {};'''
 
 [[mutant]]
@@ -1796,14 +1796,6 @@ expect = "AtomizeStageTest.AnOutlineThatDoesNotCoverItsTranscriptIsABug"
         return fail(Errc::internal,'''
   to = '''        !problems.empty() && false) {
         return fail(Errc::internal,'''
-
-[[mutant]]
-name = "waves-are-ignored"
-file = "src/pipeline/atomize_stage.cpp"
-expect = "AtomizeStageTest.ATierThatAsksForWavesIsRefused"
-  [[mutant.edit]]
-  from = '''    if (tier.atomize.waves.step > 0) {'''
-  to = '''    if (tier.atomize.waves.step > 0 && false) {'''
 
 [[mutant]]
 name = "the-key-forgets-what-counts-as-a-repeat"
@@ -3775,3 +3767,155 @@ expect = "JobTier.IsAShippedTierOrAVariantUnlessTheContextFindsItsOwn"
   [[mutant.edit]]
   from = '''reason::find_tier(context.job->tier);'''
   to = '''reason::builtin_tier(context.job->tier);'''
+
+# P28: how sure a reading was of each sentence (rr/pipeline/readings.hpp), and atomize's
+# waves (rr/pipeline/atomize_stage.hpp).
+
+[[mutant]]
+name = "the-kind-is-no-decision"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.ConfidenceIsHowLikelyTheTokensThatChoseAVerdictWere"
+  [[mutant.edit]]
+  from = '''return {value_at(spans, atom + "/kind"), value_at(spans, atom + "/modality"),'''
+  to = '''return {value_at(spans, atom + "/modality"), value_at(spans, atom + "/modality"),'''
+
+[[mutant]]
+name = "the-modality-is-no-decision"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.ConfidenceIsHowLikelyTheTokensThatChoseAVerdictWere"
+  [[mutant.edit]]
+  from = '''return {value_at(spans, atom + "/kind"), value_at(spans, atom + "/modality"),'''
+  to = '''return {value_at(spans, atom + "/kind"), value_at(spans, atom + "/kind"),'''
+
+[[mutant]]
+name = "the-whole-must-quote-is-a-decision"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.ConfidenceIsHowLikelyTheTokensThatChoseAVerdictWere"
+  [[mutant.edit]]
+  from = '''Bytes{.begin = quote.begin, .end = quote.begin + 1}};'''
+  to = '''quote};'''
+
+[[mutant]]
+name = "an-atom-at-all-is-no-decision"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.ConfidenceIsHowLikelyTheTokensThatChoseAVerdictWere"
+  [[mutant.edit]]
+  from = '''        decisions.push_back(Bytes{.begin = from, .end = atom.begin + 1});'''
+  to = '''        decisions.push_back(Bytes{.begin = from, .end = from});'''
+
+[[mutant]]
+name = "no-atom-more-is-no-decision"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.ConfidenceIsHowLikelyTheTokensThatChoseAVerdictWere"
+  [[mutant.edit]]
+  from = '''    decisions.push_back(Bytes{.begin = from, .end = whole.end});'''
+  to = '''    decisions.push_back(Bytes{.begin = from, .end = from});'''
+
+[[mutant]]
+name = "an-also-entry-is-no-decision"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.ConfidenceIsHowLikelyTheTokensThatChoseAVerdictWere"
+  [[mutant.edit]]
+  from = '''                theirs.push_back(value_at(spans, std::format("{}/also/{}", atom, named)));
+'''
+  to = ''''''
+
+[[mutant]]
+name = "an-atom-cited-by-also-lends-no-labels"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.ConfidenceIsHowLikelyTheTokensThatChoseAVerdictWere"
+  [[mutant.edit]]
+  from = '''                theirs.insert(theirs.end(), labels.begin(), labels.end());
+'''
+  to = ''''''
+
+[[mutant]]
+name = "a-token-counts-twice"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.ConfidenceCountsEachTokenOnceAndIsNotKnownWhereATokenIsMissing"
+  [[mutant.edit]]
+  from = '''    std::set<std::size_t> counted;  // the tokens, by index'''
+  to = '''    std::multiset<std::size_t> counted;  // the tokens, by index'''
+
+[[mutant]]
+name = "a-gap-between-tokens-is-covered"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.ConfidenceCountsEachTokenOnceAndIsNotKnownWhereATokenIsMissing"
+  [[mutant.edit]]
+  from = '''            if (token->begin > covered) {'''
+  to = '''            if (token->begin > covered && false) {'''
+
+[[mutant]]
+name = "a-ballot-forgets-its-confidence"
+file = "src/pipeline/readings.cpp"
+expect = "Readings.BallotsCarryTheirReadingsConfidence"
+  [[mutant.edit]]
+  from = '''? std::optional{sure->second}'''
+  to = '''? std::optional{1.0}'''
+
+[[mutant]]
+name = "probabilities-are-never-asked"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.ALoneReadingIsReadAgainWhereTheModelWasUnsure"
+  [[mutant.edit]]
+  from = '''        mission.request.token_probabilities = compute_.waves.sure > 0;'''
+  to = '''        mission.request.token_probabilities = compute_.waves.sure > 2;'''
+
+[[mutant]]
+name = "probabilities-are-always-asked"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.AFastTierReadsOnceAndNeverAsksAgain"
+  [[mutant.edit]]
+  from = '''        mission.request.token_probabilities = compute_.waves.sure > 0;'''
+  to = '''        mission.request.token_probabilities = compute_.waves.sure >= 0;'''
+
+[[mutant]]
+name = "a-reading-is-never-sure"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.ALoneReadingIsReadAgainWhereTheModelWasUnsure"
+  [[mutant.edit]]
+  from = '''            reading.confidence = confidence_of(answer.choice.content, answer.choice.probabilities);'''
+  to = '''            (void)confidence_of(answer.choice.content, answer.choice.probabilities);'''
+
+[[mutant]]
+name = "waves-are-never-drawn"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.AWindowWhoseReadingsSplitIsReadAgainFromItsNextSeed"
+  [[mutant.edit]]
+  from = '''        RR_TRY(draw_waves(windows));
+'''
+  to = ''''''
+
+[[mutant]]
+name = "a-wave-draws-the-same-seeds"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.AWindowWhoseReadingsSplitIsReadAgainFromItsNextSeed"
+  [[mutant.edit]]
+  from = '''        mission.request.seed = *mission.request.seed + window.drawn;'''
+  to = '''        mission.request.seed = *mission.request.seed + (0 * window.drawn);'''
+
+[[mutant]]
+name = "a-waves-samples-are-not-counted"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.WavesStopAtTheTiersMaxAndTheCommanderSettlesWhatIsLeft"
+  [[mutant.edit]]
+  from = '''                windows[asked[at]].drawn += samples[at];'''
+  to = '''                windows[asked[at]].drawn += 0 * samples[at];'''
+
+[[mutant]]
+name = "a-window-no-answer-read-is-read-again"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.AWindowNoAnswerReadIsNotReadAgain"
+  [[mutant.edit]]
+  from = '''                if (window.readings.empty()) {
+                    continue;'''
+  to = '''                if (window.readings.empty() && false) {
+                    continue;'''
+
+[[mutant]]
+name = "the-vote-forgets-sure"
+file = "src/pipeline/atomize_stage.cpp"
+expect = "AtomizeStageTest.AnUnsureReadingWithNoWaveLeftGoesToTheCommander"
+  [[mutant.edit]]
+  from = '''compute_.waves.quorum, compute_.waves.sure);'''
+  to = '''compute_.waves.quorum, 0.0);'''

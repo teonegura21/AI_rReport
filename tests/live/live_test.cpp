@@ -11,6 +11,8 @@
 //   * a grammar keeps a schema's fields in the order written (llm.md, P1);
 //   * a request for n answers reports each one's usage, summed (P3);
 //   * a thinking budget ends the thinking, and the model answers (P2);
+//   * each token's probability, after the sampler chain, comes with it,
+//     and an answer's tokens cover its text byte for byte (P28);
 //   * a shared system message is served from the cache, as the pipeline's
 //     prompts rely on (P5's bench);
 //   * a prompt beyond a slot's share is refused before it starts, and
@@ -279,6 +281,33 @@ TEST_F(LiveTest, SeveralAnswersReportTheirOwnUsage) {
     }
     EXPECT_EQ(answer.usage.completion_tokens, 12) << "summed over the answers";
     EXPECT_GT(answer.usage.prompt_tokens, 0);
+}
+
+// rr_llm places each token's probability on the bytes its chunk added
+// (rr/llm/openai_provider.hpp). On an answer of ASCII words held to a
+// schema, every token's text reaches the content, so the tokens must cover
+// it byte for byte, in order: what the fake engine assumes of llama-server.
+TEST_F(LiveTest, EachTokensProbabilityComesWithItAndTheTokensCoverTheAnswer) {
+    llm::ChatRequest asked = request("pool", "Classify the sentence.", 40);
+    asked.json_schema =
+        R"({"type":"object","properties":{"kind":{"enum":["claim","fact","joke"]},)"
+        R"("sure":{"type":"boolean"}},"required":["kind","sure"],"additionalProperties":false})";
+    asked.token_probabilities = true;
+    asked.n = 2;
+    asked.temperature = 1.0;  // the sampler chain decides: probabilities below 1 too
+    const llm::ChatResponse answer = unwrap(models().chat(asked, {}, {}));
+    ASSERT_EQ(answer.choices.size(), 2U);
+    for (const llm::Choice& choice : answer.choices) {
+        ASSERT_FALSE(choice.probabilities.empty()) << choice.content;
+        std::size_t covered = 0;
+        for (const llm::TokenProbability& token : choice.probabilities) {
+            EXPECT_EQ(token.begin, covered) << choice.content;
+            EXPECT_GT(token.probability, 0.0) << "the sampled token was among the chain's candidates";
+            EXPECT_LE(token.probability, 1.0);
+            covered = token.end;
+        }
+        EXPECT_EQ(covered, choice.content.size()) << choice.content;
+    }
 }
 
 // The model never closes its thinking by itself (its weights are random): an

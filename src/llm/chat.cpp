@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <format>
 #include <utility>
 
 #include <rr/core/assert.hpp>
@@ -164,19 +166,40 @@ json::Json to_json(const ChatRequest& request) {
     if (request.reasoning_effort.has_value()) {
         document["reasoning_effort"] = to_string(*request.reasoning_effort);
     }
+    if (request.token_probabilities) {
+        document["token_probabilities"] = true;
+    }
     if (!request.extra.is_null() && !request.extra.empty()) {
         document["extra"] = request.extra;
     }
     return document;
 }
 
+namespace {
+
+// A choice, with its token probabilities when it has them, as [begin, end,
+// probability] triples: compact, for the many tokens of an answer.
+json::Json choice_to_json(const Choice& choice) {
+    json::Json document{{"content", choice.content},
+                        {"reasoning", choice.reasoning},
+                        {"finish_reason", to_string(choice.finish)},
+                        {"completion_tokens", choice.completion_tokens}};
+    if (!choice.probabilities.empty()) {
+        json::Json probabilities = json::Json::array();
+        for (const TokenProbability& token : choice.probabilities) {
+            probabilities.push_back(json::Json::array({token.begin, token.end, token.probability}));
+        }
+        document["probabilities"] = std::move(probabilities);
+    }
+    return document;
+}
+
+}  // namespace
+
 json::Json to_json(const ChatResponse& response) {
     json::Json choices = json::Json::array();
     for (const Choice& choice : response.choices) {
-        choices.push_back({{"content", choice.content},
-                           {"reasoning", choice.reasoning},
-                           {"finish_reason", to_string(choice.finish)},
-                           {"completion_tokens", choice.completion_tokens}});
+        choices.push_back(choice_to_json(choice));
     }
     return {{"choices", std::move(choices)},
             {"model", response.model},
@@ -188,6 +211,29 @@ json::Json to_json(const ChatResponse& response) {
 
 namespace {
 
+// One [begin, end, probability] triple of `content`'s tokens, in order after
+// `previous_end`.
+Result<TokenProbability> token_from_json(const json::Json& triple, std::size_t previous_end,
+                                         std::size_t content_size) {
+    if (!triple.is_array() || triple.size() != 3 || !triple[0].is_number_unsigned() ||
+        !triple[1].is_number_unsigned() || !triple[2].is_number()) {
+        return fail(
+            Errc::invalid_argument,
+            std::format("a token's probability is [begin, end, probability], not {}", json::dump(triple)));
+    }
+    const TokenProbability token{.begin = triple[0].get<std::size_t>(),
+                                 .end = triple[1].get<std::size_t>(),
+                                 .probability = triple[2].get<double>()};
+    if (token.begin < previous_end || token.end <= token.begin || token.end > content_size ||
+        std::isnan(token.probability) || token.probability < 0 || token.probability > 1) {
+        return fail(Errc::invalid_argument,
+                    std::format("a token's probability {} is not of the content's next bytes, with a "
+                                "probability in [0, 1]",
+                                json::dump(triple)));
+    }
+    return token;
+}
+
 Result<Choice> choice_from_json(const json::Json& document) {
     Choice choice;
     RR_TRY_ASSIGN(choice.content, json::get_string(document, "content"));
@@ -195,6 +241,18 @@ Result<Choice> choice_from_json(const json::Json& document) {
     RR_TRY_ASSIGN(const std::string finish, json::get_string(document, "finish_reason"));
     choice.finish = finish_reason_from_string(finish);
     RR_TRY_ASSIGN(choice.completion_tokens, json::get_int(document, "completion_tokens"));
+    if (const auto probabilities = document.find("probabilities"); probabilities != document.end()) {
+        if (!probabilities->is_array()) {
+            return fail(Errc::invalid_argument, "'probabilities' must be a list of a choice's tokens");
+        }
+        std::size_t previous_end = 0;
+        for (const json::Json& triple : *probabilities) {
+            RR_TRY_ASSIGN(const TokenProbability token,
+                          token_from_json(triple, previous_end, choice.content.size()));
+            previous_end = token.end;
+            choice.probabilities.push_back(token);
+        }
+    }
     return choice;
 }
 

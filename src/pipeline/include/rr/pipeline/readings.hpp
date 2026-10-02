@@ -31,6 +31,18 @@
 //   thinking, shown what the readings made of it, and its reading replaces
 //   the base's there (replaced()).
 //
+//   How sure a reading was. With the token probabilities its answer came
+//   with (llm::Choice::probabilities), confidence_of() says, for each
+//   sentence, how likely the tokens that chose its verdict were: the
+//   product of their probabilities, the chance that another sample, from
+//   the same prefix, would have chosen as this one did. Those tokens are
+//   the verdict's: the sentence's filler label; for each atom that cites
+//   it, the atom's kind, its modality, whether it has a must-quote, and,
+//   for an atom of another row, the "also" entry that names it; and whether
+//   its row holds another atom or not. Not the atoms' words: free text
+//   never agrees, and the vote does not ask it to. A lone reading settles
+//   a sentence only as sure as the tier asks (rr/reason/vote.hpp).
+//
 //   What the atoms barely hold. coverage() says how much of a sentence its
 //   atoms hold: the share of its words found in their texts, names, terms
 //   and quotes. A sentence held below half is asked again by the recall
@@ -40,8 +52,10 @@
 #pragma once
 
 #include <cstddef>
+#include <map>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <rr/core/result.hpp>
@@ -49,6 +63,7 @@
 #include <rr/knowledge/atoms.hpp>
 #include <rr/knowledge/ids.hpp>
 #include <rr/knowledge/transcript.hpp>
+#include <rr/llm/chat.hpp>
 #include <rr/reason/vote.hpp>
 
 namespace rr::pipeline {
@@ -58,6 +73,9 @@ namespace rr::pipeline {
 struct Reading {
     std::vector<knowledge::Atom> atoms{};
     std::vector<knowledge::Filler> fillers{};
+    // How sure the answer was of what it made of each sentence
+    // (confidence_of()); a sentence not here: not known.
+    std::map<knowledge::SentenceId, double> confidence{};
 
     friend bool operator==(const Reading&, const Reading&) = default;
 };
@@ -79,8 +97,19 @@ struct Reading {
 // citing it sorted; or "" when it made nothing of it.
 [[nodiscard]] std::string verdict_on(const Reading& reading, knowledge::SentenceId id);
 
+// For each sentence `answer` made something of, how sure it was: the
+// product of the probabilities of the `tokens` that chose its verdict (the
+// header comment). `answer` is the text of an answer the mission's schema
+// accepted (schemas/missions/atomize.json); `tokens` its token
+// probabilities, in order (llm::Choice::probabilities). A sentence some
+// byte of whose verdict no token covers is left out: how sure the answer
+// was of it is not known. Nothing without tokens.
+[[nodiscard]] std::map<knowledge::SentenceId, double> confidence_of(
+    std::string_view answer, std::span<const llm::TokenProbability> tokens);
+
 // The ballots `readings` cast on the sentences `ids`: one each, sample by
-// sample, the atoms' texts joined as the ballot's text.
+// sample, the atoms' texts joined as the ballot's text, its confidence the
+// reading's.
 [[nodiscard]] std::vector<reason::Ballot> ballots_of(std::span<const Reading> readings,
                                                      std::span<const knowledge::SentenceId> ids);
 

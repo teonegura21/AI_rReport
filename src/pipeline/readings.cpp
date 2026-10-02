@@ -9,6 +9,7 @@
 #include <utility>
 
 #include <rr/core/assert.hpp>
+#include <rr/json/spans.hpp>
 #include <rr/knowledge/atoms.hpp>
 #include <rr/text/tokens.hpp>
 
@@ -99,6 +100,73 @@ std::vector<Stretch> grown(std::vector<Stretch> stretches, std::span<const Stret
     return stretches;
 }
 
+// Bytes of an answer's text: [begin, end).
+struct Bytes {
+    std::size_t begin = 0;
+    std::size_t end = 0;
+};
+
+using SpansByPointer = std::map<std::string, json::Span, std::less<>>;
+
+// The bytes of the value at `pointer`: an accepted answer has every value
+// its schema requires.
+Bytes value_at(const SpansByPointer& spans, const std::string& pointer) {
+    const auto found = spans.find(pointer);
+    RR_ASSERT(found != spans.end(), "an accepted answer has every field its schema requires");
+    return Bytes{.begin = found->second.begin, .end = found->second.end};
+}
+
+// The bytes that choose an atom's labels: its kind, its modality, and the
+// first byte of its must_quote, which is null or a quote.
+std::vector<Bytes> labels_of(const SpansByPointer& spans, const std::string& atom) {
+    const Bytes quote = value_at(spans, atom + "/must_quote");
+    return {value_at(spans, atom + "/kind"), value_at(spans, atom + "/modality"),
+            Bytes{.begin = quote.begin, .end = quote.begin + 1}};
+}
+
+// The bytes that choose how many atoms the list at `list` holds: from its
+// bracket to its first atom's brace (any at all?), and after each atom, to
+// the next one's brace or to the closing bracket (one more?).
+void add_count(std::vector<Bytes>& decisions, const SpansByPointer& spans, const std::string& list,
+               std::size_t atoms) {
+    const Bytes whole = value_at(spans, list);
+    std::size_t from = whole.begin;
+    for (std::size_t index = 0; index < atoms; ++index) {
+        const Bytes atom = value_at(spans, std::format("{}/{}", list, index));
+        decisions.push_back(Bytes{.begin = from, .end = atom.begin + 1});
+        from = atom.end;
+    }
+    decisions.push_back(Bytes{.begin = from, .end = whole.end});
+}
+
+// The product of the probabilities of the tokens that overlap any of
+// `decisions`, each token once; none when a byte of them is covered by no
+// token. `tokens` are in order and apart.
+std::optional<double> probability_of(std::span<const llm::TokenProbability> tokens,
+                                     std::span<const Bytes> decisions) {
+    std::set<std::size_t> counted;  // the tokens, by index
+    for (const Bytes& bytes : decisions) {
+        std::size_t covered = bytes.begin;
+        // The first token that ends after the decision begins.
+        auto token = std::ranges::upper_bound(tokens, bytes.begin, {}, &llm::TokenProbability::end);
+        for (; token != tokens.end() && token->begin < bytes.end; ++token) {
+            if (token->begin > covered) {
+                return std::nullopt;  // a byte no token's probability came with
+            }
+            counted.insert(static_cast<std::size_t>(token - tokens.begin()));
+            covered = token->end;
+        }
+        if (covered < bytes.end) {
+            return std::nullopt;
+        }
+    }
+    double probability = 1.0;
+    for (const std::size_t index : counted) {
+        probability *= tokens[index].probability;
+    }
+    return probability;
+}
+
 }  // namespace
 
 json::Json artifact_of(const json::Json& answer) {
@@ -169,6 +237,49 @@ std::string verdict_on(const Reading& reading, SentenceId id) {
     return verdict;
 }
 
+std::map<SentenceId, double> confidence_of(std::string_view answer,
+                                           std::span<const llm::TokenProbability> tokens) {
+    std::map<SentenceId, double> confidence;
+    if (tokens.empty()) {
+        return confidence;  // none asked for, or none sent: nothing is known
+    }
+    const Result<json::Json> document = json::parse(answer);
+    const Result<std::vector<json::Span>> found = json::spans(answer);
+    RR_ASSERT(document.has_value() && found.has_value(), "an accepted answer is JSON");
+    SpansByPointer spans;
+    for (const json::Span& span : *found) {
+        spans.emplace(span.pointer, span);
+    }
+    // The bytes that choose each sentence's verdict (the header comment).
+    std::map<SentenceId, std::vector<Bytes>> decisions;
+    const json::Json& rows = document->at("sentences");
+    for (std::size_t index = 0; index < rows.size(); ++index) {
+        const std::string row = std::format("/sentences/{}", index);
+        std::vector<Bytes>& own = decisions[sentence_of(rows[index].at("sentence"))];
+        own.push_back(value_at(spans, row + "/filler"));
+        const json::Json& atoms = rows[index].at("atoms");
+        add_count(own, spans, row + "/atoms", atoms.size());
+        for (std::size_t at = 0; at < atoms.size(); ++at) {
+            const std::string atom = std::format("{}/atoms/{}", row, at);
+            const std::vector<Bytes> labels = labels_of(spans, atom);
+            own.insert(own.end(), labels.begin(), labels.end());
+            const json::Json& also = atoms[at].at("also");
+            for (std::size_t named = 0; named < also.size(); ++named) {
+                std::vector<Bytes>& theirs = decisions[sentence_of(also[named])];
+                theirs.insert(theirs.end(), labels.begin(), labels.end());
+                theirs.push_back(value_at(spans, std::format("{}/also/{}", atom, named)));
+            }
+        }
+    }
+    for (const auto& [id, bytes] : decisions) {
+        if (const std::optional<double> probability = probability_of(tokens, bytes);
+            probability.has_value()) {
+            confidence.emplace(id, *probability);
+        }
+    }
+    return confidence;
+}
+
 std::vector<reason::Ballot> ballots_of(std::span<const Reading> readings, std::span<const SentenceId> ids) {
     std::vector<reason::Ballot> ballots;
     ballots.reserve(readings.size() * ids.size());
@@ -180,10 +291,14 @@ std::vector<reason::Ballot> ballots_of(std::span<const Reading> readings, std::s
                     text += text.empty() ? atom.text : " " + atom.text;
                 }
             }
+            const auto sure = readings[sample].confidence.find(id);
             ballots.push_back(reason::Ballot{.item = id.str(),
                                              .value = verdict_on(readings[sample], id),
                                              .text = std::move(text),
-                                             .sample = static_cast<int>(sample)});
+                                             .sample = static_cast<int>(sample),
+                                             .confidence = sure != readings[sample].confidence.end()
+                                                               ? std::optional{sure->second}
+                                                               : std::nullopt});
         }
     }
     return ballots;

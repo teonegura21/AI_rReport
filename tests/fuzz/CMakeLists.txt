@@ -48,6 +48,13 @@ rr_add_fuzz_target(markers
     DEPS rr::knowledge
     CORPUS ${CMAKE_CURRENT_SOURCE_DIR}/corpus/markers)
 
+# Where each value of a model's JSON answer stands (rr/json/spans.hpp, P28),
+# against what parse() reads of it.
+rr_add_fuzz_target(json_spans
+    SOURCES json_spans_fuzz.cpp
+    DEPS rr::json
+    CORPUS ${CMAKE_CURRENT_SOURCE_DIR}/corpus/json_spans)
+
 # Caption files, from YouTube or from disk, read into words, cut into
 # sentences, and a model's punctuation projected onto them (rr_transcript).
 rr_add_fuzz_target(captions
