@@ -44,6 +44,7 @@ if(RR_BUILD_HUB AND RR_BUILD_RUNTIME)
         DEPS
             rr::core
             rr::db
+            rr::eval
             rr::json
             rr::library
             rr::net

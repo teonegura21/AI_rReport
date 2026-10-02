@@ -12,6 +12,11 @@
 //     its calls on resume == its calls in a clean run − its answers kept,
 // and the article is byte for byte the clean run's.
 //
+// The eval runs on the same engines (plan P23): `rreport eval run` takes the
+// lecture's snapshot through every stage once a replicate, `score` scores
+// each job by code, and `export` writes the scores; a run asked for again
+// asks nothing again.
+//
 // Where the kill falls: each engine of the killed run answers its first N
 // calls, then hangs every later one (--fake-hang-after), and the kill comes
 // once one has hung. An oracle answers at once, so a kill timed by the clock
@@ -40,6 +45,8 @@
 #include <rr/core/file_io.hpp>
 #include <rr/core/result.hpp>
 #include <rr/db/database.hpp>
+#include <rr/eval/set.hpp>
+#include <rr/eval/snapshot.hpp>
 #include <rr/json/json.hpp>
 #include <rr/library/library.hpp>
 #include <rr/library/stage_store.hpp>
@@ -245,6 +252,7 @@ protected:
     }
 
     [[nodiscard]] const std::filesystem::path& captions() const { return captions_; }
+    [[nodiscard]] const testkit::TempDir& home() const { return home_; }
     [[nodiscard]] Library library(std::string_view name) const { return Library{home_ / std::string{name}}; }
 
 private:
@@ -363,6 +371,109 @@ TEST_F(EndToEnd, AJobKilledAnywhereResumesAskingOnlyWhatItsMemoDidNotKeep) {
         EXPECT_EQ(library.article(job), clean.article) << "the article, byte for byte";
     }
     EXPECT_GT(kept_at_all, 0) << "kills that all fell before any answer was kept would test nothing";
+}
+
+// The eval's set: the lecture, in the US public domain.
+constexpr std::string_view kSet = R"toml(
+[[video]]
+id = "weighing-radium"
+title = "Weighing radium"
+url = "https://www.youtube.com/watch?v=abc123XYZ_0"
+type = "talk"
+captions = "manual"
+split = "dev"
+licence = "us-public-domain"
+attribution = "Science Hour"
+)toml";
+
+// The column of `name` in a CSV header.
+std::size_t column(const std::string& header, std::string_view name) {
+    std::size_t index = 0;
+    for (std::size_t at = 0; at < header.size(); ++index) {
+        const std::size_t end = std::min(header.find(',', at), header.size());
+        if (std::string_view{header}.substr(at, end - at) == name) {
+            return index;
+        }
+        at = end + 1;
+    }
+    return std::string::npos;
+}
+
+// The `index`th cell of a CSV row without quotes.
+std::string cell(const std::string& row, std::size_t index) {
+    std::size_t at = 0;
+    for (std::size_t skipped = 0; skipped < index; ++skipped) {
+        at = row.find(',', at) + 1;
+    }
+    return row.substr(at, row.find_first_of(",\r", at) - at);
+}
+
+TEST_F(EndToEnd, AnEvalRunTakesEachReplicateThroughThenScoresAndExportsIt) {
+    // The eval's directory: its set, and the lecture's snapshot, as `rreport
+    // eval fetch` keeps it.
+    const std::filesystem::path eval_dir = home() / "eval";
+    (void)home().write_file("eval/sets/m2.toml", kSet);
+    const eval::EvalSet set = unwrap(eval::read_set(eval_dir, "m2"));
+    const pipeline::Source lecture{
+        .origin = pipeline::Origin::web,
+        .video = media::Video{.id = "abc123XYZ_0",
+                              .url = "https://www.youtube.com/watch?v=abc123XYZ_0",
+                              .title = "Weighing radium",
+                              .channel = "Science Hour"},
+        .captions = pipeline::SourceCaptions{.language = "en",
+                                             .kind = media::CaptionKind::manual,
+                                             .format = transcript::CaptionFormat::vtt,
+                                             .content = lecture_captions()}};
+    (void)unwrap(eval::keep_snapshot(eval_dir, set.videos.front(), pipeline::to_json(lecture),
+                                     std::chrono::system_clock::now()));
+
+    const OracleRuntime runtime;
+    const Library library = this->library("eval");
+    const auto eval = [&](std::vector<std::string> command) {
+        command.insert(command.begin(), {"eval", "--eval-dir", eval_dir.string()});
+        return run(command, library, runtime);
+    };
+    const proc::RunResult ran = eval({"run", "--label", "base", "--replicates", "2"});
+    ASSERT_EQ(ran.status.code, 0) << ran.stdout_text << ran.stderr_text;
+    EXPECT_THAT(ran.stdout_text, HasSubstr("run base: 2 of 2 jobs done"));
+    EXPECT_THAT(ran.stdout_text, HasSubstr(std::format("then: rreport eval score --eval-dir {} --label base",
+                                                       eval_dir.string())));
+    const std::int64_t asked = runtime.commander().completions + runtime.infantry().completions;
+
+    const proc::RunResult again = eval({"run", "--label", "base", "--replicates", "2"});
+    EXPECT_EQ(again.status.code, 0);
+    EXPECT_THAT(again.stdout_text, HasSubstr("run base: 2 of 2 jobs done"));
+    EXPECT_EQ(runtime.commander().completions + runtime.infantry().completions, asked)
+        << "taken up: its jobs done, nothing asked again";
+    EXPECT_EQ(eval({"run", "--label", "base", "--replicates", "3"}).status.code, 2)
+        << "a label names one run";
+
+    const proc::RunResult scored = eval({"score", "--label", "base"});
+    ASSERT_EQ(scored.status.code, 0) << scored.stdout_text << scored.stderr_text;
+    EXPECT_THAT(scored.stdout_text, HasSubstr("weighing-radium: no gold yet: scored without it"));
+    EXPECT_THAT(scored.stdout_text, HasSubstr("run base: 2 jobs scored, by code@1"));
+
+    const proc::RunResult exported = eval({"export", "--label", "base"});
+    ASSERT_EQ(exported.status.code, 0) << exported.stderr_text;
+    const std::string& csv = exported.stdout_text;
+    const std::string header = csv.substr(0, csv.find('\r'));
+    EXPECT_THAT(header, ::testing::StartsWith("run,tier,video,type,captions,replicate,job,scorer,"));
+    const std::size_t atoms_told = column(header, "atoms_told");
+    ASSERT_NE(atoms_told, std::string::npos) << header;
+    const std::string first = csv.substr(csv.find('\n') + 1);
+    const std::string second = first.substr(first.find('\n') + 1);
+    EXPECT_THAT(first, ::testing::StartsWith("base,max,weighing-radium,talk,manual,0,"));
+    EXPECT_THAT(second, ::testing::StartsWith("base,max,weighing-radium,talk,manual,1,"));
+    EXPECT_EQ(cell(first, atoms_told), "1");
+    EXPECT_EQ(cell(second, atoms_told), "1");
+
+    const std::filesystem::path exported_json = home() / "base.json";
+    ASSERT_EQ(
+        eval({"export", "--label", "base", "--format", "json", "--out", exported_json.string()}).status.code,
+        0);
+    const json::Json read = unwrap(json::parse(unwrap(read_file(exported_json))));
+    ASSERT_EQ(read.at("entries").size(), 2U);
+    EXPECT_EQ(read.at("entries")[1].at("scores").at("sentences_accounted"), 1.0);
 }
 
 }  // namespace

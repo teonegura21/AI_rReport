@@ -778,3 +778,289 @@ expect = "Sheet.PutsEachFactBesideItsMomentAndSaysWhatToCorrect"
   [[mutant.edit]]
   from = '''    if (problems.empty()) {'''
   to = '''    if (true) {'''
+
+# --- Runs (run.cpp, P23) ----------------------------------------------------------
+
+[[mutant]]
+name = "a-run-needs-no-label"
+file = "src/eval/run.cpp"
+expect = "RunsTest.ARunNeedsALabelAndOneReplicateAtLeast"
+  [[mutant.edit]]
+  from = '''    if (spec.label.empty()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-run-of-no-replicate"
+file = "src/eval/run.cpp"
+expect = "RunsTest.ARunNeedsALabelAndOneReplicateAtLeast"
+  [[mutant.edit]]
+  from = '''    if (spec.replicates < 1) {'''
+  to = '''    if (spec.replicates < 0) {'''
+
+[[mutant]]
+name = "a-label-names-any-run"
+file = "src/eval/run.cpp"
+expect = "RunsTest.ALabelNamesOneRun"
+  [[mutant.edit]]
+  from = '''differences(spec, existing->spec); !said.empty()) {'''
+  to = '''differences(spec, existing->spec); !said.empty() && false) {'''
+
+[[mutant]]
+name = "the-set-is-not-compared"
+file = "src/eval/run.cpp"
+expect = "RunsTest.ALabelNamesOneRun"
+  [[mutant.edit]]
+  from = '''    if (asked.eval_set != run.eval_set) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "the-split-is-not-compared"
+file = "src/eval/run.cpp"
+expect = "RunsTest.ALabelNamesOneRun"
+  [[mutant.edit]]
+  from = '''    if (asked.split != run.split) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "the-tier-is-not-compared"
+file = "src/eval/run.cpp"
+expect = "RunsTest.ALabelNamesOneRun"
+  [[mutant.edit]]
+  from = '''    if (asked.tier != run.tier) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "replicates-are-not-compared"
+file = "src/eval/run.cpp"
+expect = "RunsTest.ALabelNamesOneRun"
+  [[mutant.edit]]
+  from = '''    if (asked.replicates != run.replicates) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "entries-in-the-order-made"
+file = "src/eval/run.cpp"
+expect = "RunsTest.EveryEntryIsListedWithItsScoresOrNone"
+  [[mutant.edit]]
+  from = '''                     "ORDER BY video, replicate",'''
+  to = '''                     "ORDER BY job_id",'''
+
+[[mutant]]
+name = "scores-are-added-to"
+file = "src/eval/run.cpp"
+expect = "RunsTest.AJobScoredAgainIsScoredWhole"
+  [[mutant.edit]]
+  from = '''"DELETE FROM eval_scores WHERE run_id = ?1 AND video = ?2 AND replicate = ?3"'''
+  to = '''"DELETE FROM eval_scores WHERE run_id = ?1 AND video = ?2 AND replicate = ?3 AND 0"'''
+
+[[mutant]]
+name = "the-test-split-is-planned"
+file = "src/eval/run.cpp"
+expect = "RunsTest.EachVideoOfTheSplitIsPlannedOnceAReplicateReplicateByReplicate"
+  [[mutant.edit]]
+  from = '''        if (video.split != run.spec.split) {'''
+  to = '''        if (false) {'''
+
+[[mutant]]
+name = "an-unfetched-video-is-planned"
+file = "src/eval/run.cpp"
+expect = "RunsTest.EachVideoOfTheSplitIsPlannedOnceAReplicateReplicateByReplicate"
+  [[mutant.edit]]
+  from = '''        if (snapshot.has_value()) {'''
+  to = '''        if (true) {'''
+
+[[mutant]]
+name = "one-replicate-is-planned"
+file = "src/eval/run.cpp"
+expect = "RunsTest.EachVideoOfTheSplitIsPlannedOnceAReplicateReplicateByReplicate"
+  [[mutant.edit]]
+  from = '''replicate < run.spec.replicates; ++replicate) {'''
+  to = '''replicate < 1; ++replicate) {'''
+
+[[mutant]]
+name = "a-planned-entry-forgets-its-job"
+file = "src/eval/run.cpp"
+expect = "RunsTest.AnEntryGetsAnArticleJobFromItsSnapshotWhenItsTurnComesAndKeepsIt"
+  [[mutant.edit]]
+  from = '''.job = job == jobs.end() ? std::string{} : job->second});'''
+  to = '''.job = job == jobs.end() ? std::string{} : std::string{}});'''
+
+[[mutant]]
+name = "an-entry-makes-a-job-every-time"
+file = "src/eval/run.cpp"
+expect = "RunsTest.AnEntryGetsAnArticleJobFromItsSnapshotWhenItsTurnComesAndKeepsIt"
+  [[mutant.edit]]
+  from = '''    if (!entry.job.empty()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-replicate-draws-the-same-samples"
+file = "src/eval/run.cpp"
+expect = "RunsTest.AnEntryGetsAnArticleJobFromItsSnapshotWhenItsTurnComesAndKeepsIt"
+  [[mutant.edit]]
+  from = '''jobs.create(source, run.spec.tier, entry.replicate));'''
+  to = '''jobs.create(source, run.spec.tier, 0));'''
+
+[[mutant]]
+name = "a-job-made-is-not-the-entrys"
+file = "src/eval/run.cpp"
+expect = "RunsTest.AnEntryGetsAnArticleJobFromItsSnapshotWhenItsTurnComesAndKeepsIt"
+  [[mutant.edit]]
+  from = '''    RR_TRY(runs.add(run.id, entry));'''
+  to = '''    (void)runs;'''
+
+# --- Scores (score.cpp, P23) ------------------------------------------------------
+
+[[mutant]]
+name = "a-share-of-nothing-is-scored"
+file = "src/eval/score.cpp"
+expect = "Score.AShareWithNothingToShareIsNoScore"
+  [[mutant.edit]]
+  from = '''    if (whole > 0) {'''
+  to = '''    if (true) {'''
+
+[[mutant]]
+name = "headings-are-words"
+file = "src/eval/score.cpp"
+expect = "Score.TheLengthIsTheArticlesWordsOverTheTranscripts"
+  [[mutant.edit]]
+  from = '''        if (block.kind == knowledge::BlockKind::heading || block.kind == knowledge::BlockKind::code) {'''
+  to = '''        if (block.kind == knowledge::BlockKind::code) {'''
+
+[[mutant]]
+name = "markers-are-words"
+file = "src/eval/score.cpp"
+expect = "Score.TheLengthIsTheArticlesWordsOverTheTranscripts"
+  [[mutant.edit]]
+  from = '''        text += knowledge::without_markers(markdown, parsed, block.span);'''
+  to = '''        text += markdown.substr(block.span.begin, block.span.size());'''
+
+[[mutant]]
+name = "any-cited-atom-cites-every-fact"
+file = "src/eval/score.cpp"
+expect = "Score.GoldIsScoredAgainstWhatAReaderReads"
+  [[mutant.edit]]
+  from = '''            return cited.contains(atom.id) && std::ranges::any_of(atom.sentences, [&](SentenceId sentence) {'''
+  to = '''            return cited.contains(atom.id) || std::ranges::any_of(atom.sentences, [&](SentenceId sentence) {'''
+
+[[mutant]]
+name = "every-gold-fact-is-core"
+file = "src/eval/score.cpp"
+expect = "Score.GoldIsScoredAgainstWhatAReaderReads"
+  [[mutant.edit]]
+  from = '''        if (fact.importance == Importance::core) {'''
+  to = '''        if (true) {'''
+
+[[mutant]]
+name = "a-quote-says-its-whole-stretch"
+file = "src/eval/score.cpp"
+expect = "SentencesSaying.AreThoseItsAlignmentCoversWithinItsStretch"
+  [[mutant.edit]]
+  from = '''        if (place.begin < alignment.text.end && alignment.text.begin < place.end) {'''
+  to = '''        if (true) {'''
+
+[[mutant]]
+name = "a-quote-not-said-has-sentences"
+file = "src/eval/score.cpp"
+expect = "SentencesSaying.AreThoseItsAlignmentCoversWithinItsStretch"
+  [[mutant.edit]]
+  from = '''    if (!alignment.verbatim()) {'''
+  to = '''    if (alignment.score == 0) {'''
+
+[[mutant]]
+name = "silver-is-scored-against"
+file = "src/eval/score.cpp"
+expect = "Scoring.GoldNotReviewedOrOfAnotherSnapshotIsNotScoredAgainst"
+  [[mutant.edit]]
+  from = '''    if (gold.status != GoldStatus::gold) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "gold-of-another-snapshot-is-scored-against"
+file = "src/eval/score.cpp"
+expect = "Scoring.GoldNotReviewedOrOfAnotherSnapshotIsNotScoredAgainst"
+  [[mutant.edit]]
+  from = '''    if (!snapshot.has_value() || snapshot->hash != gold.snapshot) {'''
+  to = '''    if (!snapshot.has_value()) {'''
+
+[[mutant]]
+name = "a-job-not-done-is-scored"
+file = "src/eval/score.cpp"
+expect = "Scoring.ARunIsScoredWhereItsJobsAreDoneAgainstReviewedGoldOfTheirSnapshot"
+  [[mutant.edit]]
+  from = '''        if (job.status != library::JobStatus::done) {'''
+  to = '''        if (false) {'''
+
+[[mutant]]
+name = "a-failed-attempt-is-a-call"
+file = "src/eval/score.cpp"
+expect = "Scoring.CostsAreEveryAttemptsTokensAndTheMissionsPastTheirFirstRung"
+  [[mutant.edit]]
+  from = '''"SELECT SUM(status = 'ok'), SUM(prompt_tokens), SUM(completion_tokens) FROM llm_calls "'''
+  to = '''"SELECT COUNT(*), SUM(prompt_tokens), SUM(completion_tokens) FROM llm_calls "'''
+
+[[mutant]]
+name = "a-failed-attempt-costs-nothing"
+file = "src/eval/score.cpp"
+expect = "Scoring.CostsAreEveryAttemptsTokensAndTheMissionsPastTheirFirstRung"
+  [[mutant.edit]]
+  from = '''"SELECT SUM(status = 'ok'), SUM(prompt_tokens), SUM(completion_tokens) FROM llm_calls "'''
+  to = '''"SELECT SUM(status = 'ok'), SUM(prompt_tokens * (status = 'ok')), SUM(completion_tokens) FROM llm_calls "'''
+
+[[mutant]]
+name = "every-mission-escalated"
+file = "src/eval/score.cpp"
+expect = "Scoring.CostsAreEveryAttemptsTokensAndTheMissionsPastTheirFirstRung"
+  [[mutant.edit]]
+  from = '''"AND step <> 'as_ordered'",'''
+  to = '''"AND 1",'''
+
+[[mutant]]
+name = "the-video-is-as-long-as-its-transcript"
+file = "src/eval/score.cpp"
+expect = "Score.WhatTheJobCostIsScoredWithTheVideosLength"
+  [[mutant.edit]]
+  from = '''    if (contents.video.has_value() && contents.video->duration.has_value()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "minutes-are-seconds"
+file = "src/eval/score.cpp"
+expect = "Score.WhatTheJobCostIsScoredWithTheVideosLength"
+  [[mutant.edit]]
+  from = '''std::chrono::duration<double, std::ratio<60>>(costs.elapsed).count();'''
+  to = '''std::chrono::duration<double>(costs.elapsed).count();'''
+
+# --- Export (export.cpp, P23) -----------------------------------------------------
+
+[[mutant]]
+name = "a-comma-is-not-quoted"
+file = "src/eval/export.cpp"
+expect = "Export.CsvQuotesWhatWouldBreakAField"
+  [[mutant.edit]]
+  from = '''    if (field.find_first_of(",\"\r\n") == std::string_view::npos) {'''
+  to = '''    if (true) {'''
+
+[[mutant]]
+name = "a-quote-is-not-doubled"
+file = "src/eval/export.cpp"
+expect = "Export.CsvQuotesWhatWouldBreakAField"
+  [[mutant.edit]]
+  from = '''        if (c == '"') {'''
+  to = '''        if (false) {'''
+
+[[mutant]]
+name = "a-video-has-no-kind"
+file = "src/eval/export.cpp"
+expect = "Export.ACsvRowAnEntryItsMetricsInColumnsSortedByName"
+  [[mutant.edit]]
+  from = '''    return {std::string{to_string(found->type)}, std::string{media::to_string(found->captions)}};'''
+  to = '''    return {std::string{}, std::string{media::to_string(found->captions)}};'''
+
+[[mutant]]
+name = "json-has-no-scores"
+file = "src/eval/export.cpp"
+expect = "Export.JsonHoldsTheRunAndEachEntrysScores"
+  [[mutant.edit]]
+  from = '''                        {"scores", std::move(scores)}});'''
+  to = '''                        {"scores", json::Json::object()}});'''

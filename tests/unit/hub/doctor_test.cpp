@@ -15,6 +15,7 @@
 
 #include <rr/fakes/fake_runpod.hpp>
 #include <rr/json/json.hpp>
+#include <rr/library/library.hpp>
 #include <rr/net/http_server.hpp>
 #include <rr/runtime_api/protocol.hpp>
 #include <rr/testkit/result.hpp>
@@ -122,7 +123,9 @@ TEST_F(DoctorTest, AHubWithoutAPodIsHealthyAndSaysWhatIsMissing) {
     EXPECT_TRUE(healthy(findings));
     EXPECT_EQ(about(findings, "data directory").severity, Severity::ok);
     EXPECT_THAT(about(findings, "data directory").detail, HasSubstr("100.0 GiB free"));
-    EXPECT_EQ(about(findings, "library").detail, "'default' (schema version 5)") << "created on the way";
+    EXPECT_EQ(about(findings, "library").detail,
+              std::format("'default' (schema version {})", library::migrations().back().version))
+        << "created on the way, at the newest schema";
     EXPECT_EQ(about(findings, "yt-dlp").severity, Severity::ok);
     EXPECT_EQ(about(findings, "RunPod").severity, Severity::warning);
     EXPECT_EQ(about(findings, "runtime").severity, Severity::warning);

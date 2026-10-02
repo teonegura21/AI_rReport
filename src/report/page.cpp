@@ -170,24 +170,11 @@ std::string coverage_row(std::string_view what, std::size_t part, std::size_t wh
 
 // What was kept: Ledger A, and where there is an article Ledger B, checked again.
 std::string coverage_html(const Contents& contents) {
-    if (!contents.transcript.has_value() || !contents.ledger.has_value()) {
+    const std::optional<fidelity::Report> report = checked(contents);
+    if (!report.has_value()) {
         return R"(<p class="missing">Nothing yet: the job has not written Ledger A.</p>)";
     }
-    std::vector<std::string> lexicon;
-    if (contents.outline.has_value()) {
-        for (const knowledge::LexiconTerm& term : contents.outline->brief.lexicon) {
-            lexicon.push_back(term.term);
-        }
-    }
-    fidelity::Report report = fidelity::check_ledger(*contents.transcript, *contents.ledger, lexicon);
-    if (contents.article.has_value()) {
-        const fidelity::ArticleScope scope{.duplicates = contents.plan.has_value()
-                                                             ? contents.plan->duplicates
-                                                             : std::vector<knowledge::Duplicate>{}};
-        report.add(fidelity::check_article(*contents.transcript, *contents.ledger, contents.article->markdown,
-                                           scope));
-    }
-    const fidelity::Coverage& kept = report.coverage;
+    const fidelity::Coverage& kept = report->coverage;
     std::string rows =
         coverage_row("Sentences accounted for", kept.sentences_accounted, kept.sentences, "all");
     if (contents.article.has_value()) {
@@ -374,6 +361,27 @@ document.getElementById('cites').addEventListener('change',
 </script>)";
 
 }  // namespace
+
+std::optional<fidelity::Report> checked(const Contents& contents) {
+    if (!contents.transcript.has_value() || !contents.ledger.has_value()) {
+        return std::nullopt;
+    }
+    std::vector<std::string> lexicon;
+    if (contents.outline.has_value()) {
+        for (const knowledge::LexiconTerm& term : contents.outline->brief.lexicon) {
+            lexicon.push_back(term.term);
+        }
+    }
+    fidelity::Report report = fidelity::check_ledger(*contents.transcript, *contents.ledger, lexicon);
+    if (contents.article.has_value()) {
+        const fidelity::ArticleScope scope{.duplicates = contents.plan.has_value()
+                                                             ? contents.plan->duplicates
+                                                             : std::vector<knowledge::Duplicate>{}};
+        report.add(fidelity::check_article(*contents.transcript, *contents.ledger, contents.article->markdown,
+                                           scope));
+    }
+    return report;
+}
 
 std::string escaped(std::string_view text) {
     std::string out;

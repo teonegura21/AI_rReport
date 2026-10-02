@@ -42,6 +42,7 @@
 #include <string_view>
 #include <vector>
 
+#include <rr/fidelity/finding.hpp>
 #include <rr/knowledge/article.hpp>
 #include <rr/knowledge/atoms.hpp>
 #include <rr/knowledge/outline.hpp>
@@ -76,6 +77,13 @@ struct Contents {
 
 // The page (see the header comment).
 [[nodiscard]] std::string render_page(const Contents& contents);
+
+// Ledger A, and where there is an article Ledger B, checked again as the
+// stages check them (rr/fidelity/checks.hpp), the video's lexicon known and
+// the plan's duplicates excused: what the Fidelity Report shows, and what the
+// eval scores (rr/eval/score.hpp), so the two always agree. None before
+// Ledger A is written.
+[[nodiscard]] std::optional<fidelity::Report> checked(const Contents& contents);
 
 // `text` safe as HTML text and attribute values: & < > " ' escaped.
 [[nodiscard]] std::string escaped(std::string_view text);

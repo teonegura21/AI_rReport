@@ -8,10 +8,10 @@ rr_add_module(report
         page.cpp
     PUBLIC_DEPS
         rr::core
+        rr::fidelity
         rr::knowledge
         rr::library
         rr::media
     PRIVATE_DEPS
-        rr::fidelity
         rr::json
         rr::pipeline)

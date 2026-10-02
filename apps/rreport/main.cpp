@@ -2,12 +2,15 @@
 //
 // Commands
 //   ingest SOURCE     take a video (its web address) or a caption file through
-//                     the pipeline's stages, as a new job: so far its source,
-//                     then its transcript (plan P15)
+//                     the pipeline's stages, as a new job: its source, its
+//                     transcript, its outline, its atoms, its plan, its
+//                     article and its seams (plan P15–P20)
 //   resume JOB        take a job up again where it stopped
 //   jobs              the library's jobs, newest first
 //   jobs show JOB     a job's stages: done, found done or failed, and what
 //                     they could not do
+//   report JOB        the job's article as one web page, with its Fidelity
+//                     Report (P21)
 //   eval fetch [ID…]  read each video of the eval set once, through the source
 //                     stage, and keep it with the eval: eval/data/<id>/ (P16)
 //   eval annotate [ID…]
@@ -15,6 +18,15 @@
 //                     as silver in eval/gold/<id>.toml, for a person to correct
 //                     (runbook R2)
 //   eval sheet ID     the sheet a person corrects a gold file with (Markdown)
+//   eval run --label L [ID…]
+//                     take the set's videos through the article stages, each
+//                     --replicates times, at --tier; the same label again
+//                     takes the run up (P23)
+//   eval score --label L
+//                     score each done job of a run by code: what it kept, what
+//                     it cost
+//   eval export --label L
+//                     a run's scores, a row per video and replicate (CSV, JSON)
 //   doctor            check the data directory, the library, the capture tools,
 //                     RunPod and the runtime, and say what to do about problems
 //   bench             measure the pod: its engines, the commander's and the
@@ -58,7 +70,10 @@
 #include <rr/core/version.hpp>
 #include <rr/db/database.hpp>
 #include <rr/eval/annotate.hpp>
+#include <rr/eval/export.hpp>
 #include <rr/eval/gold.hpp>
+#include <rr/eval/run.hpp>
+#include <rr/eval/score.hpp>
 #include <rr/eval/set.hpp>
 #include <rr/eval/sheet.hpp>
 #include <rr/eval/snapshot.hpp>
@@ -748,7 +763,12 @@ struct EvalFlags {
     std::vector<std::string> videos;           // none: every video of the set
     bool again = false;                        // fetch: read a video kept already once more
     bool replace = false;                      // annotate: draft a silver gold file again
-    std::optional<std::filesystem::path> out;  // sheet: where to write it
+    std::optional<std::filesystem::path> out;  // sheet, export: where to write it
+    std::string label;                         // run, score, export: the run's
+    std::string tier{reason::kDefaultTier};    // run
+    int replicates = 3;                        // run: three at least, to see the noise (ADR-0019)
+    std::string split{"dev"};                  // run: dev, or test for a gate
+    std::string format{"csv"};                 // export: csv or json
 };
 
 // The command that does `verb` to `video`, with the flags that differ from
@@ -976,6 +996,185 @@ int eval_sheet(const EvalFlags& flags) {
     return kOk;
 }
 
+// ---------------------------------------------------------------------------------------
+// eval run, score, export
+// ---------------------------------------------------------------------------------------
+
+// The run the flags ask for: `--split` read, `--tier` checked.
+Result<eval::RunSpec> run_spec(const EvalFlags& flags, const eval::EvalSet& set) {
+    RR_TRY(reason::builtin_tier(flags.tier));
+    eval::Split split = eval::Split::dev;
+    if (flags.split == eval::to_string(eval::Split::test)) {
+        split = eval::Split::test;
+    } else if (flags.split != eval::to_string(eval::Split::dev)) {
+        return fail(Errc::invalid_argument, std::format("--split is dev or test, not '{}'", flags.split));
+    }
+    return eval::RunSpec{.label = flags.label,
+                         .eval_set = set.name,
+                         .split = split,
+                         .tier = flags.tier,
+                         .replicates = flags.replicates};
+}
+
+// The command that takes the run up again, as it was asked.
+std::string resume_run_command(const EvalFlags& flags) {
+    return eval_command(flags, "run",
+                        std::format("--label {} --tier {} --replicates {} --split {}", flags.label,
+                                    flags.tier, flags.replicates, flags.split));
+}
+
+int eval_run(const Global& global, const EvalFlags& flags, const proc::TerminationSignals& signals) {
+    auto hub = load(global);
+    if (!hub.has_value()) {
+        return failed(kBadConfiguration, hub.error());
+    }
+    auto set = eval_set(flags);
+    if (!set.has_value()) {
+        return failed(kBadConfiguration, set.error());
+    }
+    auto videos = chosen(*set, flags.videos);
+    if (!videos.has_value()) {
+        return failed(kBadConfiguration, videos.error());
+    }
+    auto spec = run_spec(flags, *set);
+    if (!spec.has_value()) {
+        return failed(kBadConfiguration, spec.error());
+    }
+    auto database = library::open_database(hub->settings.library_database());
+    if (!database.has_value()) {
+        return failed(kFailure, database.error());
+    }
+    eval::Runs runs{*database, SystemClock::instance()};
+    auto run = runs.open(*spec);
+    if (!run.has_value()) {
+        // A label of another run, or a run of no video: what was asked is wrong.
+        const bool asked_wrong =
+            run.error().code() == Errc::conflict || run.error().code() == Errc::invalid_argument;
+        return failed(asked_wrong ? kBadConfiguration : kFailure, run.error());
+    }
+    auto planned = eval::plan_run(flags.root, *run, *videos, runs);
+    if (!planned.has_value()) {
+        return failed(kFailure, planned.error());
+    }
+    int code = kOk;
+    for (const std::string& video : planned->unfetched) {
+        (void)std::printf("%s: no snapshot yet: %s reads it\n", video.c_str(),
+                          eval_command(flags, "fetch", video).c_str());
+        code = kFailure;
+    }
+    library::Jobs jobs{*database, SystemClock::instance()};
+    std::size_t done = 0;
+    for (eval::RunEntry& entry : planned->entries) {
+        auto job = eval::start_entry(flags.root, *run, entry, runs, jobs);
+        if (!job.has_value()) {
+            return failed(kFailure, job.error());
+        }
+        if (job->status == library::JobStatus::done) {
+            ++done;  // done in an earlier run of the command
+            continue;
+        }
+        (void)std::fprintf(stderr, "run %s: %s, replicate %d of %d\n", run->spec.label.c_str(),
+                           entry.video.c_str(), entry.replicate + 1, run->spec.replicates);
+        const int result = run_job(*hub, *database, *std::move(job), signals);
+        if (result == kOk) {
+            ++done;
+            continue;
+        }
+        code = result;
+        if (signals.received() != 0) {
+            break;  // interrupted: the same command takes the run up
+        }
+    }
+    (void)std::printf("run %s: %zu of %zu jobs done\n", run->spec.label.c_str(), done,
+                      planned->entries.size());
+    if (done == planned->entries.size() && planned->unfetched.empty()) {
+        (void)std::printf("  then: %s\n",
+                          eval_command(flags, "score", std::format("--label {}", flags.label)).c_str());
+    } else {
+        (void)std::printf("  take it up again with: %s\n", resume_run_command(flags).c_str());
+    }
+    return code;
+}
+
+int eval_score(const Global& global, const EvalFlags& flags) {
+    auto hub = load(global);
+    if (!hub.has_value()) {
+        return failed(kBadConfiguration, hub.error());
+    }
+    auto set = eval_set(flags);
+    if (!set.has_value()) {
+        return failed(kBadConfiguration, set.error());
+    }
+    auto database = library::open_database(hub->settings.library_database());
+    if (!database.has_value()) {
+        return failed(kFailure, database.error());
+    }
+    eval::Runs runs{*database, SystemClock::instance()};
+    auto run = runs.find(flags.label);
+    if (!run.has_value()) {
+        return failed(kFailure, run.error());
+    }
+    auto scoring = eval::score_run(flags.root, *set, *run, runs, *database, SystemClock::instance());
+    if (!scoring.has_value()) {
+        return failed(kFailure, scoring.error());
+    }
+    for (const std::string& note : scoring->notes) {
+        (void)std::printf("%s\n", note.c_str());
+    }
+    for (const std::string& waiting : scoring->waiting) {
+        (void)std::printf("not scored: %s\n", waiting.c_str());
+    }
+    (void)std::printf("run %s: %zu jobs scored, by %s\n", run->spec.label.c_str(), scoring->scored,
+                      std::string{eval::kCodeScorer}.c_str());
+    if (!scoring->waiting.empty()) {
+        (void)std::printf("  take the run up again with: %s\n",
+                          eval_command(flags, "run", std::format("--label {}", flags.label)).c_str());
+        return kFailure;
+    }
+    return kOk;
+}
+
+int eval_export(const Global& global, const EvalFlags& flags) {
+    if (flags.format != "csv" && flags.format != "json") {
+        return failed(
+            kBadConfiguration,
+            Error{Errc::invalid_argument, std::format("--format is csv or json, not '{}'", flags.format)});
+    }
+    auto hub = load(global);
+    if (!hub.has_value()) {
+        return failed(kBadConfiguration, hub.error());
+    }
+    auto set = eval_set(flags);
+    if (!set.has_value()) {
+        return failed(kBadConfiguration, set.error());
+    }
+    auto database = library::open_database(hub->settings.library_database());
+    if (!database.has_value()) {
+        return failed(kFailure, database.error());
+    }
+    const eval::Runs runs{*database, SystemClock::instance()};
+    auto run = runs.find(flags.label);
+    if (!run.has_value()) {
+        return failed(kFailure, run.error());
+    }
+    auto scores = runs.scores(run->id);
+    if (!scores.has_value()) {
+        return failed(kFailure, scores.error());
+    }
+    const std::string text = flags.format == "csv"
+                                 ? eval::to_csv(*run, *set, *scores)
+                                 : json::dump_pretty(eval::to_json(*run, *set, *scores)) + "\n";
+    if (!flags.out.has_value()) {
+        (void)std::fputs(text.c_str(), stdout);
+        return kOk;
+    }
+    if (auto written = write_file_atomically(*flags.out, text); !written.has_value()) {
+        return failed(kFailure, written.error());
+    }
+    (void)std::printf("wrote %s\n", flags.out->string().c_str());
+    return kOk;
+}
+
 int show_config(const Global& global, bool origin) {
     const auto config = load_config(global);
     if (!config.has_value()) {
@@ -1065,6 +1264,24 @@ int run(int argc, char** argv) {
         eval_group->add_subcommand("sheet", "The sheet a person corrects a gold file with");
     eval_sheet_command->add_option("video", sheet_video, "The video")->required();
     eval_sheet_command->add_option("--out", eval_flags.out, "Write it to this file (default: print it)");
+    auto* eval_run_command =
+        eval_group->add_subcommand("run", "Take the set's videos through the article stages, each replicate");
+    eval_run_command->add_option("videos", eval_flags.videos,
+                                 "The videos (default: every video of the split)");
+    eval_run_command->add_option("--label", eval_flags.label, "The run's name: the same again takes it up")
+        ->required();
+    eval_run_command->add_option("--tier", eval_flags.tier, "fast, thorough or max (default: max)");
+    eval_run_command->add_option("--replicates", eval_flags.replicates,
+                                 "How many times each video is taken through (default: 3)");
+    eval_run_command->add_option("--split", eval_flags.split, "dev, or test for a gate (default: dev)");
+    auto* eval_score_command = eval_group->add_subcommand(
+        "score", "Score each done job of a run by code: what it kept, what it cost");
+    eval_score_command->add_option("--label", eval_flags.label, "The run")->required();
+    auto* eval_export_command =
+        eval_group->add_subcommand("export", "A run's scores, a row per video and replicate");
+    eval_export_command->add_option("--label", eval_flags.label, "The run")->required();
+    eval_export_command->add_option("--format", eval_flags.format, "csv or json (default: csv)");
+    eval_export_command->add_option("--out", eval_flags.out, "Write it to this file (default: print it)");
 
     auto* doctor_command = app.add_subcommand("doctor", "Check what the hub needs, and say what to do");
 
@@ -1148,6 +1365,15 @@ int run(int argc, char** argv) {
     if (*eval_sheet_command) {
         eval_flags.videos = {sheet_video};
         return eval_sheet(eval_flags);
+    }
+    if (*eval_run_command) {
+        return eval_run(global, eval_flags, signals);
+    }
+    if (*eval_score_command) {
+        return eval_score(global, eval_flags);
+    }
+    if (*eval_export_command) {
+        return eval_export(global, eval_flags);
     }
     if (*doctor_command) {
         return doctor(global, signals);

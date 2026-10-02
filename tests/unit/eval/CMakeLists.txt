@@ -2,7 +2,10 @@ rr_add_test_suite(eval
     SOURCES
         annotate_stage_test.cpp
         annotate_test.cpp
+        export_test.cpp
         gold_test.cpp
+        run_test.cpp
+        score_test.cpp
         set_test.cpp
         sheet_test.cpp
         snapshot_test.cpp
@@ -11,4 +14,5 @@ rr_add_test_suite(eval
         rr::library
         rr::llm
         rr::oracle
-        rr::prompt)
+        rr::prompt
+        rr::report)

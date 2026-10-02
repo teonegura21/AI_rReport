@@ -110,7 +110,8 @@ TEST_F(Hub, DoctorChecksEverythingAndSaysSo) {
     EXPECT_EQ(result.status.code, 0) << result.stdout_text << result.stderr_text;
     // ok, or a warning on a disk with little room (CI runners): either way, found and writable.
     EXPECT_THAT(result.stdout_text, HasSubstr(std::format("] data directory: '{}'", data_dir().string())));
-    EXPECT_THAT(result.stdout_text, HasSubstr("[ok  ] library: 'default' (schema version 5)"));
+    EXPECT_THAT(result.stdout_text, HasSubstr(std::format("[ok  ] library: 'default' (schema version {})",
+                                                          library::migrations().back().version)));
     EXPECT_THAT(result.stdout_text, HasSubstr("[ok  ] RunPod: pod pod123 is RUNNING"));
     EXPECT_THAT(result.stdout_text, HasSubstr("[ok  ] runtime:"));
     EXPECT_THAT(result.stdout_text, HasSubstr("chat (commander) ready, squad (infantry) ready"));
