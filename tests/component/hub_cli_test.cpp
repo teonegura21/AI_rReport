@@ -513,6 +513,38 @@ TEST_F(Hub, AJudgementIsTakenUpByEvalJudgeAndPagedByTheArticleItJudges) {
     EXPECT_THAT(rreport({"jobs"}).stdout_text, HasSubstr("judgement"));
 }
 
+TEST_F(Hub, ASweepAPageOrATierAskedWronglyIsRefusedSayingWhy) {
+    const std::filesystem::path eval_dir = home() / "eval";
+    const auto eval = [&](std::vector<std::string> command) {
+        command.insert(command.begin(), {"eval", "--eval-dir", eval_dir.string()});
+        return rreport(command);
+    };
+    const proc::RunResult missing = eval({"sweep", "nope"});
+    EXPECT_EQ(missing.status.code, 2);
+    EXPECT_THAT(missing.stderr_text, HasSubstr("nope.toml"));
+    (void)home().write_file("eval/sweeps/bad.toml",
+                            "name = \"bad\"\nbaseline = \"max\"\n[[variant]]\nlabel = \"two\"\n"
+                            "tier = \"max+write.drafts=two\"\nwhy = \"To see.\"\n");
+    const proc::RunResult bad = eval({"sweep", "bad"});
+    EXPECT_EQ(bad.status.code, 2);
+    EXPECT_THAT(bad.stderr_text,
+                HasSubstr("variant 1: tier 'max+write.drafts=two', [write]: 'drafts' must be a "
+                          "whole number"));
+    EXPECT_EQ(eval({"sweep", "../bad"}).status.code, 2) << "a name, never a path";
+
+    const proc::RunResult page = eval({"report"});
+    EXPECT_EQ(page.status.code, 0) << page.stderr_text;
+    EXPECT_THAT(page.stdout_text,
+                HasSubstr("report.html: 0 runs, atoms_told against minutes_per_video_hour"));
+    EXPECT_THAT(unwrap(read_file(eval_dir / "report.html")), HasSubstr("No run has both yet"));
+    EXPECT_EQ(eval({"report", "--metric", "flow"}).status.code, 2) << "no run's own";
+
+    const proc::RunResult ingested = rreport({"ingest", "talk.vtt", "--tier", "max+write.colour=red"});
+    EXPECT_EQ(ingested.status.code, 2);
+    EXPECT_THAT(ingested.stderr_text,
+                HasSubstr("tier 'max+write.colour=red', [write]: unknown key 'colour'"));
+}
+
 TEST_F(Hub, APairingIsTakenUpByEvalCompareAndHasNoPageOfItsOwn) {
     std::string pairing;
     {

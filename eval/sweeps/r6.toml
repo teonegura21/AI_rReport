@@ -1,0 +1,48 @@
+# The sweep of runbook R6: what each step of the `max` tier buys, measured
+# against `max` itself on the dev videos, two replicates each (ADR-0019).
+# Each variant is a hypothesis, with why it is worth GPU time; the report's
+# chart and each variant's comparison decide (`rreport eval sweep r6`, then
+# `rreport eval report`). A variant's tier names what it changes
+# (docs/design/eval.md, "Sweeps and the report").
+name = "r6"
+baseline = "max"
+
+[[variant]]
+label = "write-thinking"
+tier = "max+write.thinking=true"
+why = "ADR-0018 drafts without thinking: reasoning models invent more when they summarize. Does that hold for these models, on these videos?"
+
+[[variant]]
+label = "one-draft"
+tier = "max+write.drafts=1+write.judge_top=0"
+why = "Four drafts and a judge cost about four times the writer's GPU time. What do they buy over one draft?"
+
+[[variant]]
+label = "no-recall-pass"
+tier = "max+atomize.recall_pass=false"
+why = "The recall pass asks again about the sentences atoms barely cover. How much does it add to what the article tells?"
+
+[[variant]]
+label = "one-atomize-sample"
+tier = "max+atomize.first=1+atomize.max=1"
+why = "Atomizing votes on three samples of each window. Does one sample lose atoms, or invent them?"
+
+[[variant]]
+label = "no-commander-ruling"
+tier = "max+atomize.contested_to_commander=false"
+why = "What the samples still disagree on goes to the commander, thinking. Does its ruling beat the vote?"
+
+[[variant]]
+label = "seams-rewrite"
+tier = "max+seams.mode=rewrite"
+why = "The seams are checked again after they are rewritten. Does the check catch what a rewrite breaks?"
+
+[[variant]]
+label = "thorough"
+tier = "thorough"
+why = "The tier below max: how much of its quality it keeps, for how much less GPU time."
+
+[[variant]]
+label = "fast"
+tier = "fast"
+why = "The cheapest tier: the floor every other one is measured above."

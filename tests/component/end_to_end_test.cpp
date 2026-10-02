@@ -572,11 +572,12 @@ metric = "facts_told"
 margin = 0.02
 )toml";
 
-TEST_F(EndToEnd, TwoRunsOfOnePipelineAreComparedAndGatedAndAnAaRunHoldsTheGatesMargins) {
-    const std::filesystem::path eval_dir = home() / "eval";
-    (void)home().write_file("eval/sets/m2.toml", kTwoVideos);
-    (void)home().write_file("eval/gates/e2e.toml", kGate);
-    (void)home().write_file("eval/judges/e2e-v1.toml", panel_for(sha256(component::kModelWeights).hex()));
+// The set of the lecture under two names in `eval_dir`, each video's
+// snapshot kept as `eval fetch` keeps it.
+void keep_two_videos(const std::filesystem::path& eval_dir) {
+    const std::filesystem::path sets = eval_dir / "sets";
+    std::filesystem::create_directories(sets);
+    unwrap(write_file_atomically(sets / "m2.toml", kTwoVideos));
     for (const eval::EvalVideo& video : unwrap(eval::read_set(eval_dir, "m2")).videos) {
         const pipeline::Source source{
             .origin = pipeline::Origin::web,
@@ -591,6 +592,13 @@ TEST_F(EndToEnd, TwoRunsOfOnePipelineAreComparedAndGatedAndAnAaRunHoldsTheGatesM
         (void)unwrap(eval::keep_snapshot(eval_dir, video, pipeline::to_json(source),
                                          std::chrono::system_clock::now()));
     }
+}
+
+TEST_F(EndToEnd, TwoRunsOfOnePipelineAreComparedAndGatedAndAnAaRunHoldsTheGatesMargins) {
+    const std::filesystem::path eval_dir = home() / "eval";
+    keep_two_videos(eval_dir);
+    (void)home().write_file("eval/gates/e2e.toml", kGate);
+    (void)home().write_file("eval/judges/e2e-v1.toml", panel_for(sha256(component::kModelWeights).hex()));
     const OracleRuntime runtime;
     const Library library = this->library("eval");
     const auto eval = [&](std::vector<std::string> command) {
@@ -656,6 +664,65 @@ TEST_F(EndToEnd, TwoRunsOfOnePipelineAreComparedAndGatedAndAnAaRunHoldsTheGatesM
     const proc::RunResult shared =
         eval({"gate", "base", "cand", "--aa", "--gate", "e2e", "--panel", "e2e-v1"});
     EXPECT_EQ(shared.status.code, 2) << "cand draws under base's salts: no A/A run";
+}
+
+// A sweep of one variant: one draft instead of four. The variant shares
+// every stage before the writer with the baseline, under its salts.
+constexpr std::string_view kSweep = R"toml(name = "s"
+baseline = "max"
+replicates = 1
+
+[[variant]]
+label = "one-draft"
+tier = "max+write.drafts=1+write.judge_top=0"
+why = "Whether four drafts are worth their GPU time."
+)toml";
+
+TEST_F(EndToEnd, ASweepRunsEachVariantUnderTheBaselinesSaltsAndThePageShowsEveryRun) {
+    const std::filesystem::path eval_dir = home() / "eval";
+    keep_two_videos(eval_dir);
+    (void)home().write_file("eval/sweeps/s.toml", kSweep);
+    const OracleRuntime runtime;
+    const Library library = this->library("eval");
+    const auto eval = [&](std::vector<std::string> command) {
+        command.insert(command.begin(), {"eval", "--eval-dir", eval_dir.string()});
+        return run(command, library, runtime);
+    };
+    const auto asked = [&] { return runtime.commander().completions + runtime.infantry().completions; };
+
+    ASSERT_EQ(eval({"run", "--label", "s-baseline", "--replicates", "1"}).status.code, 0)
+        << "the baseline run first, as a person may: the sweep takes it up";
+    const std::int64_t baseline = asked();
+    const proc::RunResult swept = eval({"sweep", "s", "--no-judge"});
+    ASSERT_EQ(swept.status.code, 0) << swept.stdout_text << swept.stderr_text;
+    const std::int64_t variant = asked() - baseline;
+    EXPECT_GT(variant, 0) << "its writer drafts again";
+    EXPECT_LT(variant, baseline) << "every stage before the writer the baseline's own";
+    EXPECT_THAT(swept.stdout_text,
+                HasSubstr("sweep s: each variant against the baseline, max (s-baseline), on the dev split, 1 "
+                          "replicate\n"));
+    EXPECT_THAT(swept.stdout_text,
+                HasSubstr("\none-draft: max+write.drafts=1+write.judge_top=0\n  Whether four "
+                          "drafts are worth their GPU time.\n"));
+    EXPECT_THAT(swept.stdout_text,
+                HasSubstr("  every metric: rreport eval compare s-baseline s-one-draft\n"));
+    const std::int64_t done = asked();
+    ASSERT_EQ(eval({"sweep", "s", "--no-judge"}).status.code, 0);
+    EXPECT_EQ(asked(), done) << "a sweep done, asked again, asks nothing";
+
+    const std::filesystem::path page = home() / "report.html";
+    const proc::RunResult reported = eval({"report", "--out", page.string()});
+    ASSERT_EQ(reported.status.code, 0) << reported.stderr_text;
+    EXPECT_THAT(reported.stdout_text, HasSubstr("2 runs, atoms_told against minutes_per_video_hour"));
+    const std::string html = unwrap(read_file(page));
+    EXPECT_THAT(html, HasSubstr("<h2>atoms_told against minutes_per_video_hour</h2>"));
+    std::size_t plotted = 0;
+    for (std::size_t at = html.find("<circle "); at != std::string::npos;
+         at = html.find("<circle ", at + 1)) {
+        ++plotted;
+    }
+    EXPECT_EQ(plotted, 2U) << "both runs, each at its quality and its cost";
+    EXPECT_THAT(html, HasSubstr("<td>s-one-draft</td>"));
 }
 
 }  // namespace

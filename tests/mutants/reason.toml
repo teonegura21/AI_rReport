@@ -383,3 +383,129 @@ expect = "Tier.ThreeShipAndMaxIsTheDefault"
         return fail(Errc::not_found,'''
   to = '''    if (false) {
         return fail(Errc::not_found,'''
+
+# P26: a tier's variant, `base+stage.key=value+…` (rr/reason/tier.hpp).
+
+[[mutant]]
+name = "a-variant-is-no-tier"
+file = "src/reason/tier.cpp"
+expect = "Tier.AVariantIsItsBaseWithEachChangeSet"
+  [[mutant.edit]]
+  from = '''    if (plus == std::string_view::npos) {
+        return builtin_tier(name);'''
+  to = '''    if (plus == std::string_view::npos || true) {
+        return builtin_tier(name);'''
+
+[[mutant]]
+name = "a-change-is-not-set"
+file = "src/reason/tier.cpp"
+expect = "Tier.AVariantIsItsBaseWithEachChangeSet"
+  [[mutant.edit]]
+  from = '''    set_value(*section, key, change.substr(equals + 1));'''
+  to = '''    if (false) {
+        set_value(*section, key, change.substr(equals + 1));
+    }'''
+
+[[mutant]]
+name = "true-is-false"
+file = "src/reason/tier.cpp"
+expect = "Tier.AVariantIsItsBaseWithEachChangeSet"
+  [[mutant.edit]]
+  from = '''        section.insert_or_assign(key, text == "true");'''
+  to = '''        section.insert_or_assign(key, text == "false");'''
+
+[[mutant]]
+name = "a-whole-number-is-a-number"
+file = "src/reason/tier.cpp"
+expect = "Tier.AVariantIsItsBaseWithEachChangeSet"
+  [[mutant.edit]]
+  from = '''        error == std::errc{} && stop == last) {
+        section.insert_or_assign(key, whole);'''
+  to = '''        error == std::errc{} && stop == last && false) {
+        section.insert_or_assign(key, whole);'''
+
+[[mutant]]
+name = "a-whole-number-may-trail"
+file = "src/reason/tier.cpp"
+expect = "Tier.AVariantIsItsBaseWithEachChangeSet"
+  [[mutant.edit]]
+  from = '''        error == std::errc{} && stop == last) {
+        section.insert_or_assign(key, whole);'''
+  to = '''        error == std::errc{}) {
+        section.insert_or_assign(key, whole);'''
+
+[[mutant]]
+name = "a-number-is-a-word"
+file = "src/reason/tier.cpp"
+expect = "Tier.AVariantIsItsBaseWithEachChangeSet"
+  [[mutant.edit]]
+  from = '''        error == std::errc{} && stop == last) {
+        section.insert_or_assign(key, number);'''
+  to = '''        error == std::errc{} && stop == last && false) {
+        section.insert_or_assign(key, number);'''
+
+[[mutant]]
+name = "a-word-is-dropped"
+file = "src/reason/tier.cpp"
+expect = "Tier.AVariantIsItsBaseWithEachChangeSet"
+  [[mutant.edit]]
+  from = '''    section.insert_or_assign(key, std::string{text});'''
+  to = '''    (void)section;'''
+
+[[mutant]]
+name = "a-change-needs-no-equals"
+file = "src/reason/tier.cpp"
+expect = "Tier.AVariantIsReadAsStrictlyAsATierFile"
+  [[mutant.edit]]
+  from = '''    if (equals == std::string_view::npos || dot == std::string_view::npos || dot == 0 || dot + 1 >= equals ||'''
+  to = '''    if (dot == std::string_view::npos || dot == 0 || dot + 1 >= equals ||'''
+
+[[mutant]]
+name = "a-change-needs-no-stage"
+file = "src/reason/tier.cpp"
+expect = "Tier.AVariantIsReadAsStrictlyAsATierFile"
+  [[mutant.edit]]
+  from = '''    if (equals == std::string_view::npos || dot == std::string_view::npos || dot == 0 || dot + 1 >= equals ||'''
+  to = '''    if (equals == std::string_view::npos || dot == 0 || dot + 1 >= equals ||'''
+
+[[mutant]]
+name = "a-change-may-name-no-stage"
+file = "src/reason/tier.cpp"
+expect = "Tier.AVariantIsReadAsStrictlyAsATierFile"
+  [[mutant.edit]]
+  from = '''    if (equals == std::string_view::npos || dot == std::string_view::npos || dot == 0 || dot + 1 >= equals ||'''
+  to = '''    if (equals == std::string_view::npos || dot == std::string_view::npos || dot + 1 >= equals ||'''
+
+[[mutant]]
+name = "a-change-may-name-no-key"
+file = "src/reason/tier.cpp"
+expect = "Tier.AVariantIsReadAsStrictlyAsATierFile"
+  [[mutant.edit]]
+  from = '''    if (equals == std::string_view::npos || dot == std::string_view::npos || dot == 0 || dot + 1 >= equals ||'''
+  to = '''    if (equals == std::string_view::npos || dot == std::string_view::npos || dot == 0 ||'''
+
+[[mutant]]
+name = "a-change-may-set-nothing"
+file = "src/reason/tier.cpp"
+expect = "Tier.AVariantIsReadAsStrictlyAsATierFile"
+  [[mutant.edit]]
+  from = '''dot + 1 >= equals ||
+        equals + 1 == change.size()) {'''
+  to = '''dot + 1 >= equals ||
+        false) {'''
+
+[[mutant]]
+name = "a-change-may-name-any-stage"
+file = "src/reason/tier.cpp"
+expect = "Tier.AVariantIsReadAsStrictlyAsATierFile"
+  [[mutant.edit]]
+  from = '''    if (std::ranges::find(kStages, stage) == kStages.end()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-key-may-change-twice"
+file = "src/reason/tier.cpp"
+expect = "Tier.AVariantIsReadAsStrictlyAsATierFile"
+  [[mutant.edit]]
+  from = '''    if (!changed.emplace(change.substr(0, equals)).second) {'''
+  to = '''    if (!changed.emplace(change.substr(0, equals)).second && false) {'''

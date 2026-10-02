@@ -17,6 +17,12 @@
 //   re-runs exactly that stage and the stages after it, and writing out a
 //   default changes nothing.
 //
+//   A variant of a shipped tier is named by what it changes:
+//   "max+write.thinking=true" is `max` with its writer thinking. The eval
+//   sweeps such variants (ablations, A/B tests), and a job naming one is
+//   taken up anywhere by its name alone: nothing is stored, and two names
+//   of the same settings share every stage they have alike.
+//
 // Thread-safety: plain values and pure functions.
 #pragma once
 
@@ -123,5 +129,13 @@ inline constexpr std::string_view kDefaultTier = "max";
 
 // A shipped tier. Errc::not_found for a name that is not one.
 [[nodiscard]] Result<Tier> builtin_tier(std::string_view name);
+
+// A shipped tier, or a variant of one: the shipped tier before the first
+// '+', each `stage.key=value` after a '+' set in it, read as strictly as a
+// tier file. A value is true or false, a whole number, a number, or else
+// a word ("plan.mode=group"). Errc::not_found for a base that is no shipped tier;
+// Errc::invalid_argument naming a change that is not stage.key=value, a key
+// changed twice, or a value the tier refuses.
+[[nodiscard]] Result<Tier> find_tier(std::string_view name);
 
 }  // namespace rr::reason

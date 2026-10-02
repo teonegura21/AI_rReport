@@ -243,9 +243,12 @@ TEST(CacheKey, NamesEverythingTheResultDependsOn) {
     EXPECT_NE(cache_key(stage, fingerprint, inputs, 7), cache_key(stage, fingerprint, inputs, 0));
 }
 
-TEST(JobTier, IsAShippedTierUnlessTheContextFindsItsOwn) {
+TEST(JobTier, IsAShippedTierOrAVariantUnlessTheContextFindsItsOwn) {
     const library::Job job{.id = "J1", .tier = "thorough"};
     EXPECT_EQ(unwrap(job_tier(StageContext{.job = &job})), unwrap(reason::builtin_tier("thorough")));
+    const library::Job variant{.id = "J3", .tier = "fast+atomize.recall_pass=true"};
+    EXPECT_TRUE(unwrap(job_tier(StageContext{.job = &variant})).atomize.recall_pass)
+        << "a variant, found by its name alone: nothing is stored";
     const library::Job unknown{.id = "J2", .tier = "turbo"};
     EXPECT_ERRC(job_tier(StageContext{.job = &unknown}), Errc::not_found);
 

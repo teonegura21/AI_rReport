@@ -1858,10 +1858,10 @@ expect = "AtomizeStageTest.WithoutAPodThereIsNoLedger"
 [[mutant]]
 name = "a-contexts-own-tiers-are-ignored"
 file = "src/pipeline/executor.cpp"
-expect = "JobTier.IsAShippedTierUnlessTheContextFindsItsOwn"
+expect = "JobTier.IsAShippedTierOrAVariantUnlessTheContextFindsItsOwn"
   [[mutant.edit]]
-  from = '''    return context.tiers ? context.tiers(context.job->tier) : reason::builtin_tier(context.job->tier);'''
-  to = '''    return context.tiers && false ? context.tiers(context.job->tier) : reason::builtin_tier(context.job->tier);'''
+  from = '''    return context.tiers ? context.tiers(context.job->tier) : reason::find_tier(context.job->tier);'''
+  to = '''    return context.tiers && false ? context.tiers(context.job->tier) : reason::find_tier(context.job->tier);'''
 
 [[mutant]]
 name = "the-chapters-are-taken-whatever-the-tier"
@@ -3765,3 +3765,13 @@ expect = "SeamsStageTest.WithoutAJudgeOfAnotherFamilyLedgerBDecidesAndItIsSaidOn
   [[mutant.edit]]
   from = '''std::ranges::sort(kept, std::greater{},'''
   to = '''std::ranges::sort(kept, std::less{},'''
+
+# P26: a job's tier, a shipped one or a variant of one, found by its name alone.
+
+[[mutant]]
+name = "a-jobs-tier-is-a-shipped-one"
+file = "src/pipeline/executor.cpp"
+expect = "JobTier.IsAShippedTierOrAVariantUnlessTheContextFindsItsOwn"
+  [[mutant.edit]]
+  from = '''reason::find_tier(context.job->tier);'''
+  to = '''reason::builtin_tier(context.job->tier);'''

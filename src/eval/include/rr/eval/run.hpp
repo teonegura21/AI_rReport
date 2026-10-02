@@ -125,6 +125,9 @@ public:
     // The run `label` names. Errc::not_found when there is none.
     [[nodiscard]] Result<EvalRun> find(std::string_view label) const;
 
+    // Every run, the newest first.
+    [[nodiscard]] Result<std::vector<EvalRun>> all() const;
+
     // The entries of the run `run_id`, by video then replicate.
     [[nodiscard]] Result<std::vector<RunEntry>> entries(std::string_view run_id) const;
 

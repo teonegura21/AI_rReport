@@ -111,7 +111,7 @@ std::string cache_key(const Stage& stage, const json::Json& fingerprint,
 
 Result<reason::Tier> job_tier(const StageContext& context) {
     RR_ASSERT(context.job != nullptr, "a stage runs for a job");
-    return context.tiers ? context.tiers(context.job->tier) : reason::builtin_tier(context.job->tier);
+    return context.tiers ? context.tiers(context.job->tier) : reason::find_tier(context.job->tier);
 }
 
 json::Json army_fingerprint(const agents::Army& army) {

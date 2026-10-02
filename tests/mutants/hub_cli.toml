@@ -63,3 +63,29 @@ expect = "Hub.APairingIsTakenUpByEvalCompareAndHasNoPageOfItsOwn"
   to = '''        case library::JobKind::pairing:
             break;
             return failed('''
+
+# P26: the eval's page and an ingest's tier, as the real executable reads them.
+
+[[mutant]]
+name = "the-page-is-written-elsewhere"
+file = "apps/rreport/main.cpp"
+expect = "Hub.ASweepAPageOrATierAskedWronglyIsRefusedSayingWhy"
+  [[mutant.edit]]
+  from = '''flags.out.value_or(flags.root / "report.html");'''
+  to = '''flags.out.value_or(flags.root / "runs.html");'''
+
+[[mutant]]
+name = "a-page-plots-a-pairwise-metric"
+file = "apps/rreport/main.cpp"
+expect = "Hub.ASweepAPageOrATierAskedWronglyIsRefusedSayingWhy"
+  [[mutant.edit]]
+  from = '''        if (metric == nullptr || metric->pairwise) {'''
+  to = '''        if (metric == nullptr) {'''
+
+[[mutant]]
+name = "an-ingests-tier-is-a-shipped-one"
+file = "apps/rreport/main.cpp"
+expect = "Hub.ASweepAPageOrATierAskedWronglyIsRefusedSayingWhy"
+  [[mutant.edit]]
+  from = '''    if (auto tier = reason::find_tier(flags.tier); !tier.has_value()) {'''
+  to = '''    if (auto tier = reason::builtin_tier(flags.tier); !tier.has_value()) {'''

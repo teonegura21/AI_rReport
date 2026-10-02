@@ -55,3 +55,37 @@ expect = "EndToEnd.TwoRunsOfOnePipelineAreComparedAndGatedAndAnAaRunHoldsTheGate
   [[mutant.edit]]
   from = '''                values.push_back(*preferred);'''
   to = '''                values.clear();'''
+
+# P26: a sweep, end to end: each variant a tier the pipeline runs.
+
+[[mutant]]
+name = "an-eval-runs-tier-is-a-shipped-one"
+file = "apps/rreport/main.cpp"
+expect = "EndToEnd.ASweepRunsEachVariantUnderTheBaselinesSaltsAndThePageShowsEveryRun"
+  [[mutant.edit]]
+  from = '''    RR_TRY(reason::find_tier(flags.tier));'''
+  to = '''    RR_TRY(reason::builtin_tier(flags.tier));'''
+
+[[mutant]]
+name = "a-sweep-runs-the-default-replicates"
+file = "apps/rreport/main.cpp"
+expect = "EndToEnd.ASweepRunsEachVariantUnderTheBaselinesSaltsAndThePageShowsEveryRun"
+  [[mutant.edit]]
+  from = '''        one.replicates = sweep->replicates;'''
+  to = '''        (void)sweep->replicates;'''
+
+[[mutant]]
+name = "a-sweep-judges-when-told-not-to"
+file = "apps/rreport/main.cpp"
+expect = "EndToEnd.ASweepRunsEachVariantUnderTheBaselinesSaltsAndThePageShowsEveryRun"
+  [[mutant.edit]]
+  from = '''    if (flags.no_judge) {'''
+  to = '''    if (flags.no_judge && false) {'''
+
+[[mutant]]
+name = "a-sweep-says-nothing-it-found"
+file = "apps/rreport/main.cpp"
+expect = "EndToEnd.ASweepRunsEachVariantUnderTheBaselinesSaltsAndThePageShowsEveryRun"
+  [[mutant.edit]]
+  from = '''    (void)std::printf("\n%s", eval::to_text(*sweep, *found).c_str());'''
+  to = '''    (void)found;'''

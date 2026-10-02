@@ -5,7 +5,8 @@
 # review sheet a person corrects them with; runs of the set's videos through
 # the article stages, scored by code and by the eval's frozen panel of judges,
 # and exported; two runs compared video by video, their articles read side
-# by side by the panel, and a candidate gated against its baseline. Hub only.
+# by side by the panel, and a candidate gated against its baseline; variants
+# swept against a baseline, and every run on one page. Hub only.
 rr_add_module(eval
     SOURCES
         annotate.cpp
@@ -14,6 +15,7 @@ rr_add_module(eval
         flow.cpp
         gate.cpp
         gold.cpp
+        history.cpp
         judgement.cpp
         metrics.cpp
         panel.cpp
@@ -23,6 +25,7 @@ rr_add_module(eval
         sheet.cpp
         snapshot.cpp
         stats.cpp
+        sweep.cpp
     PUBLIC_DEPS
         rr::agents
         rr::core
@@ -36,6 +39,7 @@ rr_add_module(eval
         rr::report
     PRIVATE_DEPS
         rr::llm
+        rr::reason
         rr::text
         rr::transcript
         tomlplusplus::tomlplusplus)

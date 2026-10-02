@@ -39,7 +39,7 @@ A sample answers for many items at once: the 25 sentences of a transcript window
 
 `Waves{first, step, max, quorum}` says how many samples a decision gets. The first wave draws `first`. Another `step` are drawn while some item is unsettled and could still settle, up to `max` in all. "Could still settle" is checked: if even every remaining sample agreeing with an item's leader would not reach the quorum, drawing them is futile, and the item goes straight to escalation. 1–1–1 with one sample left can never make two thirds of four votes.
 
-At the `max` tier, atomize draws three samples at once, and what they still disagree on goes to the commander, thinking. The eval's sweeps (runbook R6) will say whether further waves pay before escalation does.
+At the `max` tier, atomize draws three samples at once, and what they still disagree on goes to the commander, thinking. The eval's sweep for runbook R6 (`eval/sweeps/r6.toml`) measures what the three samples and the commander's rulings each buy; whether further waves pay before escalation does is a variant to add to it.
 
 ### The medoid
 
@@ -85,6 +85,7 @@ A weighted sum would let a fluent draft that drops a must-quote beat a plain one
 - **Read strictly** (`parse_tier()`). An unknown section or key, a value of the wrong type or out of range, `judge_top` of 1 (a judge compares at least two drafts), or waves that cannot draw their max are errors naming the tier, the section and the key. A key left out takes its default.
 - **Canonical per stage.** `Tier::canonical(stage)` is the stage's settings as compact JSON, keys sorted, every value present. It enters the stage's cache key (plan P15), so changing one value re-runs exactly that stage and the stages after it, while writing out a default changes nothing.
 - **Compute only rises** from `fast` to `max`, stage by stage, and a test checks it: a higher tier never buys less.
+- **Variants, named by what they change** (`find_tier()`, P26): `max+write.thinking=true` is `max` with `[write] thinking = true`, and `thorough+write.drafts=3+plan.mode=group` changes two stages of `thorough`. Each change, `stage.key=value`, is set in the base's own file, its value read as TOML would read it (true or false, a whole number, a number, else a word), and the result is read by `parse_tier()`'s strict reader: a variant is refused exactly where a tier file would be, naming the variant whole. Its stages' canonical forms are its settings', so it shares every stage it leaves alone with its base. The eval sweeps variants against a baseline ([eval.md](eval.md#sweeps-and-the-report)).
 
 ## How it is tested
 
@@ -99,11 +100,13 @@ All of it is pure, so all of it is unit-tested, with exact expectations:
   - the canonical form, exactly;
   - an empty tier is the defaults;
   - strict reading, error by error;
+  - a variant: its base with each change set (true, a whole number, a number, a word), only the stage it changes keyed apart;
+  - a variant read as strictly as a tier file: each malformed change, an unknown section, a key changed twice; every shipped tier writing out every section;
   - the compiled-in tiers are the source tree's.
 
 ### How the tests were validated
 
-Each rule was removed on purpose (44 mutants), and the named test was confirmed to fail.
+Each rule was removed on purpose (58 mutants, 14 of them P26's for variants), and the named test was confirmed to fail.
 
 | Rule removed | Caught by |
 |---|---|
@@ -118,6 +121,7 @@ Each rule was removed on purpose (44 mutants), and the named test was confirmed 
 | Pairwise: the swap, its mapping, the inconsistency count, a tie's half, no pair's 0.5 | `Pairwise.*` |
 | Selection: NaN the worst, an earlier key final, sizes checked, a tie to the first | `Select.*` |
 | Tiers: unknown keys and sections, `judge_top` of one, waves, shares (range, NaN, whole numbers), the canonical form, defaults, modes, names | `Tier.*` |
+| Variants: the base found, each change set, each kind of value as TOML reads it, every part of `stage.key=value`, an unknown stage, a key changed twice | `AVariantIsItsBaseWithEachChangeSet`, `AVariantIsReadAsStrictlyAsATierFile` |
 
 **What writing the mutants found, before any ran:** no test had a winner that was not voted first, so counts that were never sorted would have passed. That test exists now.
 

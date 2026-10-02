@@ -38,6 +38,10 @@
 //   eval gate A B     whether candidate B may replace baseline A, as
 //                     eval/gates/<gate>.toml says; with --aa, whether the
 //                     gate's margins hold, B being A run again
+//   eval sweep NAME   each variant of eval/sweeps/<NAME>.toml run, scored and
+//                     judged, then compared with the sweep's baseline (P26)
+//   eval report       every eval run on one page: quality against cost, the
+//                     runs, each run's videos (eval/report.html)
 //   doctor            check the data directory, the library, the capture tools,
 //                     RunPod and the runtime, and say what to do about problems
 //   bench             measure the pod: its engines, the commander's and the
@@ -90,6 +94,7 @@
 #include <rr/eval/flow.hpp>
 #include <rr/eval/gate.hpp>
 #include <rr/eval/gold.hpp>
+#include <rr/eval/history.hpp>
 #include <rr/eval/judgement.hpp>
 #include <rr/eval/metrics.hpp>
 #include <rr/eval/panel.hpp>
@@ -99,6 +104,7 @@
 #include <rr/eval/sheet.hpp>
 #include <rr/eval/snapshot.hpp>
 #include <rr/eval/stats.hpp>
+#include <rr/eval/sweep.hpp>
 #include <rr/hub/bench.hpp>
 #include <rr/hub/doctor.hpp>
 #include <rr/hub/hub_config.hpp>
@@ -602,7 +608,7 @@ int ingest(const Global& global, const IngestFlags& flags, const proc::Terminati
     if (!hub.has_value()) {
         return failed(kBadConfiguration, hub.error());
     }
-    if (auto tier = reason::builtin_tier(flags.tier); !tier.has_value()) {
+    if (auto tier = reason::find_tier(flags.tier); !tier.has_value()) {
         return failed(kBadConfiguration, tier.error());
     }
     auto database = library::open_database(hub->settings.library_database());
@@ -801,9 +807,9 @@ struct EvalFlags {
     std::vector<std::string> videos;           // none: every video of the set
     bool again = false;                        // fetch: read a video kept already once more
     bool replace = false;                      // annotate: draft a silver gold file again
-    std::optional<std::filesystem::path> out;  // sheet, export: where to write it
+    std::optional<std::filesystem::path> out;  // sheet, export, report: where to write it
     std::string label;                         // run, score, export: the run's
-    std::string tier{reason::kDefaultTier};    // run
+    std::string tier{reason::kDefaultTier};    // run: a tier, or a variant of one (max+write.thinking=true)
     int replicates = 3;                        // run: three at least, to see the noise (ADR-0019)
     std::string split{"dev"};                  // run: dev, or test for a gate
     std::string format{"csv"};                 // export: csv or json
@@ -813,9 +819,11 @@ struct EvalFlags {
     std::string baseline;                      // compare, gate: run A, the baseline
     std::string candidate;                     // compare, gate: run B, the candidate
     std::string gate{"default"};               // compare, gate: eval/gates/<gate>.toml
-    std::optional<std::string> metric;         // compare: one metric, video by video
+    std::optional<std::string> metric;         // compare: one metric, video by video; report: the chart's
     bool flow = false;                         // compare: the panel reads the runs' articles pairwise
     bool aa = false;                           // gate: B is A run again: check the gate's margins
+    std::string sweep;                         // sweep: eval/sweeps/<sweep>.toml
+    bool no_judge = false;                     // sweep: score by code alone
 };
 
 // The command that does `verb` to `video`, with the flags that differ from
@@ -1049,7 +1057,7 @@ int eval_sheet(const EvalFlags& flags) {
 
 // The run the flags ask for: `--split` read, `--tier` checked.
 Result<eval::RunSpec> run_spec(const EvalFlags& flags, const eval::EvalSet& set) {
-    RR_TRY(reason::builtin_tier(flags.tier));
+    RR_TRY(reason::find_tier(flags.tier));
     eval::Split split = eval::Split::dev;
     if (flags.split == eval::to_string(eval::Split::test)) {
         split = eval::Split::test;
@@ -1686,6 +1694,116 @@ int eval_gate(const Global& global, const EvalFlags& flags) {
     return reading.passed() ? kOk : kFailure;
 }
 
+// One run of a sweep, as the eval's own commands make it: run, scored, and
+// judged unless asked not to. The worst of their exit codes.
+int sweep_run(const Global& global, const EvalFlags& flags, const proc::TerminationSignals& signals) {
+    (void)std::printf("\n== %s: tier %s\n", flags.label.c_str(), flags.tier.c_str());
+    const int ran = eval_run(global, flags, signals);
+    if (ran == kBadConfiguration || signals.received() != 0) {
+        return ran;  // a label of another run, or interrupted: nothing after it would hold
+    }
+    const int scored = eval_score(global, flags);
+    if (flags.no_judge) {
+        return std::max(ran, scored);
+    }
+    return std::max({ran, scored, eval_judge(global, flags, signals)});
+}
+
+// What the sweep's runs found: each variant against the baseline.
+Result<std::vector<eval::VariantFound>> sweep_found(const HubSettings& settings, const eval::Sweep& sweep) {
+    RR_TRY_ASSIGN(db::Database database, library::open_database(settings.library_database()));
+    const eval::Runs runs{database, SystemClock::instance()};
+    RR_TRY_ASSIGN(const eval::EvalRun baseline, runs.find(sweep.baseline_label()));
+    RR_TRY_ASSIGN(const std::vector<eval::ScoredEntry> baseline_scores, runs.scores(baseline.id));
+    std::vector<eval::VariantFound> found;
+    for (const eval::SweepVariant& variant : sweep.variants) {
+        RR_TRY_ASSIGN(const eval::EvalRun run, runs.find(sweep.label_of(variant)));
+        RR_TRY_ASSIGN(const std::vector<eval::ScoredEntry> scores, runs.scores(run.id));
+        found.push_back(
+            eval::VariantFound{.variant = variant, .rows = eval::compare_runs(baseline_scores, scores)});
+    }
+    return found;
+}
+
+int eval_sweep(const Global& global, const EvalFlags& flags, const proc::TerminationSignals& signals) {
+    auto hub = load(global);
+    if (!hub.has_value()) {
+        return failed(kBadConfiguration, hub.error());
+    }
+    auto sweep = eval::read_sweep(flags.root, flags.sweep);
+    if (!sweep.has_value()) {
+        return failed(kBadConfiguration, sweep.error());
+    }
+    std::vector<std::pair<std::string, std::string>> labelled{{sweep->baseline_label(), sweep->baseline}};
+    for (const eval::SweepVariant& variant : sweep->variants) {
+        labelled.emplace_back(sweep->label_of(variant), variant.tier);
+    }
+    int code = kOk;
+    for (const auto& [label, tier] : labelled) {
+        EvalFlags one = flags;
+        one.label = label;
+        one.tier = tier;
+        one.replicates = sweep->replicates;
+        one.first_replicate = 0;  // every run under the same salts
+        one.split = std::string{eval::to_string(eval::Split::dev)};
+        one.videos.clear();
+        const int done = sweep_run(global, one, signals);
+        if (done == kBadConfiguration || signals.received() != 0) {
+            return done;
+        }
+        code = std::max(code, done);
+    }
+    auto found = sweep_found(hub->settings, *sweep);
+    if (!found.has_value()) {
+        return failed(kFailure, found.error());
+    }
+    (void)std::printf("\n%s", eval::to_text(*sweep, *found).c_str());
+    return code;
+}
+
+int eval_report(const Global& global, const EvalFlags& flags) {
+    auto hub = load(global);
+    if (!hub.has_value()) {
+        return failed(kBadConfiguration, hub.error());
+    }
+    if (flags.metric.has_value()) {
+        const eval::Metric* metric = eval::find_metric(*flags.metric);
+        if (metric == nullptr || metric->pairwise) {
+            return failed(kBadConfiguration,
+                          Error{Errc::invalid_argument,
+                                std::format("'{}' is no metric a run scores: docs/design/eval.md lists them",
+                                            *flags.metric)});
+        }
+    }
+    auto database = library::open_database(hub->settings.library_database());
+    if (!database.has_value()) {
+        return failed(kFailure, database.error());
+    }
+    const eval::Runs runs{*database, SystemClock::instance()};
+    auto all = runs.all();
+    if (!all.has_value()) {
+        return failed(kFailure, all.error());
+    }
+    std::vector<eval::RunScores> scored;
+    scored.reserve(all->size());
+    for (eval::EvalRun& run : *all) {
+        auto scores = runs.scores(run.id);
+        if (!scores.has_value()) {
+            return failed(kFailure, scores.error());
+        }
+        scored.push_back(eval::RunScores{.run = std::move(run), .scores = *std::move(scores)});
+    }
+    const eval::PageOptions options{.quality = flags.metric.value_or(eval::default_quality(scored)),
+                                    .made = when(std::chrono::system_clock::now())};
+    const std::filesystem::path out = flags.out.value_or(flags.root / "report.html");
+    if (auto written = write_file_atomically(out, eval::eval_page(scored, options)); !written.has_value()) {
+        return failed(kFailure, written.error());
+    }
+    (void)std::printf("wrote %s: %zu run%s, %s against %s\n", out.string().c_str(), scored.size(),
+                      scored.size() == 1 ? "" : "s", options.quality.c_str(), options.cost.c_str());
+    return kOk;
+}
+
 int show_config(const Global& global, bool origin) {
     const auto config = load_config(global);
     if (!config.has_value()) {
@@ -1823,6 +1941,20 @@ int run(int argc, char** argv) {
                                   "The panel judged metrics must be scored by (default: eval-v1)");
     eval_gate_command->add_flag("--aa", eval_flags.aa,
                                 "B is A run again under other salts: check whether the gate's margins hold");
+    auto* eval_sweep_command = eval_group->add_subcommand(
+        "sweep", "Each variant of a sweep run, scored and judged, then compared with its baseline");
+    eval_sweep_command->add_option("name", eval_flags.sweep, "The sweep: eval/sweeps/<name>.toml")
+        ->required();
+    eval_sweep_command->add_option("--panel", eval_flags.panel,
+                                   "The frozen panel that judges each run (default: eval-v1)");
+    eval_sweep_command->add_flag("--no-judge", eval_flags.no_judge, "Score by code alone: no judge is asked");
+    auto* eval_report_command = eval_group->add_subcommand(
+        "report", "Every eval run on one page: quality against cost, each run's videos");
+    eval_report_command->add_option("--out", eval_flags.out,
+                                    "Write it here (default: <eval-dir>/report.html)");
+    eval_report_command->add_option(
+        "--metric", eval_flags.metric,
+        "The chart's quality (default: facts_told once a run is judged, else atoms_told)");
 
     auto* doctor_command = app.add_subcommand("doctor", "Check what the hub needs, and say what to do");
 
@@ -1924,6 +2056,12 @@ int run(int argc, char** argv) {
     }
     if (*eval_gate_command) {
         return eval_gate(global, eval_flags);
+    }
+    if (*eval_sweep_command) {
+        return eval_sweep(global, eval_flags, signals);
+    }
+    if (*eval_report_command) {
+        return eval_report(global, eval_flags);
     }
     if (*doctor_command) {
         return doctor(global, signals);

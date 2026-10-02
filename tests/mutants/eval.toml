@@ -2217,3 +2217,261 @@ expect = "Metrics.FlowAloneIsReadPairwiseByTheJudgesAndIsBetterHigher"
   [[mutant.edit]]
   from = '''    Metric{.name = "flow", .family = kJudges, .better = Better::higher, .pairwise = true},'''
   to = '''    Metric{.name = "flow", .family = kJudges, .better = Better::lower, .pairwise = true},'''
+
+# P26: a sweep file, what `rreport eval sweep` prints of it, and the page
+# `rreport eval report` writes (rr/eval/sweep.hpp, rr/eval/history.hpp).
+
+[[mutant]]
+name = "a-sweep-may-name-another"
+file = "src/eval/sweep.cpp"
+expect = "Sweep.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (sweep.name != name) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-tier-refused-says-not-where"
+file = "src/eval/sweep.cpp"
+expect = "Sweep.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''        return fail(tier.error().code(), std::format("{}: {}", where, tier.error().message()));'''
+  to = '''        (void)where;
+        return fail(tier.error().code(), std::format("{}", tier.error().message()));'''
+
+[[mutant]]
+name = "a-sweep-runs-three-replicates"
+file = "src/eval/sweep.cpp"
+expect = "Sweep.IsItsBaselineAndItsVariantsEachALabelATierAndWhy"
+  [[mutant.edit]]
+  from = '''    sweep.replicates = static_cast<int>(replicates.value_or(kSweepReplicates));'''
+  to = '''    sweep.replicates = static_cast<int>(replicates.value_or(3));'''
+
+[[mutant]]
+name = "the-replicates-written-are-ignored"
+file = "src/eval/sweep.cpp"
+expect = "Sweep.IsItsBaselineAndItsVariantsEachALabelATierAndWhy"
+  [[mutant.edit]]
+  from = '''    sweep.replicates = static_cast<int>(replicates.value_or(kSweepReplicates));'''
+  to = '''    (void)replicates;
+    sweep.replicates = kSweepReplicates;'''
+
+[[mutant]]
+name = "a-sweep-may-have-no-variant"
+file = "src/eval/sweep.cpp"
+expect = "Sweep.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (sweep.variants.empty()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-label-may-be-any-text"
+file = "src/eval/sweep.cpp"
+expect = "Sweep.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (!valid_video_id(variant.label) || variant.label == kBaseline) {'''
+  to = '''    if (variant.label == kBaseline) {'''
+
+[[mutant]]
+name = "a-label-may-be-baseline"
+file = "src/eval/sweep.cpp"
+expect = "Sweep.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (!valid_video_id(variant.label) || variant.label == kBaseline) {'''
+  to = '''    if (!valid_video_id(variant.label)) {'''
+
+[[mutant]]
+name = "a-label-may-come-twice"
+file = "src/eval/sweep.cpp"
+expect = "Sweep.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (std::ranges::contains(sweep.variants, variant.label, &SweepVariant::label)) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-variant-may-spend-as-the-baseline"
+file = "src/eval/sweep.cpp"
+expect = "Sweep.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (spend_alike(tier, baseline)) {'''
+  to = '''    if (spend_alike(tier, baseline) && false) {'''
+
+[[mutant]]
+name = "spending-alike-is-by-name"
+file = "src/eval/sweep.cpp"
+expect = "Sweep.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    a.name = b.name;'''
+  to = '''    (void)a.name;'''
+
+[[mutant]]
+name = "a-sweep-name-may-be-a-path"
+file = "src/eval/sweep.cpp"
+expect = "Sweep.IsReadFromItsFileByAName"
+  [[mutant.edit]]
+  from = '''    if (!valid_video_id(name)) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-variant-not-scored-is-unsaid"
+file = "src/eval/sweep.cpp"
+expect = "SweepText.ListsWhatEachVariantMovedAndHowMuchAndCountsTheRest"
+  [[mutant.edit]]
+  from = '''    if (found.rows.empty()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "no-difference-is-not-counted"
+file = "src/eval/sweep.cpp"
+expect = "SweepText.ListsWhatEachVariantMovedAndHowMuchAndCountsTheRest"
+  [[mutant.edit]]
+  from = '''            ++alike;'''
+  to = '''            (void)alike;'''
+
+[[mutant]]
+name = "too-few-videos-is-a-move"
+file = "src/eval/sweep.cpp"
+expect = "SweepText.ListsWhatEachVariantMovedAndHowMuchAndCountsTheRest"
+  [[mutant.edit]]
+  from = '''        } else if (seen == Seen::unknown || !row.comparison.has_value()) {'''
+  to = '''        } else if (!row.comparison.has_value()) {'''
+
+[[mutant]]
+name = "a-variants-run-is-its-label"
+file = "src/eval/sweep.cpp"
+expect = "Sweep.IsItsBaselineAndItsVariantsEachALabelATierAndWhy"
+  [[mutant.edit]]
+  from = '''    return std::format("{}-{}", name, variant.label);'''
+  to = '''    return variant.label;'''
+
+[[mutant]]
+name = "a-run-is-its-first-video"
+file = "src/eval/history.cpp"
+expect = "RunMean.IsTheMeanOverVideosOfEachVideosReplicatesWithItsInterval"
+  [[mutant.edit]]
+  from = '''    run.mean = sum / static_cast<double>(means.size());'''
+  to = '''    run.mean = means.front() + (0 * sum);'''
+
+[[mutant]]
+name = "one-video-has-an-interval"
+file = "src/eval/history.cpp"
+expect = "RunMean.IsTheMeanOverVideosOfEachVideosReplicatesWithItsInterval"
+  [[mutant.edit]]
+  from = '''    if (means.size() >= 2) {'''
+  to = '''    if (means.size() >= 1) {'''
+
+[[mutant]]
+name = "a-round-ratio-rounds-up"
+file = "src/eval/history.cpp"
+expect = "AxisOver.HoldsEveryValueOnRoundTicks"
+  [[mutant.edit]]
+  from = '''        if (ratio <= round) {'''
+  to = '''        if (ratio < round) {'''
+
+[[mutant]]
+name = "no-step-of-two"
+file = "src/eval/history.cpp"
+expect = "AxisOver.HoldsEveryValueOnRoundTicks"
+  [[mutant.edit]]
+  from = '''    for (const double round : {1.0, 2.0, 5.0}) {'''
+  to = '''    for (const double round : {1.0, 5.0}) {'''
+
+[[mutant]]
+name = "a-hair-under-a-tick-takes-a-step"
+file = "src/eval/history.cpp"
+expect = "AxisOver.HoldsEveryValueOnRoundTicks"
+  [[mutant.edit]]
+  from = '''    Axis axis{.low = std::floor((low / step) + kHair) * step,'''
+  to = '''    Axis axis{.low = std::floor(low / step) * step,'''
+
+[[mutant]]
+name = "a-hair-over-a-tick-takes-a-step"
+file = "src/eval/history.cpp"
+expect = "AxisOver.HoldsEveryValueOnRoundTicks"
+  [[mutant.edit]]
+  from = '''              .high = std::ceil((high / step) - kHair) * step,'''
+  to = '''              .high = std::ceil(high / step) * step,'''
+
+[[mutant]]
+name = "one-value-has-no-room"
+file = "src/eval/history.cpp"
+expect = "AxisOver.HoldsEveryValueOnRoundTicks"
+  [[mutant.edit]]
+  from = '''    if (high == low) {'''
+  to = '''    if (high == low && low == 0) {'''
+
+[[mutant]]
+name = "the-chart-upside-down"
+file = "src/eval/history.cpp"
+expect = "EvalPage.PlotsEachRunAtItsMeansAndListsWhatItCannot"
+  [[mutant.edit]]
+  from = '''    return kTop + ((axis.high - value) / (axis.high - axis.low) * (kHeight - kTop - kBottom));'''
+  to = '''    return kTop + ((value - axis.low) / (axis.high - axis.low) * (kHeight - kTop - kBottom));'''
+
+[[mutant]]
+name = "the-chart-right-to-left"
+file = "src/eval/history.cpp"
+expect = "EvalPage.PlotsEachRunAtItsMeansAndListsWhatItCannot"
+  [[mutant.edit]]
+  from = '''    return kLeft + ((value - axis.low) / (axis.high - axis.low) * (kWidth - kLeft - kRight));'''
+  to = '''    return kLeft + ((axis.high - value) / (axis.high - axis.low) * (kWidth - kLeft - kRight));'''
+
+[[mutant]]
+name = "a-run-without-its-cost-is-plotted"
+file = "src/eval/history.cpp"
+expect = "EvalPage.PlotsEachRunAtItsMeansAndListsWhatItCannot"
+  [[mutant.edit]]
+  from = '''        if (cost.has_value() && quality.has_value()) {
+            points.push_back(Point{.run = &run, .cost = *cost, .quality = *quality});'''
+  to = '''        if (quality.has_value()) {
+            points.push_back(Point{.run = &run, .cost = cost.value_or(RunMean{}), .quality = *quality});'''
+
+[[mutant]]
+name = "a-label-not-plotted-is-not-escaped"
+file = "src/eval/history.cpp"
+expect = "EvalPage.PlotsEachRunAtItsMeansAndListsWhatItCannot"
+  [[mutant.edit]]
+  from = '''            named += std::format("{}{}", named.empty() ? "" : ", ", escaped(label));'''
+  to = '''            named += std::format("{}{}", named.empty() ? "" : ", ", label);'''
+
+[[mutant]]
+name = "the-judged-are-the-scored"
+file = "src/eval/history.cpp"
+expect = "EvalPage.PlotsEachRunAtItsMeansAndListsWhatItCannot"
+  [[mutant.edit]]
+  from = '''            scored_by(run.scores, "judges"));'''
+  to = '''            scored_by(run.scores, "code"));'''
+
+[[mutant]]
+name = "the-last-replicate-is-one-past"
+file = "src/eval/history.cpp"
+expect = "EvalPage.PlotsEachRunAtItsMeansAndListsWhatItCannot"
+  [[mutant.edit]]
+  from = '''            spec.first_replicate + spec.replicates - 1, run.scores.size(), scored_by(run.scores, "code"),'''
+  to = '''            spec.first_replicate + spec.replicates, run.scores.size(), scored_by(run.scores, "code"),'''
+
+[[mutant]]
+name = "every-metric-is-a-column"
+file = "src/eval/history.cpp"
+expect = "EvalPage.PlotsEachRunAtItsMeansAndListsWhatItCannot"
+  [[mutant.edit]]
+  from = '''        VideoValues values = per_video(run.scores, metric.name);
+        if (values.means.empty()) {'''
+  to = '''        VideoValues values = per_video(run.scores, metric.name);
+        if (values.means.empty() && false) {'''
+
+[[mutant]]
+name = "quality-is-always-the-atoms"
+file = "src/eval/history.cpp"
+expect = "DefaultQuality.IsTheFactsTheJudgesFoundToldElseTheAtomsTheCodeFound"
+  [[mutant.edit]]
+  from = '''    return judged ? "facts_told" : "atoms_told";'''
+  to = '''    (void)judged;
+    return "atoms_told";'''
+
+[[mutant]]
+name = "the-runs-oldest-first"
+file = "src/eval/run.cpp"
+expect = "RunsTest.AllAreTheRunsNewestFirst"
+  [[mutant.edit]]
+  from = '''ORDER BY created_at_ms DESC, id DESC", kRunColumns), {},'''
+  to = '''ORDER BY created_at_ms, id", kRunColumns), {},'''

@@ -1,6 +1,7 @@
 #include <rr/reason/tier.hpp>
 
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -127,6 +128,52 @@ TEST(Tier, IsReadStrictly) {
     EXPECT_OK(parse_tier("custom", "[atomize]\nquorum = 1\n")) << "a whole number is a share too";
 }
 
+TEST(Tier, AVariantIsItsBaseWithEachChangeSet) {
+    const Tier max = unwrap(builtin_tier("max"));
+    EXPECT_EQ(unwrap(find_tier("max")), max) << "a shipped tier, found by its name";
+
+    const Tier thinking = unwrap(find_tier("max+write.thinking=true"));
+    EXPECT_EQ(thinking.name, "max+write.thinking=true");
+    Tier expected = max;
+    expected.name = thinking.name;
+    expected.write.thinking = true;
+    EXPECT_EQ(thinking, expected);
+    for (const Stage stage : {Stage::outline, Stage::atomize, Stage::plan, Stage::seams}) {
+        EXPECT_EQ(thinking.canonical(stage), max.canonical(stage)) << "only the stage it changes runs again";
+    }
+    EXPECT_NE(thinking.canonical(Stage::write), max.canonical(Stage::write));
+
+    const Tier several = unwrap(find_tier("thorough+write.drafts=3+atomize.quorum=0.5+plan.mode=group"));
+    EXPECT_EQ(several.write.drafts, 3) << "a whole number";
+    EXPECT_EQ(several.atomize.waves.quorum, 0.5) << "a number";
+    EXPECT_EQ(several.plan.mode, PlanMode::group) << "a word";
+    EXPECT_EQ(unwrap(find_tier("fast+seams.mode=recheck")).seams.mode, SeamsMode::recheck);
+}
+
+TEST(Tier, AVariantIsReadAsStrictlyAsATierFile) {
+    const auto refused = [](std::string_view name, std::string_view says) {
+        const Result<Tier> tier = find_tier(name);
+        ASSERT_ERRC(tier, Errc::invalid_argument) << name;
+        EXPECT_THAT(tier.error().message(), HasSubstr(says)) << name;
+        EXPECT_THAT(tier.error().message(), HasSubstr(std::format("tier '{}'", name))) << "named whole";
+    };
+    refused("max+write.drafts=two", "'drafts' must be a whole number");
+    refused("max+write.drafts=0", "at least 1");
+    refused("max+write.draft=3", "unknown key 'draft'");
+    refused("max+polish.drafts=3", "unknown section [polish]");
+    refused("max+write.judge_top=9", "'judge_top' is 0 or from 2");
+    refused("max+write.thinking=yes", "true or false");
+    refused("max+write.drafts", "'write.drafts' is not stage.key=value");
+    refused("max+drafts=3", "'drafts=3' is not stage.key=value");
+    refused("max+.drafts=3", "is not stage.key=value");
+    refused("max+write.=3", "is not stage.key=value");
+    refused("max+write.drafts=", "is not stage.key=value");
+    refused("max+", "'' is not stage.key=value");
+    refused("max+write.drafts=2+write.drafts=3", "'write.drafts' is changed twice");
+    EXPECT_ERRC(find_tier("ultra+write.drafts=2"), Errc::not_found) << "a base that is no tier";
+    EXPECT_ERRC(find_tier("ultra"), Errc::not_found);
+}
+
 // The tiers compiled into the binary are the source tree's.
 TEST(Tier, TheShippedTiersAreTheSourceTrees) {
     for (const std::string& name : builtin_tiers()) {
@@ -137,6 +184,10 @@ TEST(Tier, TheShippedTiersAreTheSourceTrees) {
         std::stringstream text;
         text << in.rdbuf();
         EXPECT_EQ(unwrap(parse_tier(name, text.str())), unwrap(builtin_tier(name))) << name;
+        for (const Stage stage : kStages) {
+            EXPECT_THAT(text.str(), HasSubstr(std::format("\n[{}]", to_string(stage))))
+                << name << " writes out every section: a variant's change has one to set";
+        }
     }
 }
 

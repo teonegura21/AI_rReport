@@ -11,6 +11,7 @@ This directory is the data behind `rreport eval`. ADR-0019 says how it is measur
 | `labels/` | 30–50 human verdicts and pairwise preferences that calibrate the judges | Runbook R5 |
 | `judges/` | The frozen judge panels (`eval-v1.toml`) | Runbook R5 |
 | `gates/` | Each gated metric and the regression it tolerates | Plan P25 |
+| `sweeps/` | Variants of the pipeline run against a baseline, each with why (`r6.toml`: what each step of `max` buys) | Runbook R6 |
 
 ## Approving the candidates
 

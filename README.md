@@ -119,6 +119,8 @@ rreport eval export --label baseline   # a row per video and replicate (CSV; --f
 rreport eval compare baseline candidate   # every metric, video by video, with its 95% interval
 rreport eval compare baseline candidate --flow   # and which reads better, read side by side by the judges
 rreport eval gate baseline candidate      # may the candidate replace the baseline? (eval/gates/default.toml)
+rreport eval sweep r6                     # each variant of eval/sweeps/r6.toml run, and compared with its baseline
+rreport eval report                       # every run on one page: quality against GPU-minutes
 ```
 
 ## Repository map

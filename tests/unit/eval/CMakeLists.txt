@@ -7,6 +7,7 @@ rr_add_test_suite(eval
         flow_test.cpp
         gate_test.cpp
         gold_test.cpp
+        history_test.cpp
         judgement_test.cpp
         metrics_test.cpp
         panel_test.cpp
@@ -16,6 +17,7 @@ rr_add_test_suite(eval
         sheet_test.cpp
         snapshot_test.cpp
         stats_test.cpp
+        sweep_test.cpp
     DEPS
         rr::eval
         rr::library

@@ -2,15 +2,21 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cmath>
+#include <cstdint>
 #include <format>
 #include <limits>
+#include <memory>
 #include <set>
 #include <span>
+#include <string>
+#include <system_error>
 #include <utility>
 
 #include <toml++/toml.hpp>
 
+#include <rr/core/assert.hpp>
 #include <rr/core/strings.hpp>
 #include <rr/embedded/tiers.hpp>
 #include <rr/json/json.hpp>
@@ -194,6 +200,111 @@ Result<SeamsCompute> read_seams(Section& section) {
     return seams;
 }
 
+// A tier's sections read strictly, each message naming `name`.
+Result<Tier> read_tier(std::string_view name, const toml::table& document) {
+    const std::string where = std::format("tier '{}'", name);
+    for (const auto& [key, value] : document) {
+        if (std::ranges::find(kStages, key.str()) == kStages.end()) {
+            return std::unexpected(invalid(where, std::format("unknown section [{}]", key.str())));
+        }
+        if (!value.is_table()) {
+            return std::unexpected(
+                invalid(where, std::format("'{}' must be a section, [{}]", key.str(), key.str())));
+        }
+    }
+    const auto section = [&](std::string_view stage) {
+        return Section{document[stage].as_table(), std::format("{}, [{}]", where, stage)};
+    };
+
+    Tier tier{.name = std::string{name}};
+    Section outline = section("outline");
+    RR_TRY_ASSIGN(tier.outline, read_outline(outline));
+    Section atomize = section("atomize");
+    RR_TRY_ASSIGN(tier.atomize, read_atomize(atomize));
+    Section plan = section("plan");
+    RR_TRY_ASSIGN(tier.plan, read_plan(plan));
+    Section write = section("write");
+    RR_TRY_ASSIGN(tier.write, read_write(write));
+    Section seams = section("seams");
+    RR_TRY_ASSIGN(tier.seams, read_seams(seams));
+    return tier;
+}
+
+Result<toml::table> parsed(std::string_view name, std::string_view toml) {
+    const std::string where = std::format("tier '{}'", name);
+    try {
+        return toml::parse(toml, where);
+    } catch (const toml::parse_error& error) {
+        return std::unexpected(
+            invalid(where, std::format("line {}: {}", error.source().begin.line, error.description())));
+    }
+}
+
+// A shipped tier's file, as compiled in.
+Result<std::string_view> builtin_text(std::string_view name) {
+    if (std::ranges::find(kTiers, name) == kTiers.end()) {
+        return fail(Errc::not_found,
+                    std::format("there is no tier '{}': the tiers are {}", name, join(kTiers, ", ")));
+    }
+    const std::string file = std::format("config/tiers/{}.toml", name);
+    const std::optional<std::string_view> text = embedded::tiers::find(file);
+    if (!text.has_value()) {
+        return fail(Errc::internal, std::format("{} is not compiled in", file));
+    }
+    return *text;
+}
+
+// Sets `key` of `section` to `text` as TOML reads a value: true or false, a
+// whole number, a number, or else a word.
+void set_value(toml::table& section, std::string_view key, std::string_view text) {
+    if (text == "true" || text == "false") {
+        section.insert_or_assign(key, text == "true");
+        return;
+    }
+    // from_chars reads the range [first, last), never past it.
+    const char* const first = std::to_address(text.begin());
+    const char* const last = std::to_address(text.end());
+    std::int64_t whole = 0;
+    if (const auto [stop, error] = std::from_chars(first, last, whole);
+        error == std::errc{} && stop == last) {
+        section.insert_or_assign(key, whole);
+        return;
+    }
+    double number = 0;
+    if (const auto [stop, error] = std::from_chars(first, last, number);
+        error == std::errc{} && stop == last) {
+        section.insert_or_assign(key, number);
+        return;
+    }
+    section.insert_or_assign(key, std::string{text});
+}
+
+// One change of a variant's name, `stage.key=value`, set in `document`;
+// `changed` keeps the keys changed so far.
+Result<void> apply_change(std::string_view name, std::string_view change, toml::table& document,
+                          std::set<std::string, std::less<>>& changed) {
+    const std::string where = std::format("tier '{}'", name);
+    const std::size_t equals = change.find('=');
+    const std::size_t dot = change.find('.');
+    if (equals == std::string_view::npos || dot == std::string_view::npos || dot == 0 || dot + 1 >= equals ||
+        equals + 1 == change.size()) {
+        return std::unexpected(invalid(where, std::format("'{}' is not stage.key=value", change)));
+    }
+    const std::string_view stage = change.substr(0, dot);
+    if (std::ranges::find(kStages, stage) == kStages.end()) {
+        return std::unexpected(invalid(where, std::format("unknown section [{}]", stage)));
+    }
+    const std::string_view key = change.substr(dot + 1, equals - dot - 1);
+    if (!changed.emplace(change.substr(0, equals)).second) {
+        return std::unexpected(
+            invalid(where, std::format("'{}' is changed twice", change.substr(0, equals))));
+    }
+    toml::table* const section = document[stage].as_table();
+    RR_ASSERT(section != nullptr, "a shipped tier writes out every section (tier_test)");
+    set_value(*section, key, change.substr(equals + 1));
+    return ok();
+}
+
 std::string_view to_string(PlanMode mode) noexcept {
     return mode == PlanMode::assign ? "assign" : "group";
 }
@@ -253,39 +364,8 @@ std::string Tier::canonical(Stage stage) const {
 }
 
 Result<Tier> parse_tier(std::string_view name, std::string_view toml) {
-    const std::string where = std::format("tier '{}'", name);
-    toml::table document;
-    try {
-        document = toml::parse(toml, where);
-    } catch (const toml::parse_error& error) {
-        return std::unexpected(
-            invalid(where, std::format("line {}: {}", error.source().begin.line, error.description())));
-    }
-    for (const auto& [key, value] : document) {
-        if (std::ranges::find(kStages, key.str()) == kStages.end()) {
-            return std::unexpected(invalid(where, std::format("unknown section [{}]", key.str())));
-        }
-        if (!value.is_table()) {
-            return std::unexpected(
-                invalid(where, std::format("'{}' must be a section, [{}]", key.str(), key.str())));
-        }
-    }
-    const auto section = [&](std::string_view stage) {
-        return Section{document[stage].as_table(), std::format("{}, [{}]", where, stage)};
-    };
-
-    Tier tier{.name = std::string{name}};
-    Section outline = section("outline");
-    RR_TRY_ASSIGN(tier.outline, read_outline(outline));
-    Section atomize = section("atomize");
-    RR_TRY_ASSIGN(tier.atomize, read_atomize(atomize));
-    Section plan = section("plan");
-    RR_TRY_ASSIGN(tier.plan, read_plan(plan));
-    Section write = section("write");
-    RR_TRY_ASSIGN(tier.write, read_write(write));
-    Section seams = section("seams");
-    RR_TRY_ASSIGN(tier.seams, read_seams(seams));
-    return tier;
+    RR_TRY_ASSIGN(const toml::table document, parsed(name, toml));
+    return read_tier(name, document);
 }
 
 std::vector<std::string> builtin_tiers() {
@@ -293,16 +373,22 @@ std::vector<std::string> builtin_tiers() {
 }
 
 Result<Tier> builtin_tier(std::string_view name) {
-    if (std::ranges::find(kTiers, name) == kTiers.end()) {
-        return fail(Errc::not_found,
-                    std::format("there is no tier '{}': the tiers are {}", name, join(kTiers, ", ")));
+    RR_TRY_ASSIGN(const std::string_view text, builtin_text(name));
+    return parse_tier(name, text);
+}
+
+Result<Tier> find_tier(std::string_view name) {
+    const std::size_t plus = name.find('+');
+    if (plus == std::string_view::npos) {
+        return builtin_tier(name);
     }
-    const std::string file = std::format("config/tiers/{}.toml", name);
-    const std::optional<std::string_view> text = embedded::tiers::find(file);
-    if (!text.has_value()) {
-        return fail(Errc::internal, std::format("{} is not compiled in", file));
+    RR_TRY_ASSIGN(const std::string_view text, builtin_text(name.substr(0, plus)));
+    RR_TRY_ASSIGN(toml::table document, parsed(name.substr(0, plus), text));
+    std::set<std::string, std::less<>> changed;
+    for (const std::string_view change : split(name.substr(plus + 1), '+')) {
+        RR_TRY(apply_change(name, change, document, changed));
     }
-    return parse_tier(name, *text);
+    return read_tier(name, document);
 }
 
 }  // namespace rr::reason

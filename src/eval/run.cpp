@@ -137,6 +137,20 @@ Result<EvalRun> Runs::find(std::string_view label) const {
     });
 }
 
+Result<std::vector<EvalRun>> Runs::all() const {
+    return database_->read([&](db::ReadTx& tx) -> Result<std::vector<EvalRun>> {
+        std::vector<EvalRun> runs;
+        RR_TRY(tx.query(
+            std::format("SELECT {} FROM eval_runs ORDER BY created_at_ms DESC, id DESC", kRunColumns), {},
+            [&](const db::Row& row) -> Result<void> {
+                RR_TRY_ASSIGN(EvalRun run, run_of(row));
+                runs.push_back(std::move(run));
+                return ok();
+            }));
+        return runs;
+    });
+}
+
 Result<std::vector<RunEntry>> Runs::entries(std::string_view run_id) const {
     return database_->read([&](db::ReadTx& tx) -> Result<std::vector<RunEntry>> {
         std::vector<RunEntry> entries;

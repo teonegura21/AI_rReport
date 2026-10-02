@@ -79,10 +79,11 @@ struct StageContext {
     std::stop_token stop{};
     // How the stage is doing, a line at a time, for the user to read.
     std::function<void(std::string_view)> progress{};
-    // Where the job's tier is found: the tiers rReport ships
-    // (reason::builtin_tier()) when unset; a test's own, or an evaluation's
-    // variants of them, when set. A stage's key holds the tier's settings,
-    // never its name, so a variant never takes a shipped tier's results.
+    // Where the job's tier is found: by reason::find_tier() when unset, a
+    // tier rReport ships or a variant of one ("max+write.thinking=true");
+    // a test's own when set. A stage's key holds the tier's settings for it,
+    // never the tier's name: a variant shares exactly the stages whose
+    // settings it leaves alone.
     FindTier tiers{};
 };
 

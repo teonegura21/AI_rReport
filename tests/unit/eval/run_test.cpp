@@ -55,6 +55,7 @@ protected:
     [[nodiscard]] std::filesystem::path root() const { return dir_ / "eval"; }
     [[nodiscard]] Runs& runs() { return runs_; }
     [[nodiscard]] library::Jobs& jobs() { return jobs_; }
+    [[nodiscard]] FakeClock& clock() { return clock_; }
 
 private:
     testkit::TempDir dir_;
@@ -71,6 +72,19 @@ TEST_F(RunsTest, ALabelMakesARunOnceAndTakesItUpAfter) {
     EXPECT_EQ(unwrap(runs().open(spec())), made) << "the same run, taken up";
     EXPECT_EQ(unwrap(runs().find("baseline")), made);
     EXPECT_NE(unwrap(runs().open(spec("thinking-on"))).id, made.id) << "another label, another run";
+}
+
+TEST_F(RunsTest, AllAreTheRunsNewestFirst) {
+    EXPECT_TRUE(unwrap(runs().all()).empty());
+    const EvalRun first =
+        unwrap(runs().open(RunSpec{.label = "first", .eval_set = "m2", .tier = "max", .replicates = 1}));
+    clock().advance(std::chrono::seconds{1});
+    const EvalRun second =
+        unwrap(runs().open(RunSpec{.label = "second", .eval_set = "m2", .tier = "fast", .replicates = 2}));
+    const std::vector<EvalRun> all = unwrap(runs().all());
+    ASSERT_EQ(all.size(), 2U);
+    EXPECT_EQ(all[0], second);
+    EXPECT_EQ(all[1], first);
 }
 
 TEST_F(RunsTest, ALabelNamesOneRun) {
