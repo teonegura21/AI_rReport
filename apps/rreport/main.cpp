@@ -41,6 +41,7 @@
 #include <exception>
 #include <filesystem>
 #include <format>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -446,6 +447,16 @@ std::string took(std::chrono::milliseconds elapsed) {
                        duration_cast<std::chrono::minutes>(elapsed).count() % 60);
 }
 
+// How long a job's video lasts, asked by its army when it is raised: the
+// job's ceilings are per hour of it (rr/hub/job_army.hpp).
+std::function<Result<std::chrono::milliseconds>()> video_length_of(db::Database& database,
+                                                                   std::string job_id) {
+    return [&database, job_id = std::move(job_id)] {
+        const library::StageStore store{database, SystemClock::instance()};
+        return pipeline::video_length(store, job_id);
+    };
+}
+
 // The stages a job runs, so far (plan P18): its source, its transcript, its
 // outline, then its atoms.
 Result<pipeline::Executor> job_stages(const HubSettings& settings) {
@@ -512,6 +523,7 @@ int run_job(const Hub& hub, db::Database& database, library::Job job,
                                    .clock = &SystemClock::instance(),
                                    .job_id = job.id,
                                    .elapsed_before = job.elapsed,
+                                   .video_length = video_length_of(database, job.id),
                                    .stop = signals.stop_token(),
                                    .progress = say}};
     pipeline::StageContext context{
@@ -832,6 +844,7 @@ int eval_annotate(const Global& global, const EvalFlags& flags, const proc::Term
                                        .clock = &SystemClock::instance(),
                                        .job_id = job->id,
                                        .elapsed_before = job->elapsed,
+                                       .video_length = video_length_of(*database, job->id),
                                        .stop = signals.stop_token(),
                                        .progress = say}};
         pipeline::StageContext context{.prompts = &*prompts,

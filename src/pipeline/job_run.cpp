@@ -3,8 +3,12 @@
 
 #include <chrono>
 #include <cstdint>
+#include <format>
+#include <string_view>
 #include <utility>
+#include <vector>
 
+#include <rr/json/json.hpp>
 #include <rr/library/call_memo.hpp>
 #include <rr/library/stage_store.hpp>
 #include <rr/log/log.hpp>
@@ -59,6 +63,19 @@ Result<JobRun> run_job(library::Job job, const Executor& executor, db::Database&
     }
     RR_TRY_ASSIGN(job, jobs.save(job));
     return JobRun{.job = std::move(job), .report = std::move(report)};
+}
+
+Result<Millis> video_length(const library::StageStore& store, std::string_view job_id) {
+    RR_TRY_ASSIGN(const std::vector<library::StageRun> runs, store.runs(job_id));
+    for (const library::StageRun& run : runs) {  // one a stage
+        if (run.stage == SourceStage::kName && run.artifact.has_value()) {
+            RR_TRY_ASSIGN(const json::Json artifact, store.artifact(*run.artifact));
+            RR_TRY_ASSIGN(const Source source, source_from_json(artifact));
+            return length_of(source);
+        }
+    }
+    return fail(Errc::not_found,
+                std::format("job {} has read no source yet: its video's length is unknown", job_id));
 }
 
 }  // namespace rr::pipeline

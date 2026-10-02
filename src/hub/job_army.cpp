@@ -1,12 +1,20 @@
 // A job's army, raised the first time a stage needs it (rr/hub/job_army.hpp).
 #include <rr/hub/job_army.hpp>
 
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <format>
 #include <map>
+#include <ratio>
+#include <string>
 #include <system_error>
 #include <utility>
 #include <vector>
 
+#include <rr/core/assert.hpp>
 #include <rr/core/file_io.hpp>
 #include <rr/hub/army_engines.hpp>
 #include <rr/hub/model_stack.hpp>
@@ -111,10 +119,36 @@ std::string describe(const std::vector<agents::Engine>& engines) {
     return text;
 }
 
+// "45 min", "2 h 05 min": a stretch of time, as the progress says it.
+std::string spoken(std::chrono::milliseconds time) {
+    const auto minutes = std::chrono::duration_cast<std::chrono::minutes>(time).count();
+    return minutes < 60 ? std::format("{} min", minutes)
+                        : std::format("{} h {:02} min", minutes / 60, minutes % 60);
+}
+
+// "2,500,000": a count of a few million, as a reader takes it in.
+std::string grouped(std::int64_t count) {
+    std::string digits = std::to_string(count);
+    const std::size_t first = digits.starts_with('-') ? 1 : 0;
+    for (std::size_t at = digits.size(); at > first + 3; at -= 3) {
+        digits.insert(at - 3, 1, ',');
+    }
+    return digits;
+}
+
 }  // namespace
 
 std::filesystem::path recorded_engines(const HubSettings& settings) {
     return settings.recordings / "engines.json";
+}
+
+agents::Ceilings job_ceilings(std::chrono::milliseconds length, const JobLimits& limits) {
+    const double hours =
+        std::chrono::duration<double, std::ratio<3600>>(std::max(length, limits.least_video)).count();
+    return agents::Ceilings{
+        .completion_tokens =
+            static_cast<std::int64_t>(std::ceil(hours * static_cast<double>(limits.tokens_per_hour))),
+        .wall_clock = std::chrono::duration_cast<std::chrono::milliseconds>(limits.time_per_hour * hours)};
 }
 
 // What the army stands on. Each part refers to the ones before it, so each
@@ -149,6 +183,17 @@ Result<agents::Army*> JobArmy::raise() {
     }
     RR_TRY_ASSIGN(std::vector<agents::Engine> engines, army_engines(report, settings.sampling));
     const std::string raised = describe(engines);
+    agents::Ceilings ceilings{};
+    std::string bounded;  // what the ceilings are, said
+    if (inputs_.video_length) {
+        RR_TRY_ASSIGN(const std::chrono::milliseconds length, inputs_.video_length());
+        ceilings = job_ceilings(length, settings.jobs);
+        RR_ASSERT(ceilings.completion_tokens.has_value() && ceilings.wall_clock.has_value(),
+                  "a job's ceilings bound both its tokens and its time");
+        bounded =
+            std::format("army: the job may spend {} completion tokens and {}, for {} of video",
+                        grouped(*ceilings.completion_tokens), spoken(*ceilings.wall_clock), spoken(length));
+    }
 
     auto forces = std::make_unique<Forces>();
     forces->calls = std::make_unique<library::CallLog>(*inputs_.database);
@@ -162,12 +207,15 @@ Result<agents::Army*> JobArmy::raise() {
     RR_TRY_ASSIGN(agents::Army army,
                   agents::Army::create(agents::Army::Options{.engines = std::move(engines),
                                                              .job_id = inputs_.job_id,
-                                                             .ceilings = inputs_.ceilings,
+                                                             .ceilings = ceilings,
                                                              .elapsed_before = inputs_.elapsed_before},
                                        *forces->remembered, *inputs_.clock, forces->log.get()));
     forces->army = std::make_unique<agents::Army>(std::move(army));
     forces_ = std::move(forces);
     say(inputs_, std::format("army: raised on {}", raised));
+    if (!bounded.empty()) {
+        say(inputs_, bounded);
+    }
     return forces_->army.get();
 }
 

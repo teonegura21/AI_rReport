@@ -95,3 +95,102 @@ expect = "HubConfig.YtDlpIsTheUsers"
   [[mutant.edit]]
   from = '''    if (settings.ytdlp_timeout.count() <= 0) {'''
   to = '''    if (settings.ytdlp_timeout.count() < 0) {'''
+
+# --- A job's ceilings (job_army.cpp, hub_config.cpp, the army's accessor) ------------
+
+[[mutant]]
+name = "a-short-video-counts-as-its-length"
+file = "src/hub/job_army.cpp"
+expect = "JobCeilings.ArePerHourOfVideoAndCountAShortVideoAsAQuarterHour"
+  [[mutant.edit]]
+  from = '''std::chrono::duration<double, std::ratio<3600>>(std::max(length, limits.least_video)).count();'''
+  to = '''std::chrono::duration<double, std::ratio<3600>>(std::max(length, length)).count();'''
+
+[[mutant]]
+name = "the-tokens-are-rounded-down"
+file = "src/hub/job_army.cpp"
+expect = "JobCeilings.ArePerHourOfVideoAndCountAShortVideoAsAQuarterHour"
+  [[mutant.edit]]
+  from = '''static_cast<std::int64_t>(std::ceil(hours * static_cast<double>(limits.tokens_per_hour))),'''
+  to = '''static_cast<std::int64_t>(std::floor(hours * static_cast<double>(limits.tokens_per_hour))),'''
+
+[[mutant]]
+name = "the-time-is-not-per-hour"
+file = "src/hub/job_army.cpp"
+expect = "JobCeilings.ArePerHourOfVideoAndCountAShortVideoAsAQuarterHour"
+  [[mutant.edit]]
+  from = '''.wall_clock = std::chrono::duration_cast<std::chrono::milliseconds>(limits.time_per_hour * hours)};'''
+  to = '''.wall_clock = std::chrono::duration_cast<std::chrono::milliseconds>(limits.time_per_hour * 1.0)};'''
+
+[[mutant]]
+name = "the-length-is-never-asked"
+file = "src/hub/job_army.cpp"
+expect = "JobArmyTest.TheCeilingsComeFromTheVideosLengthWhenTheArmyIsRaised"
+  [[mutant.edit]]
+  from = '''    if (inputs_.video_length) {'''
+  to = '''    if (false && inputs_.video_length) {'''
+
+[[mutant]]
+name = "the-army-is-raised-without-its-ceilings"
+file = "src/hub/job_army.cpp"
+expect = "JobArmyTest.TheCeilingsComeFromTheVideosLengthWhenTheArmyIsRaised"
+  [[mutant.edit]]
+  from = '''                                                             .ceilings = ceilings,'''
+  to = '''                                                             .ceilings = agents::Ceilings{},'''
+
+[[mutant]]
+name = "the-ceilings-are-not-said"
+file = "src/hub/job_army.cpp"
+expect = "JobArmyTest.TheCeilingsComeFromTheVideosLengthWhenTheArmyIsRaised"
+  [[mutant.edit]]
+  from = '''    if (!bounded.empty()) {'''
+  to = '''    if (bounded.empty()) {'''
+
+[[mutant]]
+name = "a-count-is-not-grouped"
+file = "src/hub/job_army.cpp"
+expect = "JobArmyTest.TheCeilingsComeFromTheVideosLengthWhenTheArmyIsRaised"
+  [[mutant.edit]]
+  from = '''    for (std::size_t at = digits.size(); at > first + 3; at -= 3) {'''
+  to = '''    for (std::size_t at = digits.size(); at > first + 3 && false; at -= 3) {'''
+
+[[mutant]]
+name = "the-army-forgets-its-ceilings"
+file = "src/agents/army.cpp"
+expect = "JobArmyTest.TheCeilingsComeFromTheVideosLengthWhenTheArmyIsRaised"
+  [[mutant.edit]]
+  from = '''    return impl_->options.ceilings;'''
+  to = '''    static const Ceilings none{};
+    return none;'''
+
+[[mutant]]
+name = "the-jobs-limits-are-not-read"
+file = "src/hub/hub_config.cpp"
+expect = "HubConfig.AJobsCeilingsAreTheUsersAndNeverNothing"
+  [[mutant.edit]]
+  from = '''    RR_TRY_ASSIGN(settings.jobs, job_limits(config));'''
+  to = '''    RR_TRY(job_limits(config));'''
+
+[[mutant]]
+name = "a-ceiling-of-no-tokens-is-taken"
+file = "src/hub/hub_config.cpp"
+expect = "HubConfig.AJobsCeilingsAreTheUsersAndNeverNothing"
+  [[mutant.edit]]
+  from = '''    if (limits.tokens_per_hour <= 0) {'''
+  to = '''    if (limits.tokens_per_hour < 0) {'''
+
+[[mutant]]
+name = "a-ceiling-of-no-time-is-taken"
+file = "src/hub/hub_config.cpp"
+expect = "HubConfig.AJobsCeilingsAreTheUsersAndNeverNothing"
+  [[mutant.edit]]
+  from = '''    if (limits.time_per_hour.count() <= 0) {'''
+  to = '''    if (limits.time_per_hour.count() < 0) {'''
+
+[[mutant]]
+name = "a-video-may-count-as-nothing"
+file = "src/hub/hub_config.cpp"
+expect = "HubConfig.AJobsCeilingsAreTheUsersAndNeverNothing"
+  [[mutant.edit]]
+  from = '''    if (limits.least_video.count() <= 0) {'''
+  to = '''    if (limits.least_video.count() < 0) {'''

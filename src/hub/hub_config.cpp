@@ -116,6 +116,29 @@ Result<void> apply_llm_settings(const config::Config& config, HubSettings& setti
     return ok();
 }
 
+// [jobs]: each ceiling above zero, since a ceiling of nothing stops every job.
+Result<JobLimits> job_limits(const config::Config& config) {
+    JobLimits limits;
+    RR_TRY_ASSIGN(limits.tokens_per_hour, config.get_int("jobs.tokens_per_video_hour"));
+    RR_TRY_ASSIGN(limits.time_per_hour, config.get_duration("jobs.time_per_video_hour"));
+    RR_TRY_ASSIGN(limits.least_video, config.get_duration("jobs.least_video"));
+    if (limits.tokens_per_hour <= 0) {
+        return fail(Errc::invalid_argument,
+                    std::format("jobs.tokens_per_video_hour must be above zero, not {}: a ceiling of nothing "
+                                "stops every job",
+                                limits.tokens_per_hour));
+    }
+    if (limits.time_per_hour.count() <= 0) {
+        return fail(
+            Errc::invalid_argument,
+            "jobs.time_per_video_hour must be longer than nothing: a ceiling of nothing stops every job");
+    }
+    if (limits.least_video.count() <= 0) {
+        return fail(Errc::invalid_argument, "jobs.least_video must be longer than nothing");
+    }
+    return limits;
+}
+
 // An integer setting that must fit an int (a token count, top-k).
 Result<int> int_setting(const config::Config& config, const std::string& key) {
     RR_TRY_ASSIGN(const std::int64_t value, config.get_int(key));
@@ -231,6 +254,7 @@ Result<HubSettings> hub_settings_from_config(const config::Config& config, const
     }
     RR_TRY(apply_llm_settings(config, settings));
     RR_TRY_ASSIGN(settings.sampling, sampling_presets(config));
+    RR_TRY_ASSIGN(settings.jobs, job_limits(config));
     return settings;
 }
 

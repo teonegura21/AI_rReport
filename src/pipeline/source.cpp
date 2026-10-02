@@ -188,6 +188,25 @@ Result<Source> source_from_json(const json::Json& document) {
     return source;
 }
 
+Result<Millis> length_of(const Source& source) {
+    if (source.video.duration.has_value() && source.video.duration->count() > 0) {
+        return *source.video.duration;
+    }
+    RR_TRY_ASSIGN(const transcript::CaptionTrack track,
+                  transcript::read_captions(source.captions.content, source.captions.format));
+    if (!track.timed) {
+        return Millis{static_cast<std::int64_t>(track.words.size()) * 60'000 / kWordsPerMinute};
+    }
+    Millis end{0};
+    for (const transcript::Word& word : track.words) {
+        end = std::max(end, word.end);
+    }
+    for (const transcript::Sound& sound : track.sounds) {
+        end = std::max(end, sound.end);
+    }
+    return end;
+}
+
 bool is_web_address(std::string_view source) noexcept {
     const auto starts = [&](std::string_view scheme) {
         return source.size() >= scheme.size() && iequals_ascii(source.substr(0, scheme.size()), scheme);

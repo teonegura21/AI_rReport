@@ -76,6 +76,17 @@ TEST_F(JobRunTest, ADoneJobHasItsTitleAndForgetsItsModelAnswers) {
     EXPECT_EQ(unwrap(memo.find("K1")), std::nullopt) << "its artifacts are the truth now (ADR-0020)";
 }
 
+TEST_F(JobRunTest, ItsVideosLengthIsKnownOnceItsSourceIsRead) {
+    const library::Job started = job();
+    const library::StageStore store{database(), clock()};
+    EXPECT_ERRC(video_length(store, started.id), Errc::not_found) << "before its source stage";
+    std::optional<Result<std::chrono::milliseconds>> during;  // as the army raised by a later stage asks it
+    script()->on_run = [&](const StageContext&) { during = video_length(store, started.id); };
+    run(started);
+    ASSERT_TRUE(during.has_value());
+    EXPECT_EQ(unwrap(*during), std::chrono::milliseconds{2'000}) << "where its captions end";
+}
+
 TEST_F(JobRunTest, AJobIsSavedRunningBeforeItsStagesStart) {
     const library::Job started = job();
     std::optional<library::JobStatus> seen;

@@ -908,6 +908,7 @@ TEST(Army, ATokenCeilingStopsNewCalls) {
         [](const llm::ChatRequest& request) { return reply(request, std::string{kClaim}); }};
     // One infantry slot: the missions run one after another, five tokens each.
     Army army = make_army(model, clock, &log, {commander(), infantry(1)}, Ceilings{.completion_tokens = 10});
+    EXPECT_EQ(army.ceilings(), Ceilings{.completion_tokens = 10});
 
     const std::vector<Outcome> outcomes = unwrap(army.squad(missions(4)));
     EXPECT_EQ(outcomes[0].verdict, Verdict::accepted);

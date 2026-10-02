@@ -53,6 +53,7 @@ A misspelt key or a wrong type fails with a suggestion.
 - **The runtime's address:** `runtime.url`, else RunPod's proxy URL for `runpod.pod_id` and `runpod.port` (`https://<pod>-8080.proxy.runpod.net`). Without either, the hub works but cannot call models.
 - **`llm.mode`:** `live`; `record` (live, keeping every answer); or `replay` (recorded answers only, for tests).
 - **yt-dlp:** `media.ytdlp`, a name found in `PATH` or a path, and `media.ytdlp_timeout`, the most one run of it may take. `doctor` checks the one configured.
+- **A job's ceilings** (`[jobs]`, ADR-0018): `tokens_per_video_hour` (completion tokens, thinking included) and `time_per_video_hour` (wall-clock time, across resumes), each per hour of the job's video, and `least_video`, the least a video counts as. Each must be above zero: a ceiling of nothing would stop every job. How a job uses them: [pipeline.md](pipeline.md#the-army-raised-when-needed).
 - **Sampling presets:** every `[sampling.<name>]` table (`qwen_thinking`, `qwen_direct`, `gemma_thinking`, `gemma_direct`), with every field required. Each is checked when the configuration loads (`llm::preset_problems()`), so a bad value fails at startup, not in the middle of a job. Values and reasons: [llm.md](llm.md#sampling).
 - **Secrets:** `runtime.token` (the pod's `RR_RUNTIME_TOKEN`) and `runpod.api_key` (an API key of your RunPod account). They belong in `secrets.toml` or the environment, and are never printed.
 

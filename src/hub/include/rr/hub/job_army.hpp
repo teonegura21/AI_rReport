@@ -16,8 +16,11 @@
 //        runtime and nowhere else, retries, accounting into llm_calls,
 //        recording), and over it the job's memo (ADR-0020): a resumed job
 //        asks again none of the calls it already made.
-//     3. The army over them, with the job's elapsed time counted against its
-//        wall-clock ceiling, logging its missions in the library.
+//     3. The army over them, with the job's ceilings (job_ceilings()), and
+//        its elapsed time counted against the wall-clock one, logging its
+//        missions in the library. The ceilings are per hour of the video,
+//        so its length is asked when the army is raised: by then it is
+//        known, since the source stage, which comes first, needs no model.
 //   A failure is returned, and the next raise() tries again: a pod that did
 //   not come up may come up later in the same run.
 //
@@ -46,6 +49,13 @@ namespace rr::hub {
 // recordings: what replay mode raises its army from.
 [[nodiscard]] std::filesystem::path recorded_engines(const HubSettings& settings);
 
+// A job's ceilings for a video of `length` (ADR-0018): `limits` per hour of
+// it, a video shorter than limits.least_video counted as that long, the
+// tokens rounded up. Some costs do not shrink with the video (the outline
+// thinks over all of it, three times at `max`), and a ceiling below them
+// would stop every short video.
+[[nodiscard]] agents::Ceilings job_ceilings(std::chrono::milliseconds length, const JobLimits& limits);
+
 class JobArmy {
 public:
     struct Inputs {
@@ -56,7 +66,9 @@ public:
         std::string job_id{};
         // Time the job spent before this run, counted against its wall-clock ceiling.
         std::chrono::milliseconds elapsed_before{};
-        agents::Ceilings ceilings{};
+        // How long the job's video lasts, asked when the army is raised; its
+        // errors fail the raise. Unset: the job has no ceiling.
+        std::function<Result<std::chrono::milliseconds>()> video_length{};
         std::stop_token stop{};
         std::function<void(std::string_view)> progress{};
     };

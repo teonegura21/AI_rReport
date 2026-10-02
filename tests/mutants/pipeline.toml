@@ -1870,3 +1870,46 @@ expect = "OutlineStageTest.ATierThatTakesNoChaptersHasTheCommanderOutlineAll"
   [[mutant.edit]]
   from = '''    read.chapters = read.tier.outline.chapters && read.source.video.chapters.size() >= kLeastChapters;'''
   to = '''    read.chapters = (read.tier.outline.chapters || true) && read.source.video.chapters.size() >= kLeastChapters;'''
+
+# --- A video's length (source.cpp, job_run.cpp) ------------------------------------
+
+[[mutant]]
+name = "a-site-length-of-nothing-is-taken"
+file = "src/pipeline/source.cpp"
+expect = "Source.ItsVideoLastsAsTheSiteSaysElseAsItsCaptionsDo"
+  [[mutant.edit]]
+  from = '''    if (source.video.duration.has_value() && source.video.duration->count() > 0) {'''
+  to = '''    if (source.video.duration.has_value() && source.video.duration->count() >= 0) {'''
+
+[[mutant]]
+name = "untimed-captions-are-read-as-timed"
+file = "src/pipeline/source.cpp"
+expect = "Source.ItsVideoLastsAsTheSiteSaysElseAsItsCaptionsDo"
+  [[mutant.edit]]
+  from = '''    if (!track.timed) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-sound-does-not-end-the-captions"
+file = "src/pipeline/source.cpp"
+expect = "Source.ItsVideoLastsAsTheSiteSaysElseAsItsCaptionsDo"
+  [[mutant.edit]]
+  from = '''        end = std::max(end, sound.end);'''
+  to = '''        end = std::max(end, sound.end * 0);'''
+
+[[mutant]]
+name = "a-job-without-a-source-lasts-nothing"
+file = "src/pipeline/job_run.cpp"
+expect = "JobRunTest.ItsVideosLengthIsKnownOnceItsSourceIsRead"
+  [[mutant.edit]]
+  from = '''    return fail(Errc::not_found,
+                std::format("job {} has read no source yet: its video's length is unknown", job_id));'''
+  to = '''    return Millis{0};'''
+
+[[mutant]]
+name = "words-are-counted-at-another-pace"
+file = "src/pipeline/include/rr/pipeline/source.hpp"
+expect = "Source.ItsVideoLastsAsTheSiteSaysElseAsItsCaptionsDo"
+  [[mutant.edit]]
+  from = '''inline constexpr std::int64_t kWordsPerMinute = 150;'''
+  to = '''inline constexpr std::int64_t kWordsPerMinute = 160;'''

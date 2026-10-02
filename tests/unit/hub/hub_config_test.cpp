@@ -42,6 +42,20 @@ TEST(HubConfig, TheBuiltInDefaultsAreAWorkingConfiguration) {
     EXPECT_EQ(loaded.ready_timeout, 20min);
     EXPECT_EQ(loaded.ytdlp, "yt-dlp") << "found in PATH";
     EXPECT_EQ(loaded.ytdlp_timeout, 3min);
+    EXPECT_EQ(loaded.jobs,
+              (JobLimits{.tokens_per_hour = 5'000'000, .time_per_hour = 4h, .least_video = 15min}))
+        << "ADR-0018's first ceilings";
+}
+
+TEST(HubConfig, AJobsCeilingsAreTheUsersAndNeverNothing) {
+    const HubSettings given = unwrap(settings(
+        {"jobs.tokens_per_video_hour=2000000", "jobs.time_per_video_hour=90m", "jobs.least_video=5m"}));
+    EXPECT_EQ(given.jobs,
+              (JobLimits{.tokens_per_hour = 2'000'000, .time_per_hour = 90min, .least_video = 5min}));
+    for (const char* nothing :
+         {"jobs.tokens_per_video_hour=0", "jobs.time_per_video_hour=0s", "jobs.least_video=0s"}) {
+        EXPECT_ERRC(settings({nothing}), Errc::invalid_argument) << nothing;
+    }
 }
 
 TEST(HubConfig, YtDlpIsTheUsers) {

@@ -34,6 +34,15 @@ api_url = "https://api.runpod.io/v2"   # RunPod REST API v2
 ytdlp = "yt-dlp"             # yt-dlp: a name found in PATH, or a path. You install and update it (rreport doctor)
 ytdlp_timeout = "3m"         # the most one run of it may take: a description, or a video's captions
 
+[jobs]
+# A job's ceilings, each per hour of its video (ADR-0018): no input and no
+# bug may make a job spend without end. They sit at about 5 to 10 times what
+# the max tier is expected to spend; runbook R3 measures it, and these follow.
+# On a ceiling a job stops spending, keeps what it has, and says which.
+tokens_per_video_hour = 5000000   # completion tokens, thinking included
+time_per_video_hour = "4h"        # wall-clock time, counted across resumes
+least_video = "15m"               # a shorter video counts as this long: some costs do not shrink with it
+
 [llm]
 mode = "live"                # live · record (live, and keep every answer) · replay (recorded answers only)
 recordings = ""              # where record and replay keep answers; empty: <data_dir>/recordings

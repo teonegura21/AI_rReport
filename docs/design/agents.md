@@ -184,6 +184,7 @@ ADR-0018's job ceilings, completion tokens and wall-clock time, are checked befo
 - **Calls in flight finish.** Their tokens are already being spent, and an answer half paid for is better kept. The overshoot is bounded by the calls in flight times their `max_tokens`.
 - **Every answer counts**, including those a job's memo gives back. A resumed job re-asks its earlier calls in the same order, so its count reaches the same total. The wall clock counts the time the job spent before (`Options::elapsed_before`).
 - A ceiling stays reached: the job is stopping, not pausing.
+- **The job sets them**, per hour of its video (`rr::hub::job_ceilings()`, [pipeline.md](pipeline.md#the-army-raised-when-needed)); `Army::ceilings()` gives them back as given.
 
 ## The battle log
 

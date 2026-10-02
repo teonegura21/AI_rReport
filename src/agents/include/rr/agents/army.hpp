@@ -81,6 +81,8 @@ namespace rr::agents {
 struct Ceilings {
     std::optional<std::int64_t> completion_tokens{};
     std::optional<std::chrono::milliseconds> wall_clock{};
+
+    friend bool operator==(const Ceilings&, const Ceilings&) = default;
 };
 
 enum class CeilingKind : std::uint8_t {
@@ -183,6 +185,9 @@ public:
 
     // What the job has spent through this army, and the elapsed time before it.
     [[nodiscard]] Spent spent() const;
+
+    // The job's ceilings, as given.
+    [[nodiscard]] const Ceilings& ceilings() const noexcept;
 
     // The first ceiling reached, if one was.
     [[nodiscard]] std::optional<CeilingHit> ceiling() const;

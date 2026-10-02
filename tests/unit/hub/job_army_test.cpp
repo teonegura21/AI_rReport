@@ -1,5 +1,6 @@
 #include <rr/hub/job_army.hpp>
 
+#include <chrono>
 #include <filesystem>
 #include <format>
 #include <string>
@@ -23,6 +24,7 @@ namespace {
 
 using ::testing::HasSubstr;
 using testkit::unwrap;
+using namespace std::chrono_literals;
 using Response = net::HttpServer::Response;
 
 // The 48 GB profile as its pod reports it, every engine ready.
@@ -118,6 +120,42 @@ TEST_F(JobArmyTest, RecordingRaisesTheArmyOnThePodsEnginesAndKeepsThemForAReplay
     ASSERT_EQ(again->engines().size(), 2U);
     EXPECT_EQ(again->engines()[0], army->engines()[0]) << "the same army as the one recorded";
     EXPECT_EQ(again->engines()[1], army->engines()[1]);
+}
+
+TEST(JobCeilings, ArePerHourOfVideoAndCountAShortVideoAsAQuarterHour) {
+    const JobLimits limits{.tokens_per_hour = 5'000'000, .time_per_hour = 4h, .least_video = 15min};
+    EXPECT_EQ(job_ceilings(1h, limits).completion_tokens, 5'000'000);
+    EXPECT_EQ(job_ceilings(1h, limits).wall_clock, 4h);
+    EXPECT_EQ(job_ceilings(90min, limits).completion_tokens, 7'500'000) << "a podcast pays for its length";
+    EXPECT_EQ(job_ceilings(90min, limits).wall_clock, 6h);
+    EXPECT_EQ(job_ceilings(2min, limits).completion_tokens, 1'250'000) << "a quarter hour at least";
+    EXPECT_EQ(job_ceilings(2min, limits).wall_clock, 1h);
+    EXPECT_EQ(job_ceilings(15min + 1ms, limits).completion_tokens, 1'250'002) << "rounded up";
+}
+
+TEST_F(JobArmyTest, TheCeilingsComeFromTheVideosLengthWhenTheArmyIsRaised) {
+    int asked = 0;
+    JobArmy::Inputs given = inputs(settings());
+    given.video_length = [&asked]() -> Result<std::chrono::milliseconds> {
+        ++asked;
+        return std::chrono::milliseconds{30min};
+    };
+    JobArmy forces{std::move(given)};
+    EXPECT_EQ(asked, 0) << "not before a stage needs the army";
+    const agents::Army* const army = unwrap(forces.raise());
+    unwrap(forces.raise());
+    EXPECT_EQ(asked, 1) << "once, with the army";
+    EXPECT_EQ(army->ceilings(), (agents::Ceilings{.completion_tokens = 2'500'000, .wall_clock = 2h}))
+        << "half of each hour's";
+    EXPECT_EQ(progress().back(),
+              "army: the job may spend 2,500,000 completion tokens and 2 h 00 min, for 30 min of video");
+
+    JobArmy::Inputs lost = inputs(settings());
+    lost.video_length = []() -> Result<std::chrono::milliseconds> {
+        return fail(Errc::not_found, "the job has no source yet");
+    };
+    JobArmy unbounded{std::move(lost)};
+    EXPECT_ERRC(unbounded.raise(), Errc::not_found) << "no army without its ceilings";
 }
 
 TEST_F(JobArmyTest, AReplayWithoutRecordedEnginesNeedsTheUser) {

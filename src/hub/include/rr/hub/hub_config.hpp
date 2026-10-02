@@ -16,6 +16,8 @@
 //       (recorded answers only: tests, never a live call);
 //     * media.ytdlp: the yt-dlp the source stage runs, a name in PATH or a
 //       path; never bundled, since YouTube changes faster than releases;
+//     * [jobs]: a job's ceilings, per hour of its video, each above zero
+//       (rr/hub/job_army.hpp);
 //     * the sampling presets: every [sampling.<name>] table, checked
 //       (llm::preset_problems()), so a bad value fails at startup instead
 //       of in the middle of a job.
@@ -26,6 +28,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -72,6 +75,16 @@ enum class LlmMode : std::uint8_t {
     replay
 };
 
+// A job's ceilings, each per hour of its video (ADR-0018), and the least
+// a video counts as.
+struct JobLimits {
+    std::int64_t tokens_per_hour = 5'000'000;  // completion tokens
+    std::chrono::milliseconds time_per_hour{std::chrono::hours{4}};
+    std::chrono::milliseconds least_video{std::chrono::minutes{15}};
+
+    friend bool operator==(const JobLimits&, const JobLimits&) = default;
+};
+
 struct RunpodSettings {
     Secret api_key{};
     std::string pod_id{};
@@ -93,6 +106,7 @@ struct HubSettings {
     int call_attempts = 4;
     // How each model samples, by preset name ("qwen_thinking", ...).
     std::map<std::string, llm::SamplingPreset, std::less<>> sampling{};
+    JobLimits jobs{};
 
     // <data_dir>/libraries/<library>/library.db
     [[nodiscard]] std::filesystem::path library_database() const;

@@ -45,6 +45,7 @@
 #include <vector>
 
 #include <rr/core/result.hpp>
+#include <rr/core/time_span.hpp>
 #include <rr/json/json.hpp>
 #include <rr/media/video.hpp>
 #include <rr/media/ytdlp.hpp>
@@ -82,6 +83,16 @@ struct Source {
 };
 
 [[nodiscard]] json::Json to_json(const Source& source);
+
+// Words a minute, the pace untimed captions are counted at: a measured
+// speaker's (a podcast's runs nearer 160, a lecture's nearer 140).
+inline constexpr std::int64_t kWordsPerMinute = 150;
+
+// How long `source`'s video lasts: the length the site gives; else where
+// its captions end, their last word or sound; else, for captions without
+// times, their words at kWordsPerMinute. Errors: transcript::read_captions()'s,
+// for captions that are not their format.
+[[nodiscard]] Result<Millis> length_of(const Source& source);
 
 // Errc::invalid_argument when `document` breaks the schema
 // (schemas/artifacts/source.json), or a chapter ends before it starts.

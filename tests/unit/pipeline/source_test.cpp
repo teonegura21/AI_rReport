@@ -180,6 +180,28 @@ TEST_F(SourceTest, AFileThatChangesWhileItIsReadIsNotKept) {
     EXPECT_ERRC(stage.run(context), Errc::conflict) << "its key would name bytes it does not hold";
 }
 
+TEST(Source, ItsVideoLastsAsTheSiteSaysElseAsItsCaptionsDo) {
+    Source source{.origin = Origin::file,
+                  .captions = SourceCaptions{.format = CaptionFormat::vtt,
+                                             .content = "WEBVTT\n\n00:00.000 --> 00:02.500\nRadium glows.\n\n"
+                                                        "01:00.000 --> 01:04.000\n[Music]\n"}};
+    EXPECT_EQ(unwrap(length_of(source)), std::chrono::milliseconds{64'000}) << "a sound ends them too";
+    source.video.duration = std::chrono::milliseconds{754'000};
+    EXPECT_EQ(unwrap(length_of(source)), std::chrono::milliseconds{754'000}) << "the site's length first";
+    source.video.duration = std::chrono::milliseconds{0};
+    EXPECT_EQ(unwrap(length_of(source)), std::chrono::milliseconds{64'000}) << "a length of nothing is none";
+
+    source.video.duration.reset();
+    std::string words;
+    for (int word = 0; word < 300; ++word) {
+        words += "radium ";
+    }
+    source.captions = SourceCaptions{.format = CaptionFormat::text, .content = words};
+    EXPECT_EQ(unwrap(length_of(source)), std::chrono::milliseconds{120'000}) << "untimed: 150 words a minute";
+    source.captions = SourceCaptions{.format = CaptionFormat::vtt, .content = "not captions"};
+    EXPECT_ERRC(length_of(source), Errc::invalid_argument);
+}
+
 TEST(Source, IsWrittenAndReadBackAsItsSchemaSays) {
     const Source source{
         .origin = Origin::web,

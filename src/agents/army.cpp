@@ -818,6 +818,10 @@ Army::Spent Army::spent() const {
     return spent;
 }
 
+const Ceilings& Army::ceilings() const noexcept {
+    return impl_->options.ceilings;
+}
+
 std::optional<CeilingHit> Army::ceiling() const {
     const std::lock_guard lock(impl_->mutex);
     return impl_->hit;
