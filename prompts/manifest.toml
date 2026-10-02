@@ -144,3 +144,19 @@ failure_modes = [
   number = 1
   hash = "003821ecab151466458d3c2a134ba9d23b4fbfe521070ff3adb9ae1bb4bcfe2f"
   note = "first version"
+
+[[prompt]]
+name = "write"
+purpose = "Write one section of the article from its plan: each paragraph telling its atoms, every sentence ending with their markers, every number, name, term and word to quote kept, said as it was said (rr/pipeline/write_stage.hpp)."
+shared = ["title", "channel", "gist", "speakers", "lexicon", "sections"]
+failure_modes = [
+  "an atom left out, or told in another paragraph: the check sends it back",
+  "a sentence with no marker, often a link between two that adds what was not said",
+  "a hedge told as a fact, a strong claim softened, a joke told straight",
+  "a number rounded, a name or a term reworded, a quote paraphrased",
+  "what the model knows of the subject, added to explain",
+]
+  [[prompt.version]]
+  number = 1
+  hash = "d405e5064b4917e7641c8b35b664ed8326fb90c77c0577d9fa380d150aaab599"
+  note = "first version"

@@ -8,12 +8,16 @@
 
 #include <gtest/gtest.h>
 
+#include <rr/prompt/library.hpp>
+#include <rr/testkit/result.hpp>
+
 #include "idle_army.hpp"
 
 namespace rr::pipeline {
 namespace {
 
 using testing::IdleArmy;
+using testkit::unwrap;
 
 TEST(Asking, ADescriptionNoLongerThanItsBytesIsShownWhole) {
     EXPECT_EQ(description_excerpt(""), "");
@@ -58,6 +62,21 @@ TEST(Asking, AVideoIsShownByItsTitleItsChannelAndItsDescriptionsStart) {
     EXPECT_EQ(shared, (json::Json{{"title", "On radium"},
                                   {"channel", "Science Hour"},
                                   {"description", description_excerpt(video.description)}}));
+}
+
+TEST(Asking, APromptIsFoundWithItsSchemaAndAPromptAnsweredInProseWithNone) {
+    const prompt::Library prompts = unwrap(prompt::Library::embedded());
+    const StagePrompt plan = unwrap(stage_prompt(prompts, "plan"));
+    ASSERT_NE(plan.info, nullptr);
+    EXPECT_EQ(plan.info->name, "plan");
+    EXPECT_NE(plan.schema, nullptr) << "a plan is JSON, held to its schema";
+
+    const StagePrompt write = unwrap(stage_prompt(prompts, "write"));
+    ASSERT_NE(write.info, nullptr);
+    EXPECT_EQ(write.info->name, "write");
+    EXPECT_EQ(write.schema, nullptr) << "an article is Markdown: no schema to hold it to";
+
+    EXPECT_ERRC(stage_prompt(prompts, "verse"), Errc::not_found);
 }
 
 TEST(Asking, TheEngineServingARoleIsFound) {

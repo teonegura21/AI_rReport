@@ -340,6 +340,29 @@ Result<std::string> section_in(const llm::ChatRequest& request) {
     return fail(Errc::invalid_argument, "no message of the mission names the section to plan");
 }
 
+// The words of an atom as the write prompt shows it, after its labels and
+// before what must reach its paragraph: "A7 [1:02] number: The bridge failed
+// at four tons. Names: …" is "The bridge failed at four tons.".
+std::string_view atom_words(std::string_view shown) {
+    std::size_t end = shown.size();
+    for (const std::string_view after : {" To quote: ", " Names: ", " Terms: "}) {
+        end = std::min(end, shown.find(after));
+    }
+    return shown.substr(0, end);
+}
+
+// The words to quote of an atom as the write prompt shows it, or none.
+std::optional<std::string> to_quote(std::string_view shown) {
+    constexpr std::string_view kOpen = " To quote: \"";
+    const std::size_t at = shown.find(kOpen);
+    if (at == std::string_view::npos) {
+        return std::nullopt;
+    }
+    const std::size_t begin = at + kOpen.size();
+    const std::size_t end = shown.find("\".", begin);
+    return std::string{shown.substr(begin, end - begin)};
+}
+
 // "Tells A12.", "Tells A12 and A13.", "Tells A12 to A14.".
 std::string purpose_of(const std::vector<std::string>& atoms) {
     if (atoms.size() == 1) {
@@ -519,6 +542,41 @@ Answerer plan() {
     };
 }
 
+Answerer write() {
+    return [](const llm::ChatRequest& request) -> Result<std::string> {
+        RR_TRY_ASSIGN(const std::string lines, block_in(request, "paragraphs"));
+        std::vector<std::string> paragraphs;
+        for (const auto part : std::views::split(lines, '\n')) {
+            const std::string_view line{part.begin(), part.end()};
+            if (line.starts_with("Paragraph ")) {
+                paragraphs.emplace_back();
+                continue;
+            }
+            const std::size_t time = line.find("] ");
+            const std::size_t words = time == std::string_view::npos ? time : line.find(": ", time);
+            if (paragraphs.empty() || words == std::string_view::npos) {
+                return fail(Errc::invalid_argument, std::format("no paragraph to write \"{}\" in", line));
+            }
+            const std::string_view shown = line.substr(words + 2);
+            std::string sentence{atom_words(shown)};
+            if (const std::optional<std::string> quote = to_quote(shown);
+                quote.has_value() && sentence.find(*quote) == std::string::npos) {
+                sentence += std::format(" (\"{}\")", *quote);
+            }
+            paragraphs.back() += std::format("{}{} [{}]", paragraphs.back().empty() ? "" : " ", sentence,
+                                             line.substr(0, line.find(' ')));
+        }
+        if (paragraphs.empty()) {
+            return fail(Errc::invalid_argument, "no paragraph to write");
+        }
+        std::string draft;
+        for (const std::string& paragraph : paragraphs) {
+            draft += (draft.empty() ? "" : "\n\n") + paragraph;
+        }
+        return draft;
+    };
+}
+
 Result<std::string> excerpt_in(const llm::ChatRequest& request) {
     // A repair's conversation ends with its instruction: the excerpt is in
     // the order's message, before it.
@@ -553,6 +611,7 @@ void teach_stages(Oracle& oracle, std::optional<std::string> script) {
     oracle.teach("brief", brief());
     oracle.teach("atomize", atomize());
     oracle.teach("plan", plan());
+    oracle.teach("write", write());
 }
 
 }  // namespace rr::oracle

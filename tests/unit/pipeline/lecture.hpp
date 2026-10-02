@@ -1,7 +1,7 @@
 // lecture.hpp — a synthetic fifteen-minute lecture, written for the oracle's
 // rules (rr/oracle/answers.hpp): its transcript, source, outline and the
-// ledger the oracle makes of it. What the tests of the stages that read
-// atoms run on: atomize writes the ledger, plan reads it.
+// ledger and plan the oracle makes of it. What the tests of the stages that
+// read atoms run on: atomize writes the ledger, plan reads it, write reads both.
 #pragma once
 
 #include <cstddef>
@@ -16,6 +16,7 @@
 #include <rr/json/json.hpp>
 #include <rr/knowledge/atoms.hpp>
 #include <rr/knowledge/outline.hpp>
+#include <rr/knowledge/plan.hpp>
 #include <rr/knowledge/transcript.hpp>
 #include <rr/oracle/oracle.hpp>
 #include <rr/pipeline/source.hpp>
@@ -179,6 +180,48 @@ inline oracle::Fault reworded(std::string mission, std::function<void(json::Json
                             change(read);
                             return json::dump(read);
                         });
+}
+
+// A1…An, from `first` to `last`.
+inline std::vector<knowledge::AtomId> atom_ids(std::uint32_t first, std::uint32_t last) {
+    std::vector<knowledge::AtomId> ids;
+    for (std::uint32_t number = first; number <= last; ++number) {
+        ids.emplace_back(number);
+    }
+    return ids;
+}
+
+// A paragraph as the oracle plans it, its atoms `first` to `last`: "Tells A1 to A3.".
+inline knowledge::Paragraph oracle_paragraph(std::uint32_t first, std::uint32_t last) {
+    const std::string purpose =
+        first == last ? std::format("Tells A{}.", first)
+                      : std::format("Tells A{} {} A{}.", first, last == first + 1 ? "and" : "to", last);
+    return knowledge::Paragraph{.purpose = purpose, .atoms = atom_ids(first, last)};
+}
+
+// The plan the oracle makes of the lecture's ledger: seven atoms in "Weighing
+// radium" (A1–A7), ten in "The samples" (A8–A17), nine in "What they mean"
+// (A18–A26), told three a paragraph, each section headed by its title.
+inline knowledge::Plan lecture_plan() {
+    using knowledge::PlannedBy;
+    using knowledge::SectionPlan;
+    using knowledge::SentenceId;
+    return knowledge::Plan{
+        .sections = {SectionPlan{.first = SentenceId{1},
+                                 .heading = "Weighing radium",
+                                 .paragraphs = {oracle_paragraph(1, 3), oracle_paragraph(4, 6),
+                                                oracle_paragraph(7, 7)},
+                                 .planned_by = PlannedBy::commander},
+                     SectionPlan{.first = SentenceId{11},
+                                 .heading = "The samples",
+                                 .paragraphs = {oracle_paragraph(8, 10), oracle_paragraph(11, 13),
+                                                oracle_paragraph(14, 16), oracle_paragraph(17, 17)},
+                                 .planned_by = PlannedBy::commander},
+                     SectionPlan{.first = SentenceId{21},
+                                 .heading = "What they mean",
+                                 .paragraphs = {oracle_paragraph(18, 20), oracle_paragraph(21, 23),
+                                                oracle_paragraph(24, 26)},
+                                 .planned_by = PlannedBy::commander}}};
 }
 
 }  // namespace rr::pipeline::testing

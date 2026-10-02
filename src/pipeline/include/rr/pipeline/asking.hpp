@@ -36,14 +36,15 @@
 
 namespace rr::pipeline {
 
-// A prompt a stage asks with, and its answer's schema.
+// A prompt a stage asks with, and its answer's schema: none for a prompt
+// answered in prose.
 struct StagePrompt {
     const prompt::PromptInfo* info = nullptr;
     std::shared_ptr<const json::Schema> schema{};
 };
 
-// The prompt `name` of `prompts`. Errc::not_found when there is none; the
-// library's errors for its schema.
+// The prompt `name` of `prompts`, with its schema when it has one.
+// Errc::not_found when there is none; the library's errors for its schema.
 [[nodiscard]] Result<StagePrompt> stage_prompt(const prompt::Library& prompts, std::string_view name);
 
 // What a stage's results owe to the prompts `names`: each one's label

@@ -42,6 +42,7 @@ using knowledge::Plan;
 using knowledge::PlannedBy;
 using knowledge::SectionPlan;
 using knowledge::SentenceId;
+using testing::atom_ids;
 using ::testing::Contains;
 using ::testing::ElementsAre;
 using testing::engines;
@@ -50,6 +51,8 @@ using ::testing::IsEmpty;
 using testing::lecture;
 using testing::lecture_ledger;
 using testing::lecture_outline;
+using testing::lecture_plan;
+using testing::oracle_paragraph;
 using testing::OracleArmy;
 using testing::reworded;
 using testing::source;
@@ -58,44 +61,9 @@ using testkit::unwrap;
 
 // --- What a plan should be ------------------------------------------------------------
 
-std::vector<AtomId> atoms(std::uint32_t first, std::uint32_t last) {
-    std::vector<AtomId> ids;
-    for (std::uint32_t number = first; number <= last; ++number) {
-        ids.emplace_back(number);
-    }
-    return ids;
-}
-
-// A paragraph as the oracle plans it: "Tells A1 to A3.".
-Paragraph told(std::uint32_t first, std::uint32_t last) {
-    const std::string purpose =
-        first == last ? std::format("Tells A{}.", first)
-                      : std::format("Tells A{} {} A{}.", first, last == first + 1 ? "and" : "to", last);
-    return Paragraph{.purpose = purpose, .atoms = atoms(first, last)};
-}
-
 // A paragraph grouped in the order said, without a purpose.
 Paragraph grouped_paragraph(std::uint32_t first, std::uint32_t last) {
-    return Paragraph{.atoms = atoms(first, last)};
-}
-
-// The lecture's ledger: seven atoms in "Weighing radium" (A1–A7), ten in
-// "The samples" (A8–A17), nine in "What they mean" (A18–A26). The oracle
-// tells them three a paragraph, each section headed by its title.
-Plan oracle_plan() {
-    return Plan{
-        .sections = {SectionPlan{.first = SentenceId{1},
-                                 .heading = "Weighing radium",
-                                 .paragraphs = {told(1, 3), told(4, 6), told(7, 7)},
-                                 .planned_by = PlannedBy::commander},
-                     SectionPlan{.first = SentenceId{11},
-                                 .heading = "The samples",
-                                 .paragraphs = {told(8, 10), told(11, 13), told(14, 16), told(17, 17)},
-                                 .planned_by = PlannedBy::commander},
-                     SectionPlan{.first = SentenceId{21},
-                                 .heading = "What they mean",
-                                 .paragraphs = {told(18, 20), told(21, 23), told(24, 26)},
-                                 .planned_by = PlannedBy::commander}}};
+    return Paragraph{.atoms = atom_ids(first, last)};
 }
 
 // `section` of the lecture's plan told in the order said, as no model planned it.
@@ -104,7 +72,7 @@ SectionPlan grouped_section(std::size_t section) {
         {grouped_paragraph(1, 6), grouped_paragraph(7, 7)},
         {grouped_paragraph(8, 13), grouped_paragraph(14, 17)},
         {grouped_paragraph(18, 23), grouped_paragraph(24, 26)}};
-    const Plan plan = oracle_plan();
+    const Plan plan = lecture_plan();
     const SectionPlan& planned = plan.sections.at(section);
     return SectionPlan{.first = planned.first,
                        .heading = planned.heading,
@@ -198,7 +166,7 @@ TEST_F(PlanStageTest, EverySectionIsPlannedByTheCommanderThinking) {
     const StageOutput output = unwrap(run(rig.raise()));
     EXPECT_THAT(output.findings, IsEmpty());
     EXPECT_TRUE(output.reusable);
-    EXPECT_EQ(plan_of(output), oracle_plan());
+    EXPECT_EQ(plan_of(output), lecture_plan());
     EXPECT_THAT(missions_of(rig), ElementsAre("plan-1", "plan-2", "plan-3")) << "a mission a section";
     for (const llm::ChatRequest& request : opened(rig)) {
         EXPECT_TRUE(request.thinking.value_or(false)) << request.tag.mission_id;
@@ -212,7 +180,7 @@ TEST_F(PlanStageTest, EverySectionIsPlannedByTheCommanderThinking) {
 
 TEST_F(PlanStageTest, TheCommandersHeadingNamesItsSection) {
     OracleArmy rig{{reworded("plan-1", [](json::Json& answer) { answer["heading"] = "Radium, weighed"; })}};
-    Plan expected = oracle_plan();
+    Plan expected = lecture_plan();
     expected.sections.at(0).heading = "Radium, weighed";
     EXPECT_EQ(plan_of(unwrap(run(rig.raise()))), expected) << "not the outline's title";
 }
@@ -271,9 +239,10 @@ TEST_F(PlanStageTest, AnAtomSaidAgainIsDeclaredADuplicateWhereItLosesNothing) {
     OracleArmy rig;
     const StageOutput output = unwrap(run(rig.raise(), ledger));
     EXPECT_THAT(output.findings, IsEmpty());
-    Plan expected = oracle_plan();
+    Plan expected = lecture_plan();
     expected.sections.at(0).paragraphs = {
-        told(1, 3), Paragraph{.purpose = "Tells A4 to A7.", .atoms = {AtomId{4}, AtomId{6}, AtomId{7}}}};
+        oracle_paragraph(1, 3),
+        Paragraph{.purpose = "Tells A4 to A7.", .atoms = {AtomId{4}, AtomId{6}, AtomId{7}}}};
     expected.duplicates = {
         knowledge::Duplicate{.atom = AtomId{5}, .of = AtomId{4}, .because = "It says again what A4 says."}};
     EXPECT_EQ(plan_of(output, ledger), expected);
@@ -355,7 +324,7 @@ TEST_F(PlanStageTest, EveryRuleAnAnswerBreaksIsSentBackAndRepaired) {
         OracleArmy rig{{reworded("plan-1", test.change)}};
         const StageOutput output = unwrap(run(rig.raise()));
         EXPECT_THAT(output.findings, IsEmpty());
-        EXPECT_EQ(plan_of(output), oracle_plan()) << "repaired";
+        EXPECT_EQ(plan_of(output), lecture_plan()) << "repaired";
         EXPECT_THAT(sent_to(rig, "plan-1"), Contains(HasSubstr(test.sent_back)));
     }
 }
@@ -367,7 +336,7 @@ TEST_F(PlanStageTest, ADuplicateThatWouldLoseANumberOrATermIsSentBackForEach) {
         answer.at("duplicates").push_back(json::Json{{"because", "Again."}, {"atom", "A2"}, {"of", "A1"}});
     })}};
     const StageOutput output = unwrap(run(rig.raise()));
-    EXPECT_EQ(plan_of(output), oracle_plan());
+    EXPECT_EQ(plan_of(output), lecture_plan());
     const std::vector<std::string> sent = sent_to(rig, "plan-1");
     ASSERT_EQ(sent.size(), 2U);
     EXPECT_THAT(sent.at(1),
@@ -387,7 +356,7 @@ TEST_F(PlanStageTest, ASectionTheModelsDeclineIsToldInTheOrderSaidAndSaid) {
                 ElementsAre("section 2, \"The samples\": its atoms are told in the order said, a "
                             "paragraph at a time: the models declined to plan it"));
     EXPECT_TRUE(output.reusable) << "they would decline again";
-    Plan expected = oracle_plan();
+    Plan expected = lecture_plan();
     expected.sections.at(1) = grouped_section(1);
     EXPECT_EQ(plan_of(output), expected);
 }
@@ -443,7 +412,8 @@ TEST_F(PlanStageTest, ASectionTooLongForTheCommanderIsPlannedInParts) {
                 HasSubstr("from 5:00 to 9:55.\nIts atoms are too many to plan at once: plan A8–A16 here; the "
                           "others are planned apart.\n\nIts atoms, in the order said:\n<atoms>\nA8 "));
     EXPECT_THAT(requests.at(2).messages.at(1).text(), HasSubstr("plan A17 here"));
-    EXPECT_EQ(plan_of(output), oracle_plan()) << "the parts' paragraphs joined in order, the first's heading";
+    EXPECT_EQ(plan_of(output), lecture_plan())
+        << "the parts' paragraphs joined in order, the first's heading";
     EXPECT_THAT(progress(), ElementsAre("plan: the commander plans 3 sections, in 4 parts"));
 }
 
@@ -462,9 +432,25 @@ TEST_F(PlanStageTest, AnAtomTooLongForTheCommanderEvenAloneIsToldInTheOrderSaid)
                             "holds at once"));
     EXPECT_THAT(missions_of(rig), ElementsAre("plan-1-1", "plan-1-2", "plan-2", "plan-3"))
         << "the atoms before it, and those after";
-    Plan expected = oracle_plan();
-    expected.sections.at(0).paragraphs = {told(1, 2), grouped_paragraph(3, 3), told(4, 6), told(7, 7)};
+    Plan expected = lecture_plan();
+    expected.sections.at(0).paragraphs = {oracle_paragraph(1, 2), grouped_paragraph(3, 3),
+                                          oracle_paragraph(4, 6), oracle_paragraph(7, 7)};
     EXPECT_EQ(plan_of(output, ledger), expected);
+
+    // A section whose every atom is that long is none of the commander's.
+    for (std::size_t index = 0; index < 7; ++index) {  // A1 to A7
+        ledger.atoms.at(index).text = endless + ".";
+    }
+    OracleArmy longer{{}, engines({.commander_holds = 4'096})};
+    const StageOutput none = unwrap(run(longer.raise(), ledger));
+    EXPECT_THAT(missions_of(longer), ElementsAre("plan-2", "plan-3"));
+    EXPECT_THAT(none.findings,
+                ElementsAre("section 1, \"Weighing radium\": its atoms are told in the order said, "
+                            "a paragraph at a time: even alone, each is more than qwen-commander "
+                            "holds at once"));
+    EXPECT_THAT(progress(), ElementsAre("plan: the commander plans 3 sections, in 4 parts",
+                                        "plan: the commander plans 2 sections"))
+        << "the sections it was asked about";
 }
 
 TEST_F(PlanStageTest, ACommanderThatHoldsNoAtomEvenAloneTellsEachSectionInTheOrderSaid) {
@@ -482,6 +468,7 @@ TEST_F(PlanStageTest, ACommanderThatHoldsNoAtomEvenAloneTellsEachSectionInTheOrd
         << "one finding a section, not one an atom";
     EXPECT_EQ(plan_of(output),
               (Plan{.sections = {grouped_section(0), grouped_section(1), grouped_section(2)}}));
+    EXPECT_THAT(progress(), IsEmpty()) << "the commander plans nothing";
 }
 
 TEST_F(PlanStageTest, AnAnswerMayTakeFortyEightTokensAnAtom) {

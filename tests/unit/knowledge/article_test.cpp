@@ -224,7 +224,8 @@ TEST(Article, AnEmptyArticleHasNoBlocks) {
 TEST(Article, TheArtifactIsItsMarkdown) {
     const Article article{.markdown = "Water boils [A12]."};
     EXPECT_EQ(unwrap(article_from_json(to_json(article))), article);
-    EXPECT_FALSE(article_from_json(json::Json{{"markdown", ""}}).has_value()) << "an empty article";
+    EXPECT_EQ(unwrap(article_from_json(json::Json{{"markdown", ""}})), Article{})
+        << "a video with nothing to retell has an empty article";
     EXPECT_FALSE(article_from_json(json::Json{{"markdown", "x"}, {"extra", 1}}).has_value());
 }
 

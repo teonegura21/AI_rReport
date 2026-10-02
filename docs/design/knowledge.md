@@ -30,7 +30,7 @@ The written form is strict: the letter, then a number from 1 without leading zer
 | `outline` | the outline stage (P17) | the sections, each from its `first` sentence to its `last`, with a title and a gist or `null`; the brief: the genre, the speakers (a name, a role or `null`), the lexicon (a term, a meaning or `null`), the video's gist or `null`; and where the sections came from: `chapters`, `models` or `pauses` |
 | `atoms` | atomize (P18) | Ledger A: atoms `A1…An`, and the fillers |
 | `plan` | the plan stage (P19) | each section by its `first` sentence: a heading, its paragraphs in the order told (a purpose or `null`, and the atoms each tells), and who planned it, `commander` or `grouping`; the duplicates: an atom, the atom that tells it, and why or `null` |
-| `article` | write (P20) | the Markdown, with its markers |
+| `article` | write (P20) | the Markdown, with its markers; empty when the video says nothing to retell, every sentence filler |
 
 Each schema follows the repo's rules for schemas (`rr/json/schema.hpp`): every object closed (`additionalProperties: false`), every field required, with `null` for what may be absent, and enumerations closed. Reading an artifact (`transcript_from_json()`, `outline_from_json()`, `atom_ledger_from_json()`, `plan_from_json()`, `article_from_json()`) validates it against its schema first. Then it checks what a schema cannot say:
 - IDs run `S1, S2, …` and `A1, A2, …` in order, so a lookup by ID is an index;

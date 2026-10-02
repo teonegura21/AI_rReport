@@ -51,7 +51,8 @@
 
 namespace rr::knowledge {
 
-// The write stage's artifact (plan P20): the article's Markdown, markers and all.
+// The write stage's artifact (plan P20): the article's Markdown, markers and
+// all; empty for a video that says nothing to retell, every sentence filler.
 struct Article {
     std::string markdown{};
 

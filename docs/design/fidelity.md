@@ -7,7 +7,7 @@ rReport promises an article faithful to its video: every sentence accounted for,
 | When | Function | Holds | Against |
 |---|---|---|---|
 | After atomize | `check_ledger(transcript, ledger, lexicon)` | Ledger A: the atoms | the transcript, or the window of it a mission was given; the video's lexicon |
-| After write | `check_article(transcript, ledger, markdown)` | Ledger B: the article | the atoms and the transcript |
+| After write | `check_article(transcript, ledger, markdown, scope)` | Ledger B: the article, or a section of it | the atoms and the transcript |
 
 Both return a `Report`: findings, and a `Coverage` that counts how much of each promise was kept. Reports add up (`Report::add()`), so the whole job's report is the sum of its windows and its article.
 
@@ -26,6 +26,7 @@ Every check has a stable name, used by reports, repairs and the eval:
 | `filler-empty` | error | a filler holds no number, name or lexicon term | S6 is labelled disfluency, yet holds the number "42": re-examine it, and give it atoms unless it carries nothing |
 | `marker-valid` | error | markers are well formed | [a1] is no marker: write it [A1] |
 | `marker-known` | error | markers name atoms of the ledger | [A9] names no atom: the atoms are A1 to A4 |
+| `marker-scope` | error | and atoms the text tells: a section cites its own | [A3] is not among the atoms to tell here: cite only the atoms given |
 | `atom-told` | error | every atom is cited | A4 is not retold: tell it, and cite it [A4] |
 | `number-kept` | error | an atom's numbers reach the paragraph citing it | the paragraph citing A4 lacks "37%": write it, in digits or words |
 | `name-kept` | error | so do its names | the paragraph citing A2 does not name "Marie Curie" |
@@ -64,6 +65,14 @@ Ledger B lets an atom go untold when it is declared a **duplicate** of one that 
 
 The rule is stricter than meaning, on purpose. Two atoms may mean the same and still differ here, and a duplicate refused costs a sentence of the article, while a duplicate wrongly accepted loses what was said. When in doubt, an atom is told. Kind, register and intensity are not compared: readers label them differently without either being wrong (the atomize stage does not vote on them either, [pipeline.md](pipeline.md#3-votes-and-what-they-do-not-settle)), and none is a fact a reader would miss.
 
+## Scope: a section, or the whole
+
+`check_article()` holds a text to an `ArticleScope`; by default, the whole article and every atom of the ledger. The write stage holds two kinds of text ([pipeline.md](pipeline.md#the-write-stage)):
+- **A section's draft** is held to the section's atoms (`told`). It is not asked for the atoms other sections tell, and coverage counts its own. A marker of another section's atom is an error of its own, `marker-scope`: that atom would be told twice, or out of its place, and the writer was never given it, so whatever the sentence says of it is not from its evidence.
+- **The article** is held to every atom, with the plan's declared duplicates (`duplicates`). A duplicate need not be cited. It counts as one atom of the article, told when it is cited or when the atom it repeats is. When neither is, `atom-told` names the atom it repeats, once: that is the atom to tell.
+
+`marker-scope` is not `marker-known`: the atom exists, so the marker is not counted invalid, and an article cannot break it, since an article is held to every atom.
+
 ## Order: the fewest to move
 
 A section's atoms should be told in the order they were said. A naive check, flagging every atom told after one said later, would flag a cascade: one atom pulled forward would make every atom after it look out of place. So the check finds a longest run of first citations whose positions in the talk never decrease (the longest non-decreasing subsequence, `O(n log n)`). The atoms outside that run are the fewest that must move, and only they are flagged. An atom's position is where it was first said, and only its first telling is placed: a recap that cites an atom again tells nothing out of order. Atoms first said in one sentence may be told in either order, which is why the run is non-decreasing rather than increasing. Headings start new sections, which may be ordered freely: an article may tell a talk's two halves in either order. Order is a warning, never an error. A writer may group related points, and M1's acceptance does not count it.
@@ -97,7 +106,7 @@ The remaining faults (refusal, truncation, broken JSON, running out while thinki
 
 ## What waits
 
-Judge-backed checks, those that need a model (softening without a quote, misattribution in paraphrase, unsupported sentences), arrive with the stages and the eval (P20, P24). Repair orchestration, which sends each finding to the mission that can fix it, arrives with the stages too. `check_article()` takes the plan's declared duplicates with the write stage (P20): until then, `atom-told` holds every atom.
+Judge-backed checks, those that need a model (softening without a quote, misattribution in paraphrase, unsupported sentences), arrive with the write stage's judge and the eval (P20b, P24). Until then, a finding goes back to the mission that can fix it only from the stage that made the text: a window's Ledger A findings to its readers (P18), a section's Ledger B findings to its writer (P20).
 
 ## How the tests were validated
 
@@ -121,3 +130,5 @@ Judge-backed checks, those that need a model (softening without a quote, misattr
 The final run kills all 31 mutants, each by the test that claims it: 12 on Ledger A, 3 on what texts are held to, 16 on Ledger B. The two rr_knowledge mutants of the inline-code reader, rerun after the move, are still killed.
 
 P19 added `duplicate_problems()`, with four tests: a duplicate that loses nothing is taken, numbers by value, a name by its last word, words and speakers folded; one that says more (a number, a name, a term) is not, unless the other lists it; words to quote must be the other's, word for word; and how it is said (a modality, a question, a speaker, a speaker unknown, a source) must be the other's too. Its 12 mutants are all killed by the tests that claim them.
+
+P20 added the scope of a text (`ArticleScope`) and `Report::warnings()`, with two tests: a section held to its own atoms (coverage counts them, and a marker of another section's atom is `marker-scope`, not an invalid marker); and a duplicate excused, counted as told by the atom it repeats, with the one `atom-told` finding, of the atom to tell, when neither is cited. Its 11 mutants are all killed by the tests that claim them; one did not build at first (it left the scope unused, which `-Werror` refuses) and was written another way. A mutant of P13 had to be made exact: the line it changed now appears twice, once for the duplicates.

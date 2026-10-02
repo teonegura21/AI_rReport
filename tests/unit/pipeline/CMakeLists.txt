@@ -13,6 +13,7 @@ rr_add_test_suite(pipeline
         source_test.cpp
         transcript_stage_test.cpp
         windows_test.cpp
+        write_stage_test.cpp
     DEPS
         rr::library
         rr::oracle

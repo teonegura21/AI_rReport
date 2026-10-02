@@ -40,6 +40,7 @@
 
 #include <rr/fidelity/finding.hpp>
 #include <rr/knowledge/atoms.hpp>
+#include <rr/knowledge/plan.hpp>
 #include <rr/knowledge/transcript.hpp>
 
 namespace rr::fidelity {
@@ -52,10 +53,23 @@ namespace rr::fidelity {
                                   const knowledge::AtomLedger& ledger,
                                   std::span<const std::string> lexicon = {});
 
-// Ledger B: the article `markdown` against `ledger` and `transcript`. Fills
-// the coverage of atoms, markers, must-quotes and numbers.
+// What an article, or a section of one, is held to.
+struct ArticleScope {
+    // The atoms it must tell; none: every atom of the ledger. A marker of
+    // another atom of the ledger is a finding (marker-scope): a section
+    // cites its own atoms only.
+    std::vector<knowledge::AtomId> told{};
+    // Atoms that only another tells (the plan's, rr/knowledge/plan.hpp):
+    // not required, and counted as told when cited, or when the atom they
+    // repeat is.
+    std::vector<knowledge::Duplicate> duplicates{};
+};
+
+// Ledger B: the article `markdown` against `ledger` and `transcript`, held
+// to `scope`. Fills the coverage of atoms, markers, must-quotes and numbers.
 [[nodiscard]] Report check_article(const knowledge::Transcript& transcript,
-                                   const knowledge::AtomLedger& ledger, std::string_view markdown);
+                                   const knowledge::AtomLedger& ledger, std::string_view markdown,
+                                   const ArticleScope& scope = {});
 
 // Why `atom` is no duplicate of `of`, each said as what telling only `of`
 // would lose: a number of its own, by value; a name or a term `of` neither

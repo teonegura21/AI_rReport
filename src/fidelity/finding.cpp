@@ -18,6 +18,7 @@ constexpr auto kNames = std::to_array<std::string_view>({
     "filler-empty",
     "marker-valid",
     "marker-known",
+    "marker-scope",
     "atom-told",
     "number-kept",
     "name-kept",
@@ -38,6 +39,11 @@ std::string_view to_string(Check check) noexcept {
 std::size_t Report::errors() const noexcept {
     return static_cast<std::size_t>(std::ranges::count(
         findings, Severity::error, [](const Finding& finding) { return finding.severity; }));
+}
+
+std::size_t Report::warnings() const noexcept {
+    return static_cast<std::size_t>(std::ranges::count(
+        findings, Severity::warning, [](const Finding& finding) { return finding.severity; }));
 }
 
 void Report::add(const Report& other) {

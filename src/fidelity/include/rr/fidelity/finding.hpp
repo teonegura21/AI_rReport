@@ -36,6 +36,7 @@ enum class Check : std::uint8_t {
     // Ledger B: the article against the atoms, after write.
     marker_valid,     // markers are well formed
     marker_known,     // markers name atoms of the ledger
+    marker_scope,     // and atoms the text tells: a section cites its own
     atom_told,        // every atom is cited
     number_kept,      // an atom's numbers reach the paragraph citing it
     name_kept,        // so do its names
@@ -86,6 +87,7 @@ struct Report {
     Coverage coverage{};
 
     [[nodiscard]] std::size_t errors() const noexcept;
+    [[nodiscard]] std::size_t warnings() const noexcept;
 
     // This report and `other`, as one: findings appended, counts added.
     void add(const Report& other);

@@ -1,0 +1,10 @@
+Answer with the section's paragraphs only, in Markdown, a blank line between them.
+Write section {{ number }}, "{{ heading }}", from {{ start }} to {{ end }}.
+{% if part != "" %}
+{{ part }}
+{% endif %}
+
+Its paragraphs, in the order told:
+<paragraphs>
+{{ paragraphs }}
+</paragraphs>

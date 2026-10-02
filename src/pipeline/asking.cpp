@@ -19,6 +19,9 @@ Result<StagePrompt> stage_prompt(const prompt::Library& prompts, std::string_vie
     if (info == nullptr) {
         return fail(Errc::not_found, std::format("the prompts have no '{}'", name));
     }
+    if (!info->schema.has_value()) {
+        return StagePrompt{.info = info};  // answered in prose
+    }
     RR_TRY_ASSIGN(std::shared_ptr<const json::Schema> schema, prompts.answer_schema(name));
     return StagePrompt{.info = info, .schema = std::move(schema)};
 }

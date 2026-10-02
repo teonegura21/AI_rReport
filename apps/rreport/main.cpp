@@ -81,6 +81,7 @@
 #include <rr/pipeline/plan_stage.hpp>
 #include <rr/pipeline/source.hpp>
 #include <rr/pipeline/transcript_stage.hpp>
+#include <rr/pipeline/write_stage.hpp>
 #include <rr/proc/termination_signals.hpp>
 #include <rr/prompt/library.hpp>
 #include <rr/reason/tier.hpp>
@@ -458,8 +459,8 @@ std::function<Result<std::chrono::milliseconds>()> video_length_of(db::Database&
     };
 }
 
-// The stages a job runs, so far (plan P19): its source, its transcript, its
-// outline, its atoms, then its plan.
+// The stages a job runs, so far (plan P20): its source, its transcript, its
+// outline, its atoms, its plan, then its article.
 Result<pipeline::Executor> job_stages(const HubSettings& settings) {
     std::vector<std::unique_ptr<pipeline::Stage>> stages;
     stages.push_back(std::make_unique<pipeline::SourceStage>(
@@ -468,6 +469,7 @@ Result<pipeline::Executor> job_stages(const HubSettings& settings) {
     stages.push_back(std::make_unique<pipeline::OutlineStage>());
     stages.push_back(std::make_unique<pipeline::AtomizeStage>());
     stages.push_back(std::make_unique<pipeline::PlanStage>());
+    stages.push_back(std::make_unique<pipeline::WriteStage>());
     return pipeline::Executor::create(std::move(stages), SystemClock::instance());
 }
 

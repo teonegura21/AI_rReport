@@ -20,11 +20,12 @@ TEST(Report, ChecksHaveStableNames) {
     EXPECT_EQ(names.size(), static_cast<std::size_t>(Check::order_kept) + 1) << "one name each";
 }
 
-TEST(Report, CountsItsErrors) {
+TEST(Report, CountsItsErrorsAndItsWarnings) {
     const Report report{.findings = {Finding{.check = Check::atom_told},
                                      Finding{.check = Check::order_kept, .severity = Severity::warning},
                                      Finding{.check = Check::number_kept}}};
     EXPECT_EQ(report.errors(), 2U);
+    EXPECT_EQ(report.warnings(), 1U);
 }
 
 TEST(Report, ReportsAddUp) {

@@ -21,10 +21,11 @@
 //   The eval's silver drafts (rr/eval/annotate.hpp), a video's outline and
 //   its sections' descriptions (rr/pipeline/outline_stage.hpp), what each
 //   sentence says (rr/pipeline/atomize_stage.hpp), and how a section is
-//   told (rr/pipeline/plan_stage.hpp) have no single right answer either.
-//   The oracle answers each by a rule a test can predict, and that keeps
-//   every check: see annotate(), outline(), describe(), brief(), atomize()
-//   and plan(). A synthetic video is written for the rule: its talk turns
+//   told (rr/pipeline/plan_stage.hpp), and the article itself
+//   (rr/pipeline/write_stage.hpp) have no single right answer either. The
+//   oracle answers each by a rule a test can predict, and that keeps every
+//   check: see annotate(), outline(), describe(), brief(), atomize(), plan()
+//   and write(). A synthetic video is written for the rule: its talk turns
 //   at a sentence that opens with "Now," or "Next,"; a speaker says "I'm
 //   Ada"; its words for things are acronyms; "Um, so." is a disfluency and
 //   "Hello and welcome back." a greeting.
@@ -102,6 +103,12 @@ namespace rr::oracle {
 // one's duplicate, "It says again what A12 says."; the section's title as
 // its heading.
 [[nodiscard]] Answerer plan();
+
+// Answers write missions (prompts/write): each paragraph its atoms' words, in
+// order, each followed by its marker ("… four tons. [A7]"); words to quote
+// that an atom's words do not hold, added in parentheses. A draft Ledger B
+// passes, by construction.
+[[nodiscard]] Answerer write();
 
 // Teaches `oracle` every mission kind the pipeline's stages send, punctuating
 // from `script` when there is one.

@@ -4,10 +4,11 @@
 # the stages: `source` (the video, or a caption file, read once),
 # `transcript` (captions into numbered sentences, punctuated by the infantry
 # when they are not), `outline` (the video's sections and its brief),
-# `atomize` (Ledger A: what became of every sentence) and `plan` (which
-# paragraph tells which atoms); the windows a transcript is read in, each
-# as large as its engine holds; and run_job(), a job taken through them and
-# saved (docs/design/pipeline.md). Hub only.
+# `atomize` (Ledger A: what became of every sentence), `plan` (which
+# paragraph tells which atoms) and `write` (the article, every atom told);
+# the windows a transcript is read in, each as large as its engine holds;
+# and run_job(), a job taken through them and saved
+# (docs/design/pipeline.md). Hub only.
 rr_add_module(pipeline
     SOURCES
         asking.cpp
@@ -23,6 +24,7 @@ rr_add_module(pipeline
         source.cpp
         transcript_stage.cpp
         windows.cpp
+        write_stage.cpp
     PUBLIC_DEPS
         rr::agents
         rr::core

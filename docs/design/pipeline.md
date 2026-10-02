@@ -1,6 +1,6 @@
 # The pipeline: jobs, stages, and the stage cache
 
-A **job** takes one video through the **stages**: today `source`, `transcript`, `outline`, `atomize` and `plan`, then `write` as it lands (P20). The eval's annotation jobs run `source`, `transcript` and `annotate` ([eval.md](eval.md#silver-drafted-by-models)). Each stage turns the artifacts of the stages before it into one artifact of its own, an immutable JSON document that follows its schema (ADR-0004). This note is about what runs them, `rr_pipeline`, and the first five stages.
+A **job** takes one video through the **stages**: `source`, `transcript`, `outline`, `atomize`, `plan` and `write`, which writes the article. The eval's annotation jobs run `source`, `transcript` and `annotate` ([eval.md](eval.md#silver-drafted-by-models)). Each stage turns the artifacts of the stages before it into one artifact of its own, an immutable JSON document that follows its schema (ADR-0004). This note is about what runs them, `rr_pipeline`, and the six stages.
 
 | Piece | Where | What |
 |---|---|---|
@@ -14,6 +14,7 @@ A **job** takes one video through the **stages**: today `source`, `transcript`, 
 | `OutlineStage` | `rr/pipeline/outline_stage.hpp` | The video's sections, and the brief every later mission is given |
 | `AtomizeStage` | `rr/pipeline/atomize_stage.hpp` | Ledger A: what became of every sentence, atoms or a filler label |
 | `PlanStage` | `rr/pipeline/plan_stage.hpp` | The plan: which paragraph of each section tells which atoms, and which atoms only another tells |
+| `WriteStage` | `rr/pipeline/write_stage.hpp` | The article: every section's paragraphs, every atom told and cited, checked as Ledger B |
 | windows | `rr/pipeline/windows.hpp` | A transcript cut into windows of whole sentences, each as large as its engine holds |
 | sections | `rr/pipeline/outline.hpp` | Sections from chapters, from pauses, from outlines agreed on; long ones cut; briefs joined |
 | readings | `rr/pipeline/readings.hpp` | What models made of a window, voted on sentence by sentence and reduced to one reading |
@@ -351,13 +352,52 @@ A section, or a part, that no answer planned (the models declined, a ceiling cam
 
 **At `fast`** every section is grouped (`plan.mode = "group"`): no model is asked and no pod is needed, and no finding is published, since that is the tier's choice. A section whose sentences are all filler has no paragraph, and nothing to ask.
 
-**What the stage says while it works**: `plan: the commander plans 3 sections` (`, in 4 parts` where it took more missions than sections); `plan: the atoms are told in the order said, a paragraph at a time`.
+**What the stage says while it works**: `plan: the commander plans 3 sections` (`, in 4 parts` where it took more missions than sections), counting the sections it is asked about, and nothing when it is asked about none; `plan: the atoms are told in the order said, a paragraph at a time`.
 
 **The key.** Its fingerprint holds the tier's plan settings and the limits (atoms a paragraph, words a heading and a purpose, atoms a grouped paragraph), and, where the commander plans, the prompt's label and hash, the army and what the commander holds. It samples: the job's salt is in its key.
 
 **What it refuses.** Without a pod, at a tier that plans with the commander, its fingerprint is `Errc::needs_user`. An outline that does not cover its transcript, or a ledger with an atom said past the transcript's end, is a bug of an earlier stage: `internal`.
 
 **The oracle** plans by a rule a test can predict (`rr/oracle/answers.hpp`): three atoms a paragraph, in order, each purpose naming its atoms ("Tells A1 to A3."); an atom shown exactly as an earlier one, labels and words, declared that one's duplicate; the section's title as its heading.
+
+## The write stage
+
+**Prose, held to the atoms.** The plan says which paragraph tells which atoms; this stage writes them as prose a reader wants to read, and code holds every sentence to them. A sentence ends with the markers of the atoms it tells (`[A12]`, ADR-0006), so each one traces back to what was said and when, and the draft is checked as Ledger B checks the article (`fidelity::check_article()`, [fidelity.md](fidelity.md)). Revising works with feedback from outside the model (CRITIC, Chain-of-Verification, above): a draft that fails is sent back with what failed, never asked to check itself.
+
+The stage takes six steps (`rr/pipeline/write_stage.hpp`):
+
+1. **A section at a time, a closed world.** The commander writes each section from its plan: each paragraph's purpose, and its atoms in full, their labels before their words and, after them, what must reach the paragraph (the words to quote, the names, the terms). The shared part shows the video, its speakers and words, and the article's sections in order. The drafts are drawn at once where the commander holds them: one at `fast`, two at `thorough`, four at `max`. **Without thinking** at every shipped tier: reasoning models invent more when they restate (the Vectara figures); a tier that thinks gets the commander's own budget, within half of what it holds. Sections are written side by side.
+
+   ```
+   Paragraph 1: Tells A1 to A3.
+   A1 [0:30] claim: I'm Ada, and today we weigh radium. Names: Ada.
+   A2 [1:30] number: The NRC lent us 3 scales for it. Terms: NRC.
+   A3 [2:00] claim, hedged, high: Maybe the scales are older than the lab.
+   ```
+
+2. **What is sent back**, up to the tier's repair rounds (one, two, three):
+
+   | The draft | What it is told |
+   |---|---|
+   | writes a heading | `write no heading: the article has its own` |
+   | writes a list, a quote set apart, code | `write paragraphs of prose only: no lists, no quotes set apart, no code` |
+   | writes more or fewer paragraphs than the plan's | `write 3 paragraphs, one for each given, not 2`, and no more about where its atoms are: which paragraph is which cannot be told |
+   | tells an atom in another paragraph than its own | `A3 is told in paragraph 2: tell it in paragraph 1, as given`, numbered as in the section, a part's too |
+   | writes a sentence that cites no atom | `the sentence "It was a long day." tells no atom: cite the atoms it tells, or leave it out`; a long one is quoted to its first 120 bytes and `…`, cut between characters, never inside one |
+   | breaks Ledger B, held to the section's atoms | `A4 is not retold: tell it, and cite it [A4]`; `the paragraph citing A2 lacks "3": write it, in digits or words`; `A6 must be quoted verbatim, …`; `[A8] is not among the atoms to tell here: cite only the atoms given` |
+
+   **A sentence that cites nothing is not written.** It is the sentence a writer adds to link two others, and the one that brings in what was not said: an article whose every sentence cites its atoms can be checked whole.
+
+3. **Of the drafts that pass, the one with fewest warnings is kept**: Ledger B's one warning, the talk's order (an atom told before one said earlier), is worth a reader's look, not a repair. The first, on a tie. Judging the drafts that pass, sentence by sentence and cross-family, arrives with P20b.
+4. **A section the commander does not hold is written in parts**, each the most paragraphs it holds from where the last ended (bisection, as for plans); each part's task says which paragraphs it writes, numbered as in the section, and the parts join in order.
+5. **What no draft passed is told as its atoms say it**: each paragraph its atoms' words, each with its marker, words to quote that its words do not hold added in parentheses, with a finding that says why (`section 2, "The samples": it is told as its atoms say it: the models declined to write it`). Plain, but faithful: the floor of the article is its ledger.
+6. **The article** is each section under its heading (`## …`), in order, a section without paragraphs left out. It is checked whole as Ledger B, the plan's duplicates excused, and what still fails is published. A video whose every sentence is filler has an empty article, and a finding says so.
+
+**What the stage says while it works**: `write: the commander writes 3 sections, 4 drafts each` (`, in 4 parts` where it took more missions than sections), counting the sections it is asked for, and nothing when it is asked for none.
+
+**The key.** Its fingerprint holds the tier's write settings, the prompt's label and hash, the army and what the commander holds. It samples: the job's salt is in its key. Without a pod its fingerprint is `Errc::needs_user`; an outline that does not cover its transcript, or a plan that does not hold its ledger as the outline cuts it, is an earlier stage's bug, `internal`.
+
+**The oracle** writes by a rule a test can predict (`rr/oracle/answers.hpp`): each paragraph its atoms' words, in order, each followed by its marker; words to quote that the words do not hold, added in parentheses. Its draft passes Ledger B by construction, and is what the floor writes too.
 
 ## The commands
 
@@ -372,6 +412,8 @@ Each stage says how it is doing on stderr. At the end, the command says what the
 
 ## What waits
 
+- **Judging the drafts, and the seams** (P20b). The drafts that pass are told apart by their warnings only; a cross-family judge, sentence by sentence and evidence first, then the paragraphs where sections meet, rewritten for flow and checked again, come next. Until then `[write] judge_top` and `[seams]` are read into the key and change nothing else.
+- **Repairs aimed at the sentences that fail.** A draft that fails is written again whole, with what failed; rewriting only its failing sentences, with their evidence, waits for the eval to say it pays (P26).
 - **An article-wide plan.** Each section is planned alone, so an atom that repeats one of another section (a closing summary of the whole talk) is told again where it was said, and the writer may refer back. A pass over the whole article that finds such duplicates, and the article's title and lead, wait for the write stage and the eval (P20, P26).
 - **Plans compared.** One plan is drawn a section, checked by code; whether drawing several and keeping the best pays is the eval's to say (P26).
 - **More waves of samples** where the first disagree (a tier's `atomize.step`): refused until the eval shows adaptive waves pay (P28).
@@ -385,7 +427,7 @@ Each stage says how it is doing on stderr. At the end, the command says what the
 
 | Suite | What it holds |
 |---|---|
-| `tests/unit/pipeline/` (151) | the executor on scripted stages: found done, run again only where an input changed, a failure recorded and resumed, a stop, an artifact that breaks its schema, the salt, a result kept for one job, the cache key and the army's fingerprint; `run_job()`, and a video's length once its source is read; punctuation's windows and answer checks; the source stage on a fake yt-dlp and on files; the transcript stage on an army of oracles, with faults injected; sentence windows, planned against engines of many sizes, bisection against giving up one sentence at a time; what asking stages share; sections from chapters, pauses and agreement, long ones cut, briefs joined; the outline stage on a synthetic lecture: outlines, chapters, no pod, windows, a sentence too long, an engine too small, every check sent back and repaired, every failure a finding; a job's tier found through its context; readings voted on, grown and replaced, and what atoms hold of a sentence; the atomize stage on a synthetic lecture: every sentence accounted for, every rule sent back and repaired, votes and the commander's settling, sentences asked again, windows, ceilings, no pod, every failure a finding; atoms grouped in the order said; the plan stage on the same lecture: every section planned thinking, in a closed world, every rule sent back and repaired, duplicates that lose nothing, parts, what no answer planned told in order, ceilings, no pod |
+| `tests/unit/pipeline/` (177) | the executor on scripted stages: found done, run again only where an input changed, a failure recorded and resumed, a stop, an artifact that breaks its schema, the salt, a result kept for one job, the cache key and the army's fingerprint; `run_job()`, and a video's length once its source is read; punctuation's windows and answer checks; the source stage on a fake yt-dlp and on files; the transcript stage on an army of oracles, with faults injected; sentence windows, planned against engines of many sizes, bisection against giving up one sentence at a time; what asking stages share; sections from chapters, pauses and agreement, long ones cut, briefs joined; the outline stage on a synthetic lecture: outlines, chapters, no pod, windows, a sentence too long, an engine too small, every check sent back and repaired, every failure a finding; a job's tier found through its context; readings voted on, grown and replaced, and what atoms hold of a sentence; the atomize stage on a synthetic lecture: every sentence accounted for, every rule sent back and repaired, votes and the commander's settling, sentences asked again, windows, ceilings, no pod, every failure a finding; atoms grouped in the order said; the plan stage on the same lecture: every section planned thinking, in a closed world, every rule sent back and repaired, duplicates that lose nothing, parts, what no answer planned told in order, ceilings, no pod; a prompt answered in prose; the write stage on the same lecture and its plan: every section written and every atom told, every rule sent back and repaired, the fewest warnings kept, duplicates left untold, parts, what no draft passed told as its atoms say it, an empty article, ceilings, no pod |
 | `tests/unit/library/` | jobs, and the stage store: one commit or none, an artifact kept once, a damaged one refused, findings per run |
 | `tests/unit/hub/` | `JobArmy`: raised once, recorded engines replayed, what needs the user, the job's ceilings per hour of its video, asked when it is raised; the configured yt-dlp, and `[jobs]` |
 | `tests/component/hub_cli_test.cpp` | `rreport ingest / resume / jobs` through the real executable: a caption file done without a pod, the outline's finding said, then every stage found done; no pod, a finding; a missing file; an unknown tier |
@@ -466,3 +508,16 @@ clang-tidy found `stretches_of()` too complex to read (its bisection is `most_he
 - `plan-is-not-taught` was claimed by a stage test, which the oracle's suite does not run; the oracle's own test of plans claims it now.
 
 The final run kills all 83, each by the test that claims it.
+
+**The write stage (P20a).** Its tests run it on the plan stage's lecture, its ledger, and the plan the oracle makes of them, now shared (`lecture_plan()`): three sections of three, four and three paragraphs. The oracle writes each paragraph as its atoms say it, so its draft passes Ledger B, and each fault breaks one rule of it, as text. The scope of a text and the duplicates it excuses have their own tests (`tests/unit/fidelity/article_test.cpp`), and so does a prompt answered in prose (`asking_test.cpp`).
+
+What the tests found before any mutant ran:
+1. **The first prompt answered in prose could not be asked.** `stage_prompt()` asked every prompt for its answer's schema, and `write` has none: "prompt 'write' is answered in prose". A prompt without a schema is asked without one now.
+2. **An empty article broke its own schema.** A video whose every sentence is filler has nothing to retell, and the article's schema asked for at least one character. It allows an empty article now, and a finding says why it is empty.
+3. **The prompt's example showed an atom another way than the stage does.** The stage ends an atom's words to quote with a full stop (`To quote: "…".`), and the example in the system part did not. A model is now shown exactly the shape it is given.
+4. **Both stages that ask the commander miscounted what they asked.** The plan stage and the write stage counted every section with atoms or paragraphs, so a section none of whose paragraphs the commander holds was said to be written, and a video with nothing to tell said `the commander writes 0 sections`. They count the sections the commander is asked about, and say nothing when it is asked about none.
+5. clang-tidy found a nested conditional (the fallback's wording is `told_plainly()` now) and a test's `int` product widened after the fact. It crashed once, with SIGBUS, reading a file rewritten while it ran; it was run again.
+
+**Writing the mutants found behaviour no test held, now tested**: an answer's least and most room; a long sentence quoted in a message, cut before a character, never inside one; a part's paragraphs numbered as in the section when an atom is sent back; a register label; a list of two terms; a question's modality said once; the video's gist; the seeds; the first of the drafts with fewest warnings, when two that tie differ; a warning no draft avoids, published; a part the models decline; a commander that holds no paragraph; an outline that does not cover its transcript; the key's tier, the write stage's own; no word on where atoms are when the paragraphs were miscounted; and in the oracle, an atom with terms alone, and a block with no paragraph.
+
+**The mutants** (`tests/mutants/pipeline.toml`, 358 now): 1 of a prompt answered in prose, 2 of what the plan stage says while it works, and 76 of the write stage; with them 11 of the scope of a text (`fidelity.toml`), 1 of the empty article (`knowledge.toml`) and 9 of the oracle's articles (`oracle.toml`). The first run killed 96 of the 100, each by the test that claims it. Four did not build, each refused by `-Werror` for a reason a mutant must avoid: a scope left unused, a value compared with itself, an unsigned number compared with zero, a conditional whose branches were the same. Each was written another way, and the final run kills all 100, each by the test that claims it.

@@ -554,3 +554,13 @@ expect = "PlanProblems.SayWhatToCorrect"
   [[mutant.edit]]
   from = '''        if (!placed.contains(atom.id)) {'''
   to = '''        if (false) {'''
+
+# --- The empty article (schemas/artifacts/article.json) ----------------------------------
+
+[[mutant]]
+name = "an-empty-article-is-refused"
+file = "schemas/artifacts/article.json"
+expect = "Article.TheArtifactIsItsMarkdown"
+  [[mutant.edit]]
+  from = '''"markdown": {"type": "string"}'''
+  to = '''"markdown": {"type": "string", "minLength": 1}'''

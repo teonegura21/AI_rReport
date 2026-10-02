@@ -142,8 +142,8 @@ TEST(Article, AShortQuotationIsANameOrATerm) {
 
 TEST(Article, WithinASectionTheTalksOrderIsKept) {
     const std::string article =
-        "# All\n\nRevenue grew 37% in 2023 [A4]. Water boils at 100 degrees at sea level [A1]. Marie Curie "
-        "won two "
+        "# All\n\n"
+        "Revenue grew 37% in 2023 [A4]. Water boils at 100 degrees at sea level [A1]. Marie Curie won two "
         "Nobel Prizes [A2]. She called radium \"the most beautiful element\" [A3].\n";
     const Report report = check_article(transcript(), ledger(), article);
     ASSERT_EQ(checks(report), std::vector<Check>{Check::order_kept})
@@ -174,9 +174,11 @@ TEST(Article, AtomsSaidTogetherMayBeToldInEitherOrder) {
 
 TEST(Article, SectionsMayBeOrderedFreely) {
     const std::string article =
-        "# Money\n\nRevenue grew 37% in 2023 [A4].\n\n# Science\n\nWater boils at 100 degrees at sea level "
-        "[A1]. "
-        "Marie Curie won two Nobel Prizes [A2]. She called radium \"the most beautiful element\" [A3].\n";
+        "# Money\n\n"
+        "Revenue grew 37% in 2023 [A4].\n\n"
+        "# Science\n\n"
+        "Water boils at 100 degrees at sea level [A1]. Marie Curie won two Nobel Prizes [A2]. "
+        "She called radium \"the most beautiful element\" [A3].\n";
     EXPECT_TRUE(check_article(transcript(), ledger(), article).findings.empty());
 }
 
@@ -208,6 +210,42 @@ TEST(Article, CodeInAQuotationIsReadAsItsWords) {
                                         R"("the most beautiful element", "the most `beautiful` metal")");
     EXPECT_EQ(checks(check_article(transcript(), ledger(), article)),
               std::vector<Check>{Check::quote_verbatim});
+}
+
+// --- What a text is held to ------------------------------------------------------------
+
+TEST(Article, AScopeHoldsATextToItsOwnAtoms) {
+    const std::vector<AtomId> first_two{AtomId{1}, AtomId{2}};
+    const std::string section =
+        "Water boils at 100 degrees at sea level [A1]. Marie Curie won two Nobel Prizes [A2].\n";
+    const Report report = check_article(transcript(), ledger(), section, {.told = first_two});
+    EXPECT_TRUE(report.findings.empty()) << report.findings.front().message;
+    EXPECT_EQ(report.coverage.atoms, 2U) << "A3 and A4 are another text's to tell";
+    EXPECT_EQ(report.coverage.atoms_told, 2U);
+
+    const Report wide = check_article(transcript(), ledger(), kArticle, {.told = first_two});
+    ASSERT_EQ(checks(wide), (std::vector<Check>{Check::marker_scope, Check::marker_scope}));
+    EXPECT_EQ(wide.findings.front().message,
+              "[A3] is not among the atoms to tell here: cite only the atoms given");
+    EXPECT_EQ(wide.coverage.markers_invalid, 0U) << "it names an atom all the same";
+}
+
+TEST(Article, ADuplicateIsToldByTheAtomItRepeats) {
+    const std::vector<knowledge::Duplicate> repeats{knowledge::Duplicate{.atom = AtomId{4}, .of = AtomId{1}}};
+    const std::string without_a4 =
+        changed("Revenue grew thirty-seven percent in twenty twenty-three [A4].\n", "");
+    const Report report = check_article(transcript(), ledger(), without_a4, {.duplicates = repeats});
+    EXPECT_TRUE(report.findings.empty()) << report.findings.front().message;
+    EXPECT_EQ(report.coverage.atoms, 4U);
+    EXPECT_EQ(report.coverage.atoms_told, 4U) << "A4, by A1";
+
+    const std::string without_a1 =
+        replace_all(without_a4, "Water boils at 100 degrees at sea level [A1]. ", "");
+    const Report untold = check_article(transcript(), ledger(), without_a1, {.duplicates = repeats});
+    ASSERT_EQ(checks(untold), std::vector<Check>{Check::atom_told});
+    EXPECT_EQ(untold.findings.front().atoms, std::vector<AtomId>{AtomId{1}})
+        << "said once, of the atom to tell";
+    EXPECT_EQ(untold.coverage.atoms_told, 2U) << "neither A1 nor the A4 it would tell";
 }
 
 }  // namespace

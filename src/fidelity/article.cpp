@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include <rr/core/assert.hpp>
 #include <rr/fidelity/checks.hpp>
 #include <rr/text/align.hpp>
 #include <rr/text/tokens.hpp>
@@ -83,8 +84,10 @@ Finding finding(Check check, Severity severity, std::string message, std::vector
                    .article = article};
 }
 
-// Markers are well formed and name atoms of the ledger.
-void check_markers(const ArticleView& article, const AtomLedger& ledger, Report& report) {
+// Markers are well formed, and name atoms of the ledger that the text tells
+// (`scope`: none, every atom of the ledger).
+void check_markers(const ArticleView& article, const AtomLedger& ledger, const std::set<AtomId>& scope,
+                   Report& report) {
     for (const knowledge::BadMarker& bad : article.parsed().bad_markers) {
         ++report.coverage.markers;
         ++report.coverage.markers_invalid;
@@ -104,6 +107,12 @@ void check_markers(const ArticleView& article, const AtomLedger& ledger, Report&
                                 std::format("[{}] names no atom: the atoms are A1 to A{}", marker.atom,
                                             ledger.atoms.size()),
                                 {}, {marker.atom}, marker.span));
+                } else if (!scope.empty() && !scope.contains(marker.atom)) {
+                    report.findings.push_back(finding(
+                        Check::marker_scope, Severity::error,
+                        std::format("[{}] is not among the atoms to tell here: cite only the atoms given",
+                                    marker.atom),
+                        {}, {marker.atom}, marker.span));
                 }
             }
         }
@@ -186,10 +195,36 @@ void check_must_quote(const ArticleView& article, const Atom& atom, const std::v
                 atom.sentences, {atom.id}, article.span(closest_block)));
 }
 
-// Every atom is cited, and keeps what it holds where it is cited.
-void check_atoms(const ArticleView& article, const AtomLedger& ledger, Report& report) {
-    report.coverage.atoms += ledger.atoms.size();
-    for (const Atom& atom : ledger.atoms) {
+// Every atom `scope` holds the text to is cited, and keeps what it holds
+// where it is cited; a duplicate is told when it or the atom it repeats is.
+void check_atoms(const ArticleView& article, const AtomLedger& ledger, const ArticleScope& scope,
+                 Report& report) {
+    std::set<AtomId> repeated;
+    for (const knowledge::Duplicate& duplicate : scope.duplicates) {
+        repeated.insert(duplicate.atom);
+        ++report.coverage.atoms;
+        if (!article.citing(duplicate.atom).empty() || !article.citing(duplicate.of).empty()) {
+            ++report.coverage.atoms_told;
+        }
+    }
+    std::vector<const Atom*> owed;  // the atoms the text must tell
+    if (scope.told.empty()) {
+        owed.reserve(ledger.atoms.size());
+        for (const Atom& atom : ledger.atoms) {
+            owed.push_back(&atom);
+        }
+    } else {
+        owed.reserve(scope.told.size());
+        for (const AtomId id : scope.told) {
+            const Atom* const atom = ledger.find(id);
+            RR_ASSERT(atom != nullptr, "the atoms a text must tell are the ledger's");
+            owed.push_back(atom);
+        }
+    }
+    std::erase_if(owed, [&](const Atom* atom) { return repeated.contains(atom->id); });
+    report.coverage.atoms += owed.size();
+    for (const Atom* const told : owed) {
+        const Atom& atom = *told;
         const std::vector<std::size_t>& blocks = article.citing(atom.id);
         check_must_quote(article, atom, blocks, report);
         if (blocks.empty()) {
@@ -397,11 +432,12 @@ void check_order(const ArticleView& article, const AtomLedger& ledger, Report& r
 
 }  // namespace
 
-Report check_article(const Transcript& transcript, const AtomLedger& ledger, std::string_view markdown) {
+Report check_article(const Transcript& transcript, const AtomLedger& ledger, std::string_view markdown,
+                     const ArticleScope& scope) {
     const ArticleView article{markdown};
     Report report;
-    check_markers(article, ledger, report);
-    check_atoms(article, ledger, report);
+    check_markers(article, ledger, {scope.told.begin(), scope.told.end()}, report);
+    check_atoms(article, ledger, scope, report);
     check_quotations(article, transcript, report);
     check_order(article, ledger, report);
     return report;

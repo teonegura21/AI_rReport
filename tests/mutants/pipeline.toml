@@ -2305,3 +2305,690 @@ expect = "PlanStageTest.TheKeyHoldsTheTierThePromptTheArmyAndWhatTheCommanderHol
   [[mutant.edit]]
   from = '''{"tier", tier.canonical(reason::Stage::plan)}'''
   to = '''{"tier", tier.canonical(reason::Stage::atomize)}'''
+
+# --- A prompt answered in prose (asking.cpp) ---------------------------------------------
+
+[[mutant]]
+name = "a-prose-prompt-asks-for-its-schema"
+file = "src/pipeline/asking.cpp"
+expect = "Asking.APromptIsFoundWithItsSchemaAndAPromptAnsweredInProseWithNone"
+  [[mutant.edit]]
+  from = '''    if (!info->schema.has_value()) {
+        return StagePrompt{.info = info};  // answered in prose'''
+  to = '''    if (false) {
+        return StagePrompt{.info = info};  // answered in prose'''
+
+# --- What the plan stage says while it works (plan_stage.cpp) ----------------------------
+
+[[mutant]]
+name = "plan-counts-a-section-it-is-not-asked-about"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.AnAtomTooLongForTheCommanderEvenAloneIsToldInTheOrderSaid"
+  [[mutant.edit]]
+  from = '''                if (missions.size() > before) {
+                    ++planned;'''
+  to = '''                if (missions.size() >= before) {
+                    ++planned;'''
+
+[[mutant]]
+name = "plan-tells-of-a-commander-asked-nothing"
+file = "src/pipeline/plan_stage.cpp"
+expect = "PlanStageTest.ACommanderThatHoldsNoAtomEvenAloneTellsEachSectionInTheOrderSaid"
+  [[mutant.edit]]
+  from = '''        if (!missions.empty()) {
+            progress(std::format(
+                "plan: the commander plans'''
+  to = '''        if (true) {
+            progress(std::format(
+                "plan: the commander plans'''
+
+# --- The write stage (write_stage.cpp) ---------------------------------------------------
+
+[[mutant]]
+name = "an-answer-forgets-its-atoms-words"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AnAnswerMayTakeTwiceItsAtomsWords"
+  [[mutant.edit]]
+  from = '''            bytes += static_cast<std::int64_t>(atom->text.size() + atom->quote.value_or("").size());'''
+  to = '''            bytes += static_cast<std::int64_t>(atom->quote.value_or("").size());'''
+
+[[mutant]]
+name = "an-answer-may-take-thrice-its-words"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AnAnswerMayTakeTwiceItsAtomsWords"
+  [[mutant.edit]]
+  from = '''    const std::int64_t tokens = ((bytes * 2) / 3) +'''
+  to = '''    const std::int64_t tokens = bytes +'''
+
+[[mutant]]
+name = "an-answer-forgets-its-paragraphs"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AnAnswerMayTakeTwiceItsAtomsWords"
+  [[mutant.edit]]
+  from = '''(static_cast<std::int64_t>(paragraphs.size()) * kTokensPerParagraph) +'''
+  to = '''(static_cast<std::int64_t>(paragraphs.empty()) * kTokensPerParagraph) +'''
+
+[[mutant]]
+name = "an-answer-has-no-room-besides"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AnAnswerMayTakeTwiceItsAtomsWords"
+  [[mutant.edit]]
+  from = '''                                kSpareTokens;'''
+  to = '''                                (kSpareTokens * 0);'''
+
+[[mutant]]
+name = "an-answer-has-a-lower-floor"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AnAnswersRoomIsNoLessThan512TokensNorMoreThan8192"
+  [[mutant.edit]]
+  from = '''std::clamp<std::int64_t>(tokens, kLeastAnswer, kMostAnswer)'''
+  to = '''std::clamp<std::int64_t>(tokens, kLeastAnswer / 2, kMostAnswer)'''
+
+[[mutant]]
+name = "an-answer-has-a-higher-ceiling"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AnAnswersRoomIsNoLessThan512TokensNorMoreThan8192"
+  [[mutant.edit]]
+  from = '''std::clamp<std::int64_t>(tokens, kLeastAnswer, kMostAnswer)'''
+  to = '''std::clamp<std::int64_t>(tokens, kLeastAnswer, kMostAnswer * 2)'''
+
+[[mutant]]
+name = "a-long-sentence-is-shown-whole"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.EveryRuleADraftBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''    if (text.size() <= kShownBytes) {
+        return std::string{text};'''
+  to = '''    if (text.size() <= kShownBytes * 2) {
+        return std::string{text};'''
+
+[[mutant]]
+name = "a-sentence-is-cut-inside-a-character"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.EveryRuleADraftBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''    return std::string{text.substr(0, end)} + "\u2026";'''
+  to = '''    return std::string{text.substr(0, end + (kShownBytes - end))} + "\u2026";'''
+
+[[mutant]]
+name = "an-atom-is-shown-without-its-time"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheCommanderIsShownTheSectionsParagraphsAndTheirAtomsInFull"
+  [[mutant.edit]]
+  from = '''std::format("{} [{}] {}: {}", atom.id, format_timestamp(said->span.start()), labels, atom.text);'''
+  to = '''std::format("{} [{}] {}: {}", atom.id, format_timestamp(said->span.end()), labels, atom.text);'''
+
+[[mutant]]
+name = "a-label-may-repeat-the-kind"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheCommanderIsShownTheSectionsParagraphsAndTheirAtomsInFull"
+  [[mutant.edit]]
+  from = '''        if (more != kind) {
+            labels += std::format(", {}", more);'''
+  to = '''        if (more != kind || true) {
+            labels += std::format(", {}", more);'''
+
+[[mutant]]
+name = "a-modality-is-not-shown"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheCommanderIsShownTheSectionsParagraphsAndTheirAtomsInFull"
+  [[mutant.edit]]
+  from = '''    if (atom.modality != knowledge::Modality::asserted) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-register-is-not-shown"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheCommanderIsShownTheSectionsParagraphsAndTheirAtomsInFull"
+  [[mutant.edit]]
+  from = '''    if (atom.register_kind != knowledge::Register::main) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "an-intensity-is-not-shown"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheCommanderIsShownTheSectionsParagraphsAndTheirAtomsInFull"
+  [[mutant.edit]]
+  from = '''    if (atom.intensity != knowledge::Intensity::medium) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "no-one-says-it"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheCommanderIsShownTheSectionsParagraphsAndTheirAtomsInFull"
+  [[mutant.edit]]
+  from = '''    if (atom.speaker.has_value()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "no-one-is-reported"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheCommanderIsShownTheSectionsParagraphsAndTheirAtomsInFull"
+  [[mutant.edit]]
+  from = '''    if (atom.attributed_to.has_value()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "words-to-quote-are-not-shown"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheCommanderIsShownTheSectionsParagraphsAndTheirAtomsInFull"
+  [[mutant.edit]]
+  from = '''    if (atom.quote.has_value()) {
+        entry += std::format(" To quote: \"{}\".", *atom.quote);'''
+  to = '''    if (false) {
+        entry += std::format(" To quote: \"{}\".", *atom.quote);'''
+
+[[mutant]]
+name = "names-are-not-listed"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheCommanderIsShownTheSectionsParagraphsAndTheirAtomsInFull"
+  [[mutant.edit]]
+  from = '''    listed("Names", atom.names);
+'''
+  to = ''''''
+
+[[mutant]]
+name = "terms-are-not-listed"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheCommanderIsShownTheSectionsParagraphsAndTheirAtomsInFull"
+  [[mutant.edit]]
+  from = '''    listed("Terms", atom.terms);
+'''
+  to = ''''''
+
+[[mutant]]
+name = "a-list-runs-together"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheCommanderIsShownTheSectionsParagraphsAndTheirAtomsInFull"
+  [[mutant.edit]]
+  from = '''                list += (list.empty() ? "" : ", ") + word;'''
+  to = '''                list += word;'''
+
+[[mutant]]
+name = "a-heading-is-let-pass"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.EveryRuleADraftBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''    if (read.headed) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-list-is-let-pass"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.EveryRuleADraftBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''    if (read.other) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "paragraphs-are-not-counted"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.EveryRuleADraftBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''    if (read.paragraphs.size() != asked.paragraphs.size()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "a-miscount-goes-on-to-place-atoms"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.EveryRuleADraftBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''        return;  // which paragraph is which cannot be told
+'''
+  to = ''''''
+
+[[mutant]]
+name = "an-atom-may-be-told-anywhere"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.EveryRuleADraftBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''            if (found.has_value() && *found != index) {'''
+  to = '''            if (false) {'''
+
+[[mutant]]
+name = "a-part-numbers-its-paragraphs-from-one"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ASectionTooLongForTheCommanderIsWrittenInParts"
+  [[mutant.edit]]
+  from = '''        Asked asked{.first = begin + 1};'''
+  to = '''        Asked asked{.first = 1};'''
+
+[[mutant]]
+name = "a-sentence-without-a-marker-passes"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.EveryRuleADraftBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''            if (sentence.markers.empty()) {'''
+  to = '''            if (false) {'''
+
+[[mutant]]
+name = "a-draft-is-held-to-every-atom"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.EverySectionIsWrittenByTheCommanderAndEveryAtomTold"
+  [[mutant.edit]]
+  from = '''         fidelity::check_article(transcript, ledger, draft, {.told = asked.atoms}).findings) {'''
+  to = '''         fidelity::check_article(transcript, ledger, draft, {}).findings) {'''
+
+[[mutant]]
+name = "ledger-b-is-not-sent-back"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.EveryRuleADraftBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''        if (finding.severity == fidelity::Severity::error) {
+            problems.note(finding.message);'''
+  to = '''        if (finding.severity == fidelity::Severity::warning) {
+            problems.note(finding.message);'''
+
+[[mutant]]
+name = "write-sends-warnings-back"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.OfTheDraftsThatPassTheFirstWithFewestWarningsIsKept"
+  [[mutant.edit]]
+  from = '''        if (finding.severity == fidelity::Severity::error) {
+            problems.note(finding.message);'''
+  to = '''        if (finding.severity == fidelity::Severity::error || finding.severity == fidelity::Severity::warning) {
+            problems.note(finding.message);'''
+
+[[mutant]]
+name = "drafts-are-told-apart-by-their-errors"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.OfTheDraftsThatPassTheFirstWithFewestWarningsIsKept"
+  [[mutant.edit]]
+  from = '''    return fidelity::check_article(transcript, ledger, draft, {.told = asked.atoms}).warnings();'''
+  to = '''    return fidelity::check_article(transcript, ledger, draft, {.told = asked.atoms}).errors();'''
+
+[[mutant]]
+name = "the-last-of-the-fewest-is-kept"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.OfTheDraftsThatPassTheFirstWithFewestWarningsIsKept"
+  [[mutant.edit]]
+  from = '''            if (kept == nullptr || warnings < fewest) {'''
+  to = '''            if (kept == nullptr || warnings <= fewest) {'''
+
+[[mutant]]
+name = "the-first-draft-is-kept"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.OfTheDraftsThatPassTheFirstWithFewestWarningsIsKept"
+  [[mutant.edit]]
+  from = '''            if (kept == nullptr || warnings < fewest) {'''
+  to = '''            if (kept == nullptr || (warnings < fewest && kept == nullptr)) {'''
+
+[[mutant]]
+name = "a-ceiling-leaves-the-article-reusable"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AJobCeilingMakesTheResultThisJobsAlone"
+  [[mutant.edit]]
+  from = '''        if (outcome != nullptr && outcome->verdict == agents::Verdict::ceiling) {'''
+  to = '''        if (outcome != nullptr && outcome->verdict == agents::Verdict::refused) {'''
+
+[[mutant]]
+name = "a-whole-section-is-said-its-paragraphs"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ASectionTheModelsDeclineIsToldAsItsAtomsSayIt"
+  [[mutant.edit]]
+  from = '''    if (stretch.end - stretch.begin == count) {'''
+  to = '''    if (stretch.end - stretch.begin == count + 1) {'''
+
+[[mutant]]
+name = "one-paragraph-is-said-a-few"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AParagraphTooLongForTheCommanderEvenAloneIsToldAsItsAtomsSayIt"
+  [[mutant.edit]]
+  from = '''    if (stretch.end - stretch.begin == 1) {'''
+  to = '''    if (stretch.end - stretch.begin == 0) {'''
+
+[[mutant]]
+name = "a-few-paragraphs-are-said-from-the-start"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.APartTheModelsDeclineIsToldAsItsAtomsSayIt"
+  [[mutant.edit]]
+  from = '''    return std::format("paragraphs {} to {} are told as their atoms say it", stretch.begin + 1, stretch.end);'''
+  to = '''    return std::format("paragraphs {} to {} are told as their atoms say it", stretch.begin, stretch.end);'''
+
+[[mutant]]
+name = "each-paragraph-is-said-it"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ACommanderThatHoldsNoParagraphEvenAloneTellsEachSectionAsItsAtomsSayIt"
+  [[mutant.edit]]
+  from = '''paragraphs.size() == 1 ? "it is" : "each paragraph is"'''
+  to = '''paragraphs.size() >= 1 ? "it is" : "each paragraph is"'''
+
+[[mutant]]
+name = "a-quote-is-never-added"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ASectionTheModelsDeclineIsToldAsItsAtomsSayIt"
+  [[mutant.edit]]
+  from = '''        if (atom->quote.has_value() && !text::align(*atom->quote, atom->text).verbatim()) {'''
+  to = '''        if (atom->quote.has_value() && !text::align(*atom->quote, atom->text).verbatim() && false) {'''
+
+[[mutant]]
+name = "a-quote-is-always-added"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AParagraphTooLongForTheCommanderEvenAloneIsToldAsItsAtomsSayIt"
+  [[mutant.edit]]
+  from = '''        if (atom->quote.has_value() && !text::align(*atom->quote, atom->text).verbatim()) {'''
+  to = '''        if (atom->quote.has_value()) {'''
+
+[[mutant]]
+name = "told-as-said-has-no-markers"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AParagraphTooLongForTheCommanderEvenAloneIsToldAsItsAtomsSayIt"
+  [[mutant.edit]]
+  from = '''        told += std::format("{}{} [{}]", told.empty() ? "" : " ", sentence, atom->id);'''
+  to = '''        told += std::format("{}{}", told.empty() ? "" : " ", sentence + atom->id.str().substr(0, 0));'''
+
+[[mutant]]
+name = "write-counts-a-section-it-is-not-asked-for"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AParagraphTooLongForTheCommanderEvenAloneIsToldAsItsAtomsSayIt"
+  [[mutant.edit]]
+  from = '''            if (missions.size() > before) {
+                ++written;'''
+  to = '''            if (missions.size() >= before) {
+                ++written;'''
+
+[[mutant]]
+name = "write-tells-of-a-commander-asked-nothing"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AVideoWithNothingToRetellHasAnEmptyArticleAndSaysSo"
+  [[mutant.edit]]
+  from = '''        if (!missions.empty()) {
+            progress(std::format('''
+  to = '''        if (true) {
+            progress(std::format('''
+
+[[mutant]]
+name = "set-aside-paragraphs-are-not-joined"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ACommanderThatHoldsNoParagraphEvenAloneTellsEachSectionAsItsAtomsSayIt"
+  [[mutant.edit]]
+  from = '''                if (!stretches.empty() && !stretches.back().mission.has_value()) {'''
+  to = '''                if (!stretches.empty() && !stretches.back().mission.has_value() && false) {'''
+
+[[mutant]]
+name = "a-part-is-numbered-from-zero"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ASectionTooLongForTheCommanderIsWrittenInParts"
+  [[mutant.edit]]
+  from = '''            RR_TRY_ASSIGN(Held held, most_held(section, number, parts + 1, begin));'''
+  to = '''            RR_TRY_ASSIGN(Held held, most_held(section, number, parts, begin));'''
+
+[[mutant]]
+name = "a-part-from-the-middle-is-named-the-whole"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AParagraphTooLongForTheCommanderEvenAloneIsToldAsItsAtomsSayIt"
+  [[mutant.edit]]
+  from = '''            return begin == 0 && end == count ? std::format("write-{}", number)'''
+  to = '''            return end == count ? std::format("write-{}", number)'''
+
+[[mutant]]
+name = "a-whole-section-is-never-tried"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.EverySectionIsWrittenByTheCommanderAndEveryAtomTold"
+  [[mutant.edit]]
+  from = '''        if (army_->holds(whole)) {'''
+  to = '''        if (army_->holds(whole) && count == 0) {'''
+
+[[mutant]]
+name = "bisection-keeps-what-it-refuses"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ASectionTooLongForTheCommanderIsWrittenInParts"
+  [[mutant.edit]]
+  from = '''            (army_->holds(trial) ? held : refused) = middle;'''
+  to = '''            (army_->holds(trial) ? refused : held) = middle;'''
+
+[[mutant]]
+name = "a-paragraph-without-purpose-says-nothing"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheCommanderIsShownTheSectionsParagraphsAndTheirAtomsInFull"
+  [[mutant.edit]]
+  from = '''paragraph.purpose.value_or("Tell its atoms in the order given.")'''
+  to = '''paragraph.purpose.value_or("")'''
+
+[[mutant]]
+name = "the-part-is-not-said"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ASectionTooLongForTheCommanderIsWrittenInParts"
+  [[mutant.edit]]
+  from = '''            {"part", whole
+'''
+  to = '''            {"part", whole || true
+'''
+
+[[mutant]]
+name = "a-section-starts-where-it-ends"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheCommanderIsShownTheSectionsParagraphsAndTheirAtomsInFull"
+  [[mutant.edit]]
+  from = '''{"start", format_timestamp(sentence(section.section->first).span.start())},'''
+  to = '''{"start", format_timestamp(sentence(section.section->last).span.start())},'''
+
+[[mutant]]
+name = "every-mission-has-one-seed"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.EverySectionIsWrittenByTheCommanderAndEveryAtomTold"
+  [[mutant.edit]]
+  from = '''llm::derived_seed(context_->job->salt, WriteStage::kName, id, 0);'''
+  to = '''llm::derived_seed(context_->job->salt, WriteStage::kName, id.substr(0, 5), 0);'''
+
+[[mutant]]
+name = "the-infantry-writes"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ASectionTooLongForTheCommanderIsWrittenInParts"
+  [[mutant.edit]]
+  from = '''            .role = "commander",
+            .request = llm::ChatRequest{.messages = {llm::Message::system(rendered.system),'''
+  to = '''            .role = "infantry",
+            .request = llm::ChatRequest{.messages = {llm::Message::system(rendered.system),'''
+
+[[mutant]]
+name = "writing-thinks"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.EverySectionIsWrittenByTheCommanderAndEveryAtomTold"
+  [[mutant.edit]]
+  from = '''                                        .thinking = compute_.thinking},'''
+  to = '''                                        .thinking = !compute_.thinking},'''
+
+[[mutant]]
+name = "one-draft-only"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.EverySectionIsWrittenByTheCommanderAndEveryAtomTold"
+  [[mutant.edit]]
+  from = '''            .samples = compute_.drafts};'''
+  to = '''            .samples = 1};'''
+
+[[mutant]]
+name = "no-repair"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.EveryRuleADraftBreaksIsSentBackAndRepaired"
+  [[mutant.edit]]
+  from = '''            .repairs = compute_.repair_rounds,'''
+  to = '''            .repairs = 0,'''
+
+[[mutant]]
+name = "thinking-has-no-budget"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ATierThatWritesThinkingThinksWithinHalfOfWhatTheCommanderHolds"
+  [[mutant.edit]]
+  from = '''        if (compute_.thinking) {
+            mission.request.thinking_budget = budget_;'''
+  to = '''        if (!compute_.thinking) {
+            mission.request.thinking_budget = budget_;'''
+
+[[mutant]]
+name = "thinking-takes-all-the-commander-holds"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ATierThatWritesThinkingThinksWithinHalfOfWhatTheCommanderHolds"
+  [[mutant.edit]]
+  from = '''            budget_->tokens = std::min(budget_->tokens, commander->ctx_per_slot / 2);'''
+  to = '''            budget_->tokens = std::min(budget_->tokens, commander->ctx_per_slot);'''
+
+[[mutant]]
+name = "thinking-forgets-the-commanders-budget"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ATierThatWritesThinkingThinksWithinHalfOfWhatTheCommanderHolds"
+  [[mutant.edit]]
+  from = '''        if (commander != nullptr && commander->thinking.thinking_budget.has_value()) {
+            budget_ ='''
+  to = '''        if (commander == nullptr && commander->thinking.thinking_budget.has_value()) {
+            budget_ ='''
+
+[[mutant]]
+name = "a-speakers-role-is-not-shown-to-the-writer"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheCommanderIsShownTheSectionsParagraphsAndTheirAtomsInFull"
+  [[mutant.edit]]
+  from = '''speaker.role.has_value() ? ", " + *speaker.role : ""'''
+  to = '''std::string{}'''
+
+[[mutant]]
+name = "a-terms-meaning-is-not-shown"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheCommanderIsShownTheSectionsParagraphsAndTheirAtomsInFull"
+  [[mutant.edit]]
+  from = '''term.meaning.has_value() ? ": " + *term.meaning : ""'''
+  to = '''std::string{}'''
+
+[[mutant]]
+name = "sections-are-numbered-from-zero"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheCommanderIsShownTheSectionsParagraphsAndTheirAtomsInFull"
+  [[mutant.edit]]
+  from = '''sections.empty() ? "" : "\n", ++number,'''
+  to = '''sections.empty() ? "" : "\n", number++,'''
+
+[[mutant]]
+name = "the-gist-is-not-shown"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheCommanderIsShownTheSectionsParagraphsAndTheirAtomsInFull"
+  [[mutant.edit]]
+  from = '''{"gist", outline.brief.gist.value_or("")},'''
+  to = '''{"gist", ""},'''
+
+[[mutant]]
+name = "a-paragraph-loses-its-purpose"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheCommanderIsShownTheSectionsParagraphsAndTheirAtomsInFull"
+  [[mutant.edit]]
+  from = '''            ToWrite to_write{.purpose = paragraph.purpose};'''
+  to = '''            ToWrite to_write{};'''
+
+[[mutant]]
+name = "an-outline-that-does-not-cover-is-read"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AnOutlineThatDoesNotCoverItsTranscriptIsABug"
+  [[mutant.edit]]
+  from = '''        !problems.empty()) {
+        return fail(Errc::internal,
+                    std::format("the outline'''
+  to = '''        problems.empty() && false) {
+        return fail(Errc::internal,
+                    std::format("the outline'''
+
+[[mutant]]
+name = "a-plan-that-does-not-hold-is-read"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.APlanThatDoesNotHoldItsLedgerIsABug"
+  [[mutant.edit]]
+  from = '''        !problems.empty()) {
+        return fail(Errc::internal, std::format("the plan does not hold'''
+  to = '''        problems.empty() && false) {
+        return fail(Errc::internal, std::format("the plan does not hold'''
+
+[[mutant]]
+name = "no-pod-is-no-matter"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.WithoutAPodThereIsNoArticle"
+  [[mutant.edit]]
+  from = '''    if (!context.army) {
+        return fail(Errc::needs_user,
+                    "writing the article'''
+  to = '''    if (!context.army && false) {
+        return fail(Errc::needs_user,
+                    "writing the article'''
+
+[[mutant]]
+name = "sections-run-together"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.EverySectionIsWrittenByTheCommanderAndEveryAtomTold"
+  [[mutant.edit]]
+  from = '''std::format("{}## {}\n", markdown.empty() ? "" : "\n", sections[index].plan->heading);'''
+  to = '''std::format("{}## {}\n", markdown.empty() ? "" : " ", sections[index].plan->heading);'''
+
+[[mutant]]
+name = "an-empty-section-is-headed"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ASectionWithoutParagraphsIsNotWritten"
+  [[mutant.edit]]
+  from = '''        if (paragraphs[index].empty()) {
+            continue;'''
+  to = '''        if (false) {
+            continue;'''
+
+[[mutant]]
+name = "paragraphs-run-together"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.EverySectionIsWrittenByTheCommanderAndEveryAtomTold"
+  [[mutant.edit]]
+  from = '''            markdown += "\n" + paragraph + "\n";'''
+  to = '''            markdown += paragraph + "\n";'''
+
+[[mutant]]
+name = "an-empty-article-is-not-said"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AVideoWithNothingToRetellHasAnEmptyArticleAndSaysSo"
+  [[mutant.edit]]
+  from = '''    if (markdown.empty()) {'''
+  to = '''    if (false) {'''
+
+[[mutant]]
+name = "the-articles-findings-are-not-published"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.AWarningNoDraftAvoidsIsPublished"
+  [[mutant.edit]]
+  from = '''        output.findings.push_back(finding.message);
+    }
+    output.artifact'''
+  to = '''        output.findings.push_back(finding.message.substr(0, 0));
+    }
+    output.artifact'''
+
+[[mutant]]
+name = "the-article-forgets-the-duplicates"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.ThePlansDuplicatesAreNotTold"
+  [[mutant.edit]]
+  from = '''{.duplicates = read.plan.duplicates}'''
+  to = '''{}'''
+
+[[mutant]]
+name = "the-write-key-holds-another-stages-tier"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheKeyHoldsTheTierThePromptTheArmyAndWhatTheCommanderHolds"
+  [[mutant.edit]]
+  from = '''{"tier", tier.canonical(reason::Stage::write)}'''
+  to = '''{"tier", tier.canonical(reason::Stage::plan)}'''
+
+[[mutant]]
+name = "the-key-forgets-the-prompt"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheKeyHoldsTheTierThePromptTheArmyAndWhatTheCommanderHolds"
+  [[mutant.edit]]
+  from = '''{"prompts", std::move(prompts)},'''
+  to = '''{"prompts", json::Json::object()},'''
+
+[[mutant]]
+name = "the-key-forgets-the-army"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheKeyHoldsTheTierThePromptTheArmyAndWhatTheCommanderHolds"
+  [[mutant.edit]]
+  from = '''{"army", army_fingerprint(*army)},'''
+  to = '''{"army", json::Json::array()},'''
+
+[[mutant]]
+name = "the-key-forgets-what-the-writer-holds"
+file = "src/pipeline/write_stage.cpp"
+expect = "WriteStageTest.TheKeyHoldsTheTierThePromptTheArmyAndWhatTheCommanderHolds"
+  [[mutant.edit]]
+  from = '''{"holds", commander == nullptr ? 0 : commander->ctx_per_slot}'''
+  to = '''{"holds", commander == nullptr ? 0 : 32'768}'''

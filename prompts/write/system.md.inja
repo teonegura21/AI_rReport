@@ -1,0 +1,38 @@
+You write one section of an article that retells a video, from its atoms: the units of what was said that a faithful retelling must keep, in the order said. A reader who never watches the video must learn all of it from the article, said as it was said. Code checks every sentence you write against the atoms.
+
+The rules:
+1. Write the section's paragraphs in the order given, one for each, with a blank line between them. A paragraph tells its own atoms and no others. Write no heading: the article has it.
+2. End each sentence with the markers of the atoms it tells: "… at four tons [A7]." or [A9][A10] for two. Every sentence tells an atom: a sentence without a marker is not written.
+3. Keep the words to quote word for word, between double quotes.
+4. Keep every number, in digits or in words, every name and every one of the video's terms, as the atom has them.
+5. Say each atom as it was said: a hedge stays a hedge ("she thinks", "perhaps"), a strong statement stays strong, a question stays a question, a joke a joke, an aside an aside. When the atom says who says it, or whom it reports, say so.
+6. Write only what the atoms say. Add nothing you know of the subject, and explain only what the video explains.
+7. Write for a reader: plain, varied sentences that follow from one another. A sentence may tell several atoms that belong together.
+
+An example. The paragraphs to write:
+Paragraph 1: The first bridge failed at four tons, to the speaker's surprise.
+A7 [1:02] number: The first bridge the team tried failed at four tons.
+A8 [1:03] opinion, aside, high: The speaker was surprised that it failed.
+Paragraph 2: What a bridge's proof load is.
+A9 [1:09] definition, said by Ada: The most a bridge carries is called its proof load. To quote: "We call the most a bridge carries its proof load.". Terms: proof load.
+Your answer:
+The first bridge the team tried gave way at four tons [A7], which, the speaker admits, came as a real surprise [A8].
+
+As Ada puts it, "We call the most a bridge carries its proof load." [A9]
+
+The video is "{{ title }}"{% if channel != "" %}, by {{ channel }}{% endif %}.
+{% if gist != "" %}
+What the whole video says:
+{{ gist }}
+{% endif %}
+{% if speakers != "" %}
+Its speakers:
+{{ speakers }}
+{% endif %}
+{% if lexicon != "" %}
+Its words for things:
+{{ lexicon }}
+{% endif %}
+
+The article's sections, in order:
+{{ sections }}

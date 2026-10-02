@@ -169,8 +169,12 @@ name = "told-uncounted"
 file = "src/fidelity/article.cpp"
 expect = "Article.EveryAtomIsTold"
   [[mutant.edit]]
-  from = '''        ++report.coverage.atoms_told;'''
-  to = '''        report.coverage.atoms_told += 0;'''
+  from = '''            continue;
+        }
+        ++report.coverage.atoms_told;'''
+  to = '''            continue;
+        }
+        report.coverage.atoms_told += 0;'''
 
 [[mutant]]
 name = "must-quotes-anywhere"
@@ -376,3 +380,101 @@ expect = "Duplicates.AreNotWhereTheAtomIsSaidOtherwise"
   [[mutant.edit]]
   from = '''    if (folded(atom.attributed_to) != folded(of.attributed_to)) {'''
   to = '''    if (false) {'''
+
+# --- What a text is held to (article.cpp, finding.cpp) -----------------------------------
+
+[[mutant]]
+name = "a-marker-of-another-atom-passes"
+file = "src/fidelity/article.cpp"
+expect = "Article.AScopeHoldsATextToItsOwnAtoms"
+  [[mutant.edit]]
+  from = '''                } else if (!scope.empty() && !scope.contains(marker.atom)) {'''
+  to = '''                } else if (!scope.empty() && !scope.contains(marker.atom) && false) {'''
+
+[[mutant]]
+name = "no-scope-holds-every-marker-out"
+file = "src/fidelity/article.cpp"
+expect = "Article.AFaithfulArticleHasNoFinding"
+  [[mutant.edit]]
+  from = '''                } else if (!scope.empty() && !scope.contains(marker.atom)) {'''
+  to = '''                } else if (!scope.contains(marker.atom)) {'''
+
+[[mutant]]
+name = "a-marker-out-of-scope-is-invalid"
+file = "src/fidelity/article.cpp"
+expect = "Article.AScopeHoldsATextToItsOwnAtoms"
+  [[mutant.edit]]
+  from = '''                } else if (!scope.empty() && !scope.contains(marker.atom)) {
+'''
+  to = '''                } else if (!scope.empty() && !scope.contains(marker.atom)) {
+                    ++report.coverage.markers_invalid;
+'''
+
+[[mutant]]
+name = "the-scope-never-reaches-the-markers"
+file = "src/fidelity/article.cpp"
+expect = "Article.AScopeHoldsATextToItsOwnAtoms"
+  [[mutant.edit]]
+  from = '''    check_markers(article, ledger, {scope.told.begin(), scope.told.end()}, report);'''
+  to = '''    check_markers(article, ledger, {}, report);'''
+
+[[mutant]]
+name = "a-scope-owes-every-atom"
+file = "src/fidelity/article.cpp"
+expect = "Article.AScopeHoldsATextToItsOwnAtoms"
+  [[mutant.edit]]
+  from = '''    if (scope.told.empty()) {
+        owed.reserve(ledger.atoms.size());'''
+  to = '''    if (true) {
+        owed.reserve(ledger.atoms.size());'''
+
+[[mutant]]
+name = "a-duplicate-is-owed-all-the-same"
+file = "src/fidelity/article.cpp"
+expect = "Article.ADuplicateIsToldByTheAtomItRepeats"
+  [[mutant.edit]]
+  from = '''    std::erase_if(owed, [&](const Atom* atom) { return repeated.contains(atom->id); });'''
+  to = '''    std::erase_if(owed, [&](const Atom* atom) { return repeated.contains(atom->id) && atom == nullptr; });'''
+
+[[mutant]]
+name = "a-duplicate-is-told-only-by-itself"
+file = "src/fidelity/article.cpp"
+expect = "Article.ADuplicateIsToldByTheAtomItRepeats"
+  [[mutant.edit]]
+  from = '''        if (!article.citing(duplicate.atom).empty() || !article.citing(duplicate.of).empty()) {'''
+  to = '''        if (!article.citing(duplicate.atom).empty()) {'''
+
+[[mutant]]
+name = "a-duplicate-is-always-told"
+file = "src/fidelity/article.cpp"
+expect = "Article.ADuplicateIsToldByTheAtomItRepeats"
+  [[mutant.edit]]
+  from = '''        if (!article.citing(duplicate.atom).empty() || !article.citing(duplicate.of).empty()) {'''
+  to = '''        if (!article.citing(duplicate.atom).empty() || article.citing(duplicate.of).empty() || true) {'''
+
+[[mutant]]
+name = "a-duplicate-is-not-counted"
+file = "src/fidelity/article.cpp"
+expect = "Article.ADuplicateIsToldByTheAtomItRepeats"
+  [[mutant.edit]]
+  from = '''        repeated.insert(duplicate.atom);
+        ++report.coverage.atoms;
+'''
+  to = '''        repeated.insert(duplicate.atom);
+'''
+
+[[mutant]]
+name = "warnings-are-counted-as-errors"
+file = "src/fidelity/finding.cpp"
+expect = "Report.CountsItsErrorsAndItsWarnings"
+  [[mutant.edit]]
+  from = '''        findings, Severity::warning, [](const Finding& finding) { return finding.severity; }));'''
+  to = '''        findings, Severity::error, [](const Finding& finding) { return finding.severity; }));'''
+
+[[mutant]]
+name = "marker-scope-is-named-as-another"
+file = "src/fidelity/finding.cpp"
+expect = "Report.ChecksHaveStableNames"
+  [[mutant.edit]]
+  from = '''    "marker-scope",'''
+  to = '''    "marker-known",'''

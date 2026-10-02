@@ -290,16 +290,21 @@ public:
     Result<knowledge::Plan> plan(std::span<const SectionAtoms> sections) {
         std::vector<std::vector<Stretch>> stretches(sections.size());
         std::vector<agents::Mission> missions;
-        std::size_t planned = 0;  // sections asked about
+        std::size_t planned = 0;  // sections the commander is asked about, whole or in part
         for (std::size_t index = 0; index < sections.size(); ++index) {
             if (!sections[index].atoms.empty()) {
+                const std::size_t before = missions.size();
                 RR_TRY_ASSIGN(stretches[index], stretches_of(sections[index], index + 1, missions));
-                ++planned;
+                if (missions.size() > before) {
+                    ++planned;
+                }
             }
         }
-        progress(std::format("plan: the commander plans {} {}{}", planned,
-                             planned == 1 ? "section" : "sections",
-                             missions.size() > planned ? std::format(", in {} parts", missions.size()) : ""));
+        if (!missions.empty()) {
+            progress(std::format(
+                "plan: the commander plans {} {}{}", planned, planned == 1 ? "section" : "sections",
+                missions.size() > planned ? std::format(", in {} parts", missions.size()) : ""));
+        }
         RR_TRY_ASSIGN(const std::vector<agents::Outcome> outcomes,
                       army_->squad(std::move(missions), context_->stop));
         knowledge::Plan plan;

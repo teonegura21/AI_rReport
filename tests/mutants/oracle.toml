@@ -508,3 +508,80 @@ expect = "OracleAnswers.PlanTellsThreeAtomsAParagraphAndDeclaresAnAtomShownAgain
   [[mutant.edit]]
   from = '''    oracle.teach("plan", plan());'''
   to = '''    (void)0;'''
+
+# --- The oracle's articles (answers.cpp) -------------------------------------------------
+
+[[mutant]]
+name = "write-leaves-out-the-marker"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.WriteTellsEachParagraphsAtomsEachWithItsMarker"
+  [[mutant.edit]]
+  from = '''            paragraphs.back() += std::format("{}{} [{}]", paragraphs.back().empty() ? "" : " ", sentence,'''
+  to = '''            paragraphs.back() += std::format("{}{}{}", paragraphs.back().empty() ? "" : " ", sentence,'''
+
+[[mutant]]
+name = "write-never-adds-the-quote"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.WriteTellsEachParagraphsAtomsEachWithItsMarker"
+  [[mutant.edit]]
+  from = '''                quote.has_value() && sentence.find(*quote) == std::string::npos) {'''
+  to = '''                quote.has_value() && sentence.find(*quote) == std::string::npos && false) {'''
+
+[[mutant]]
+name = "write-always-adds-the-quote"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.WriteTellsEachParagraphsAtomsEachWithItsMarker"
+  [[mutant.edit]]
+  from = '''                quote.has_value() && sentence.find(*quote) == std::string::npos) {'''
+  to = '''                quote.has_value()) {'''
+
+[[mutant]]
+name = "words-run-into-the-terms"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.WriteTellsEachParagraphsAtomsEachWithItsMarker"
+  [[mutant.edit]]
+  from = '''    for (const std::string_view after : {" To quote: ", " Names: ", " Terms: "}) {'''
+  to = '''    for (const std::string_view after : {" To quote: ", " Names: "}) {'''
+
+[[mutant]]
+name = "words-run-into-the-names"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.WriteTellsEachParagraphsAtomsEachWithItsMarker"
+  [[mutant.edit]]
+  from = '''    for (const std::string_view after : {" To quote: ", " Names: ", " Terms: "}) {'''
+  to = '''    for (const std::string_view after : {" To quote: ", " Terms: "}) {'''
+
+[[mutant]]
+name = "a-quote-runs-to-the-end"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.WriteTellsEachParagraphsAtomsEachWithItsMarker"
+  [[mutant.edit]]
+  from = '''    const std::size_t end = shown.find("\".", begin);'''
+  to = '''    const std::size_t end = shown.find("\".", begin) * 0 + shown.size();'''
+
+[[mutant]]
+name = "a-paragraph-line-is-an-atom"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.WriteTellsEachParagraphsAtomsEachWithItsMarker"
+  [[mutant.edit]]
+  from = '''            if (line.starts_with("Paragraph ")) {'''
+  to = '''            if (line.starts_with("Paragraph 0")) {'''
+
+[[mutant]]
+name = "no-paragraph-is-an-empty-draft"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.WriteTellsEachParagraphsAtomsEachWithItsMarker"
+  [[mutant.edit]]
+  from = '''        if (paragraphs.empty()) {
+            return fail(Errc::invalid_argument, "no paragraph to write");'''
+  to = '''        if (false) {
+            return fail(Errc::invalid_argument, "no paragraph to write");'''
+
+[[mutant]]
+name = "write-is-not-taught"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.WriteTellsEachParagraphsAtomsEachWithItsMarker"
+  [[mutant.edit]]
+  from = '''    oracle.teach("write", write());
+'''
+  to = ''''''

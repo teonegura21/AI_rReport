@@ -222,10 +222,14 @@ TEST(OracleAnswers, AtomizeLabelsFillerAndMakesEveryOtherSentenceAnAtom) {
     Oracle oracle;
     teach_stages(oracle);
     const std::string_view sentences =
-        "S1 [0:00] Um, so.\nS2 [0:02] Hello and welcome back.\nS3 [0:05] I'm Ada Lovelace, and NASA lent us "
-        "3 "
-        "scales.\nS4 [0:10] Maybe the 'proof load' is higher.\nS5 [0:15] Then we added an arch, and the load "
-        "it held\nS6 [0:19] doubled.\nS7 [0:22] Why did it double?\nS8 [0:25] And then it";
+        "S1 [0:00] Um, so.\n"
+        "S2 [0:02] Hello and welcome back.\n"
+        "S3 [0:05] I'm Ada Lovelace, and NASA lent us 3 scales.\n"
+        "S4 [0:10] Maybe the 'proof load' is higher.\n"
+        "S5 [0:15] Then we added an arch, and the load it held\n"
+        "S6 [0:19] doubled.\n"
+        "S7 [0:22] Why did it double?\n"
+        "S8 [0:25] And then it";
     const std::string expected = std::format(
         R"({{"sentences": [
         {{"sentence": "S1", "filler": "disfluency", "atoms": []}},
@@ -328,6 +332,30 @@ TEST(OracleAnswers, PlanTellsThreeAtomsAParagraphAndDeclaresAnAtomShownAgain) {
                 Errc::invalid_argument)
         << "no section named";
     EXPECT_ERRC(oracle.chat(asked("plan"), {}, {}), Errc::invalid_argument) << "no atoms";
+}
+
+TEST(OracleAnswers, WriteTellsEachParagraphsAtomsEachWithItsMarker) {
+    Oracle oracle;
+    teach_stages(oracle);
+    const std::string_view paragraphs =
+        "Paragraph 1: The first bridge failed.\n"
+        "A7 [1:02] number: The first bridge failed at four tons. Terms: tons.\n"
+        "A8 [1:03] opinion, aside, high, said by Ada: Ada was surprised. Names: Ada.\n"
+        "Paragraph 2: Tell its atoms in the order given.\n"
+        "A9 [1:09] definition: Its most is its proof load. To quote: \"We call the most a bridge carries "
+        "its proof load.\". Terms: proof load.\n"
+        "A10 [1:14] claim: They called it \"the arch\" then. To quote: \"the arch\".";
+    EXPECT_EQ(unwrap(oracle.chat(holding("write", "paragraphs", paragraphs), {}, {})).first().content,
+              "The first bridge failed at four tons. [A7] Ada was surprised. [A8]\n\n"
+              "Its most is its proof load. (\"We call the most a bridge carries its proof load.\") [A9] They "
+              "called it \"the arch\" then. [A10]")
+        << "words to quote added where its words do not hold them";
+    EXPECT_ERRC(oracle.chat(holding("write", "paragraphs", "A1 [0:00] claim: One."), {}, {}),
+                Errc::invalid_argument)
+        << "an atom before any paragraph";
+    EXPECT_ERRC(oracle.chat(holding("write", "paragraphs", ""), {}, {}), Errc::invalid_argument)
+        << "no paragraph";
+    EXPECT_ERRC(oracle.chat(asked("write"), {}, {}), Errc::invalid_argument) << "no paragraphs block";
 }
 
 TEST(RequestLog, KeepsEveryRequestItPassesOn) {
