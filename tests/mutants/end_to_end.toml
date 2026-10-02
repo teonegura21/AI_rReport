@@ -42,7 +42,7 @@ expect = "EndToEnd.AJobKilledAnywhereResumesAskingOnlyWhatItsMemoDidNotKeep"
 
 [[mutant]]
 name = "the-first-replicate-asked-is-not-kept"
-file = "apps/rreport/main.cpp"
+file = "apps/rreport/eval_commands.cpp"
 expect = "EndToEnd.TwoRunsOfOnePipelineAreComparedAndGatedAndAnAaRunHoldsTheGatesMargins"
   [[mutant.edit]]
   from = '''                         .first_replicate = flags.first_replicate};'''
@@ -50,7 +50,7 @@ expect = "EndToEnd.TwoRunsOfOnePipelineAreComparedAndGatedAndAnAaRunHoldsTheGate
 
 [[mutant]]
 name = "no-pair-is-read"
-file = "apps/rreport/main.cpp"
+file = "apps/rreport/eval_commands.cpp"
 expect = "EndToEnd.TwoRunsOfOnePipelineAreComparedAndGatedAndAnAaRunHoldsTheGatesMargins"
   [[mutant.edit]]
   from = '''                values.push_back(*preferred);'''
@@ -60,7 +60,7 @@ expect = "EndToEnd.TwoRunsOfOnePipelineAreComparedAndGatedAndAnAaRunHoldsTheGate
 
 [[mutant]]
 name = "an-eval-runs-tier-is-a-shipped-one"
-file = "apps/rreport/main.cpp"
+file = "apps/rreport/eval_commands.cpp"
 expect = "EndToEnd.ASweepRunsEachVariantUnderTheBaselinesSaltsAndThePageShowsEveryRun"
   [[mutant.edit]]
   from = '''    RR_TRY(reason::find_tier(flags.tier));'''
@@ -68,7 +68,7 @@ expect = "EndToEnd.ASweepRunsEachVariantUnderTheBaselinesSaltsAndThePageShowsEve
 
 [[mutant]]
 name = "a-sweep-runs-the-default-replicates"
-file = "apps/rreport/main.cpp"
+file = "apps/rreport/eval_commands.cpp"
 expect = "EndToEnd.ASweepRunsEachVariantUnderTheBaselinesSaltsAndThePageShowsEveryRun"
   [[mutant.edit]]
   from = '''        one.replicates = sweep->replicates;'''
@@ -76,7 +76,7 @@ expect = "EndToEnd.ASweepRunsEachVariantUnderTheBaselinesSaltsAndThePageShowsEve
 
 [[mutant]]
 name = "a-sweep-judges-when-told-not-to"
-file = "apps/rreport/main.cpp"
+file = "apps/rreport/eval_commands.cpp"
 expect = "EndToEnd.ASweepRunsEachVariantUnderTheBaselinesSaltsAndThePageShowsEveryRun"
   [[mutant.edit]]
   from = '''    if (flags.no_judge) {'''
@@ -84,7 +84,7 @@ expect = "EndToEnd.ASweepRunsEachVariantUnderTheBaselinesSaltsAndThePageShowsEve
 
 [[mutant]]
 name = "a-sweep-says-nothing-it-found"
-file = "apps/rreport/main.cpp"
+file = "apps/rreport/eval_commands.cpp"
 expect = "EndToEnd.ASweepRunsEachVariantUnderTheBaselinesSaltsAndThePageShowsEveryRun"
   [[mutant.edit]]
   from = '''    (void)std::printf("\n%s", eval::to_text(*sweep, *found).c_str());'''

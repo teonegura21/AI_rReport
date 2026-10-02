@@ -7,6 +7,8 @@
 | Where | What |
 |---|---|
 | `apps/rreport/main.cpp` | The executable: it parses arguments and wires modules together |
+| `apps/rreport/eval_commands.cpp` | `rreport eval`: the evaluation's commands and their options ([eval.md](eval.md#the-commands)) |
+| `apps/rreport/cli.hpp` | What every command shares: the exit codes, the global options, the hub loaded from them, a job taken through its stages and told |
 | `src/hub/…/hub_config.hpp` | From configuration to `HubSettings`, with the rules unit-tested |
 | `src/hub/…/doctor.hpp` | The checks, as data (findings) |
 | `src/hub/…/bench.hpp` | The benchmark |

@@ -11,7 +11,7 @@ timeout = 300
 
 [[mutant]]
 name = "an-aa-run-is-not-checked"
-file = "apps/rreport/main.cpp"
+file = "apps/rreport/eval_commands.cpp"
 expect = "Hub.TwoRunsAreComparedAndTheGateDecidesOnlyWhatItsNumbersCanSay"
   [[mutant.edit]]
   from = '''        if (auto again = eval::check_aa(pair->a, pair->b); !again.has_value()) {'''
@@ -19,7 +19,7 @@ expect = "Hub.TwoRunsAreComparedAndTheGateDecidesOnlyWhatItsNumbersCanSay"
 
 [[mutant]]
 name = "a-failed-gate-exits-0"
-file = "apps/rreport/main.cpp"
+file = "apps/rreport/eval_commands.cpp"
 expect = "Hub.TwoRunsAreComparedAndTheGateDecidesOnlyWhatItsNumbersCanSay"
   [[mutant.edit]]
   from = '''    return reading.passed() ? kOk : kFailure;'''
@@ -27,7 +27,7 @@ expect = "Hub.TwoRunsAreComparedAndTheGateDecidesOnlyWhatItsNumbersCanSay"
 
 [[mutant]]
 name = "flow-is-shown-unread"
-file = "apps/rreport/main.cpp"
+file = "apps/rreport/eval_commands.cpp"
 expect = "Hub.TwoRunsAreComparedAndTheGateDecidesOnlyWhatItsNumbersCanSay"
   [[mutant.edit]]
   from = '''    if (one != nullptr && one->pairwise && !flags.flow) {'''
@@ -35,7 +35,7 @@ expect = "Hub.TwoRunsAreComparedAndTheGateDecidesOnlyWhatItsNumbersCanSay"
 
 [[mutant]]
 name = "a-stale-panel-reads-the-pairs"
-file = "apps/rreport/main.cpp"
+file = "apps/rreport/eval_commands.cpp"
 expect = "Hub.TwoRunsAreComparedAndTheGateDecidesOnlyWhatItsNumbersCanSay"
   [[mutant.edit]]
   from = '''        return FlowRow{.code = failed(kFailure, prompts.error())};
@@ -47,7 +47,7 @@ expect = "Hub.TwoRunsAreComparedAndTheGateDecidesOnlyWhatItsNumbersCanSay"
 
 [[mutant]]
 name = "what-the-flow-could-not-read-is-not-said"
-file = "apps/rreport/main.cpp"
+file = "apps/rreport/eval_commands.cpp"
 expect = "Hub.TwoRunsAreComparedAndTheGateDecidesOnlyWhatItsNumbersCanSay"
   [[mutant.edit]]
   from = '''            text += std::format("  {}\n", note);'''
@@ -68,7 +68,7 @@ expect = "Hub.APairingIsTakenUpByEvalCompareAndHasNoPageOfItsOwn"
 
 [[mutant]]
 name = "the-page-is-written-elsewhere"
-file = "apps/rreport/main.cpp"
+file = "apps/rreport/eval_commands.cpp"
 expect = "Hub.ASweepAPageOrATierAskedWronglyIsRefusedSayingWhy"
   [[mutant.edit]]
   from = '''flags.out.value_or(flags.root / "report.html");'''
@@ -76,7 +76,7 @@ expect = "Hub.ASweepAPageOrATierAskedWronglyIsRefusedSayingWhy"
 
 [[mutant]]
 name = "a-page-plots-a-pairwise-metric"
-file = "apps/rreport/main.cpp"
+file = "apps/rreport/eval_commands.cpp"
 expect = "Hub.ASweepAPageOrATierAskedWronglyIsRefusedSayingWhy"
   [[mutant.edit]]
   from = '''        if (metric == nullptr || metric->pairwise) {'''
