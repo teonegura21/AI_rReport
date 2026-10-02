@@ -1,12 +1,16 @@
 // A draft's sentences read against their atoms (rr/pipeline/judging.hpp).
 #include <rr/pipeline/judging.hpp>
 
+#include <algorithm>
 #include <array>
+#include <cstdint>
 #include <format>
 #include <utility>
 
 #include <rr/knowledge/article.hpp>
+#include <rr/llm/memo.hpp>
 #include <rr/pipeline/asking.hpp>
+#include <rr/pipeline/drafting.hpp>
 #include <rr/text/span.hpp>
 
 namespace rr::pipeline {
@@ -29,6 +33,10 @@ constexpr auto kIssues = std::to_array<IssueName>({
      .reading = "giving a statement to another than who said it"},
     {.issue = Issue::contradicts, .name = "contradicts", .reading = "contradicting its atoms"},
 });
+
+constexpr std::string_view kPrompt = "judge";
+// A reading's size: a sentence's evidence and what it says beyond it.
+constexpr int kTokensPerJudgedSentence = 96;
 
 const IssueName& named(Issue issue) noexcept {
     for (const IssueName& entry : kIssues) {
@@ -80,7 +88,7 @@ std::vector<std::string> judgment_problems(const json::Json& answer, std::size_t
         ++position;
         const auto number = item.at("sentence").get<std::size_t>();
         if (number > count) {
-            problems.note(std::format("there is no sentence {}: the section has {}", number, count));
+            problems.note(std::format("there is no sentence {}: there are {}", number, count));
         } else if (number != position) {
             problems.note(
                 std::format("sentence {} is judged where sentence {} should be: judge each sentence "
@@ -118,6 +126,40 @@ reason::Preference preference_of(const json::Json& answer) {
         return reason::Preference::first;
     }
     return better == "second" ? reason::Preference::second : reason::Preference::tie;
+}
+
+std::size_t issues_in(const std::vector<Judged>& reading) {
+    return static_cast<std::size_t>(
+        std::ranges::count_if(reading, [](const Judged& sentence) { return sentence.issue != Issue::none; }));
+}
+
+Result<agents::Mission> judge_mission(const StageContext& context, std::string_view stage,
+                                      const StagePrompt& prompt, const json::Json& shared, ToJudge what) {
+    const std::vector<std::string> sentences = sentences_of(what.draft);
+    std::string lines;
+    for (std::size_t index = 0; index < sentences.size(); ++index) {
+        lines += std::format("{}{}. {}", lines.empty() ? "" : "\n", index + 1, sentences[index]);
+    }
+    const json::Json order{
+        {"what", std::move(what.what)}, {"atoms", std::move(what.atoms)}, {"sentences", std::move(lines)}};
+    RR_TRY_ASSIGN(const prompt::Rendered rendered, context.prompts->render(kPrompt, shared, order));
+    const std::int64_t seed = llm::derived_seed(context.job->salt, stage, what.id, 0);
+    const std::int64_t room =
+        (static_cast<std::int64_t>(sentences.size()) * kTokensPerJudgedSentence) + kSpareTokens;
+    return agents::Mission{
+        .id = std::move(what.id),
+        .kind = std::string{kPrompt},
+        .prompt = prompt.info->label(),
+        .role = "infantry",
+        .request = llm::ChatRequest{.messages = {llm::Message::system(rendered.system),
+                                                 llm::Message::user(rendered.user)},
+                                    .seed = seed,
+                                    .thinking = false},
+        .answer_tokens = static_cast<int>(std::clamp<std::int64_t>(room, kLeastAnswer, kMostAnswer)),
+        .schema = prompt.schema,
+        .check =
+            [count = sentences.size()](const json::Json& answer) { return judgment_problems(answer, count); },
+        .escalation = kJudgeEscalation};
 }
 
 }  // namespace rr::pipeline

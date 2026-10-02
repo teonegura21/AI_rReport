@@ -24,6 +24,7 @@
 #include <rr/llm/memo.hpp>
 #include <rr/pipeline/asking.hpp>
 #include <rr/pipeline/atomize_stage.hpp>
+#include <rr/pipeline/drafting.hpp>
 #include <rr/pipeline/judging.hpp>
 #include <rr/pipeline/outline_stage.hpp>
 #include <rr/pipeline/plan_stage.hpp>
@@ -33,8 +34,6 @@
 #include <rr/reason/select.hpp>
 #include <rr/reason/tier.hpp>
 #include <rr/text/align.hpp>
-#include <rr/text/span.hpp>
-#include <rr/text/unicode.hpp>
 
 namespace rr::pipeline {
 
@@ -45,26 +44,9 @@ using knowledge::AtomId;
 using knowledge::Transcript;
 
 constexpr std::string_view kPrompt = "write";
-// An answer's size, in tokens: its atoms' words, told in at most twice as
-// many, at the estimator's three bytes a token; each paragraph's markers and
-// breaks; and room besides.
-constexpr int kTokensPerParagraph = 64;
-constexpr int kSpareTokens = 128;
-constexpr int kLeastAnswer = 512;
-constexpr int kMostAnswer = 8'192;
-constexpr std::size_t kShownBytes = 120;  // of a sentence a message quotes
-
 constexpr std::string_view kJudgePrompt = "judge";
 constexpr std::string_view kFlowPrompt = "flow";
-// A reading's size: a sentence's evidence and what it says beyond it, and
-// room besides; a comparison's: its reasons, and a word.
-constexpr int kTokensPerJudgedSentence = 96;
-constexpr int kFlowTokens = 512;
-
-// A judge stays of another family than the writer it judges: no rung of the
-// ladder hands its mission to the commander, nor to another family
-// (rr/agents/mission.hpp).
-constexpr agents::Escalation kJudgeEscalation{.thinking = true, .commander = false, .other_family = false};
+constexpr int kFlowTokens = 512;  // a comparison's reasons, and a word
 
 // A paragraph to write: its purpose, and its atoms in the order told.
 struct ToWrite {
@@ -79,195 +61,15 @@ struct SectionToWrite {
     std::vector<ToWrite> paragraphs{};
 };
 
+// The room an answer telling `paragraphs` takes (prose_tokens()).
 int answer_tokens(std::span<const ToWrite> paragraphs) {
     std::int64_t bytes = 0;
     for (const ToWrite& paragraph : paragraphs) {
         for (const Atom* const atom : paragraph.atoms) {
-            bytes += static_cast<std::int64_t>(atom->text.size() + atom->quote.value_or("").size());
+            bytes += atom_bytes(*atom);
         }
     }
-    const std::int64_t tokens = ((bytes * 2) / 3) +
-                                (static_cast<std::int64_t>(paragraphs.size()) * kTokensPerParagraph) +
-                                kSpareTokens;
-    return static_cast<int>(std::clamp<std::int64_t>(tokens, kLeastAnswer, kMostAnswer));
-}
-
-// `text` cut to kShownBytes at a character's boundary, with "…" when cut.
-std::string shown(std::string_view text) {
-    if (text.size() <= kShownBytes) {
-        return std::string{text};
-    }
-    std::size_t end = 0;
-    for (const text::CodePoint& point : text::code_points(text)) {
-        if (point.end > kShownBytes) {
-            break;
-        }
-        end = point.end;
-    }
-    return std::string{text.substr(0, end)} + "\u2026";
-}
-
-// "A7 [1:02] opinion, aside, high, said by Ada: The speaker was surprised.
-// To quote: "…". Names: …. Terms: ….": an atom as the prompt shows it, its
-// labels before its words and what must reach the paragraph after them.
-std::string atom_entry(const Atom& atom, const Transcript& transcript) {
-    const knowledge::Sentence* said = transcript.find(atom.sentences.front());
-    RR_ASSERT(said != nullptr, "an atom is said in its transcript (read_input())");
-    const std::string_view kind = knowledge::to_string(atom.kind);
-    std::string labels{kind};
-    const auto label = [&](std::string_view more) {
-        if (more != kind) {
-            labels += std::format(", {}", more);
-        }
-    };
-    if (atom.modality != knowledge::Modality::asserted) {
-        label(knowledge::to_string(atom.modality));
-    }
-    if (atom.register_kind != knowledge::Register::main) {
-        label(knowledge::to_string(atom.register_kind));
-    }
-    if (atom.intensity != knowledge::Intensity::medium) {
-        label(knowledge::to_string(atom.intensity));
-    }
-    if (atom.speaker.has_value()) {
-        labels += ", said by " + *atom.speaker;
-    }
-    if (atom.attributed_to.has_value()) {
-        labels += ", reporting " + *atom.attributed_to;
-    }
-    std::string entry =
-        std::format("{} [{}] {}: {}", atom.id, format_timestamp(said->span.start()), labels, atom.text);
-    if (atom.quote.has_value()) {
-        entry += std::format(" To quote: \"{}\".", *atom.quote);
-    }
-    const auto listed = [&](std::string_view what, const std::vector<std::string>& words) {
-        if (!words.empty()) {
-            std::string list;
-            for (const std::string& word : words) {
-                list += (list.empty() ? "" : ", ") + word;
-            }
-            entry += std::format(" {}: {}.", what, list);
-        }
-    };
-    listed("Names", atom.names);
-    listed("Terms", atom.terms);
-    return entry;
-}
-
-// --- Checks -------------------------------------------------------------------------
-
-// What a mission was asked to write: each paragraph's atoms, in order.
-struct Asked {
-    std::vector<std::vector<AtomId>> paragraphs{};
-    std::vector<AtomId> atoms{};  // all of them, in order: what Ledger B holds the draft to
-    std::size_t first = 1;        // the number of the first paragraph asked, in its section
-};
-
-// The draft's blocks, read: its paragraphs, and whether it wrote anything else.
-struct Read {
-    knowledge::ParsedArticle parsed{};
-    std::vector<const knowledge::Block*> paragraphs{};
-    bool headed = false;
-    bool other = false;  // a list, a quote set apart, code
-};
-
-Read read_draft(std::string_view draft) {
-    Read read{.parsed = knowledge::parse_article(draft)};
-    for (const knowledge::Block& block : read.parsed.blocks) {
-        switch (block.kind) {
-            case knowledge::BlockKind::paragraph:
-                read.paragraphs.push_back(&block);
-                break;
-            case knowledge::BlockKind::heading:
-                read.headed = true;
-                break;
-            case knowledge::BlockKind::list_item:
-            case knowledge::BlockKind::quote:
-            case knowledge::BlockKind::code:
-                read.other = true;
-                break;
-        }
-    }
-    return read;
-}
-
-// The paragraph, of `read`'s, that first cites `atom`; none when none does.
-std::optional<std::size_t> paragraph_citing(const Read& read, AtomId atom) {
-    for (std::size_t index = 0; index < read.paragraphs.size(); ++index) {
-        for (const knowledge::CitingSentence& sentence : read.paragraphs[index]->sentences) {
-            if (std::ranges::any_of(sentence.markers,
-                                    [&](const knowledge::Marker& marker) { return marker.atom == atom; })) {
-                return index;
-            }
-        }
-    }
-    return std::nullopt;
-}
-
-void check_shape(const Read& read, const Asked& asked, Problems& problems) {
-    if (read.headed) {
-        problems.note("write no heading: the article has its own");
-    }
-    if (read.other) {
-        problems.note("write paragraphs of prose only: no lists, no quotes set apart, no code");
-    }
-    if (read.paragraphs.size() != asked.paragraphs.size()) {
-        problems.note(std::format("write {} paragraphs, one for each given, not {}", asked.paragraphs.size(),
-                                  read.paragraphs.size()));
-        return;  // which paragraph is which cannot be told
-    }
-    for (std::size_t index = 0; index < asked.paragraphs.size(); ++index) {
-        for (const AtomId atom : asked.paragraphs[index]) {
-            const std::optional<std::size_t> found = paragraph_citing(read, atom);
-            if (found.has_value() && *found != index) {
-                problems.note(std::format("{} is told in paragraph {}: tell it in paragraph {}, as given",
-                                          atom, asked.first + *found, asked.first + index));
-            }
-        }
-    }
-}
-
-// What is wrong with `draft` as the paragraphs `asked` (the header comment's
-// step 2).
-std::vector<std::string> draft_problems(std::string_view draft, const Transcript& transcript,
-                                        const knowledge::AtomLedger& ledger, const Asked& asked) {
-    Problems problems;
-    const Read read = read_draft(draft);
-    check_shape(read, asked, problems);
-    for (const knowledge::Block* const paragraph : read.paragraphs) {
-        for (const knowledge::CitingSentence& sentence : paragraph->sentences) {
-            if (sentence.markers.empty()) {
-                problems.note(
-                    std::format("the sentence \"{}\" tells no atom: cite the atoms it tells, or leave it out",
-                                shown(knowledge::without_markers(draft, read.parsed, sentence.span))));
-            }
-        }
-    }
-    for (const fidelity::Finding& finding :
-         fidelity::check_article(transcript, ledger, draft, {.told = asked.atoms}).findings) {
-        if (finding.severity == fidelity::Severity::error) {
-            problems.note(finding.message);
-        }
-    }
-    return std::move(problems).list();
-}
-
-// The warnings of a draft that passed: what decides between drafts.
-std::size_t warnings_of(std::string_view draft, const Transcript& transcript,
-                        const knowledge::AtomLedger& ledger, const Asked& asked) {
-    return fidelity::check_article(transcript, ledger, draft, {.told = asked.atoms}).warnings();
-}
-
-// The paragraphs of an accepted draft, each as written, without the space
-// around them.
-std::vector<std::string> paragraphs_of(std::string_view draft) {
-    const Read read = read_draft(draft);
-    std::vector<std::string> paragraphs;
-    paragraphs.reserve(read.paragraphs.size());
-    for (const knowledge::Block* const paragraph : read.paragraphs) {
-        paragraphs.emplace_back(text::text_of(draft, paragraph->span));
-    }
-    return paragraphs;
+    return prose_tokens(bytes, paragraphs.size());
 }
 
 // `paragraph` told as its atoms say it: each atom's words, its words to
@@ -307,22 +109,6 @@ std::string told_plainly(const Stretch& stretch, std::size_t count) {
 }
 
 // --- The judge's part ------------------------------------------------------------------
-
-// `draft` as a reader sees it: its paragraphs without their markers.
-std::string plain(std::string_view draft) {
-    const knowledge::ParsedArticle parsed = knowledge::parse_article(draft);
-    std::string text;
-    for (const knowledge::Block& block : parsed.blocks) {
-        text += (text.empty() ? "" : "\n\n") + knowledge::without_markers(draft, parsed, block.span);
-    }
-    return text;
-}
-
-int judgment_tokens(std::size_t sentences) {
-    const std::int64_t tokens =
-        (static_cast<std::int64_t>(sentences) * kTokensPerJudgedSentence) + kSpareTokens;
-    return static_cast<int>(std::clamp<std::int64_t>(tokens, kLeastAnswer, kMostAnswer));
-}
 
 // The drafts of a mission that passed, best first by Ledger B (fewest
 // warnings; the first drawn, on a tie), and where the judge's missions about
@@ -614,7 +400,7 @@ private:
 
     // `outcome`'s drafts that passed, ranked by Ledger B; the first
     // `judge_top` of them judged where a judge of another family can read
-    // them, its missions added to `judges`. Drafts to judge, two or more, are
+    // them, and holds them, its missions added to `judges`. Drafts to judge, two or more, are
     // the commander's: an escalation draws one answer (rr/agents/army.hpp).
     // So a judge of another family than the commander's is of another
     // family than every draft it reads.
@@ -660,8 +446,23 @@ private:
             return drafts;
         }
         drafts.judged = judged;
+        std::vector<agents::Mission> missions;
+        RR_TRY(judge_missions(section, number, stretch, outcome.mission, drafts, missions));
+        if (!std::ranges::all_of(missions,
+                                 [this](const agents::Mission& mission) { return army_->holds(mission); })) {
+            // squad() would refuse the lot: the drafts are picked without it.
+            const std::string unheld = std::format(
+                "section {}, \"{}\": the drafts are picked by Ledger B alone: they are more than the "
+                "judge holds at once",
+                number, section.plan->heading);
+            if (std::ranges::find(output_.findings, unheld) == output_.findings.end()) {
+                output_.findings.push_back(unheld);
+            }
+            drafts.judged = 0;
+            return drafts;
+        }
         drafts.first = judges.size();
-        RR_TRY(judge_missions(section, number, stretch, outcome.mission, drafts, judges));
+        std::ranges::move(missions, std::back_inserter(judges));
         return drafts;
     }
 
@@ -703,32 +504,12 @@ private:
                 atoms += (atoms.empty() ? "" : "\n") + atom_entry(*atom, *transcript_);
             }
         }
-        const std::vector<std::string> sentences = sentences_of(draft);
-        std::string lines;
-        for (std::size_t index = 0; index < sentences.size(); ++index) {
-            lines += std::format("{}{}. {}", lines.empty() ? "" : "\n", index + 1, sentences[index]);
-        }
-        const json::Json order{{"number", number},
-                               {"heading", section.plan->heading},
-                               {"atoms", std::move(atoms)},
-                               {"sentences", std::move(lines)}};
-        RR_TRY_ASSIGN(const prompt::Rendered rendered,
-                      context_->prompts->render(kJudgePrompt, judge_shared_, order));
-        const std::int64_t seed = llm::derived_seed(context_->job->salt, WriteStage::kName, id, 0);
-        return agents::Mission{
-            .id = std::move(id),
-            .kind = std::string{kJudgePrompt},
-            .prompt = prompts_.judge.info->label(),
-            .role = "infantry",
-            .request = llm::ChatRequest{.messages = {llm::Message::system(rendered.system),
-                                                     llm::Message::user(rendered.user)},
-                                        .seed = seed,
-                                        .thinking = false},
-            .answer_tokens = judgment_tokens(sentences.size()),
-            .schema = prompts_.judge.schema,
-            .check = [count = sentences.size()](
-                         const json::Json& answer) { return judgment_problems(answer, count); },
-            .escalation = kJudgeEscalation};
+        return pipeline::judge_mission(
+            *context_, WriteStage::kName, prompts_.judge, judge_shared_,
+            ToJudge{.id = std::move(id),
+                    .what = std::format("section {}, \"{}\"", number, section.plan->heading),
+                    .atoms = std::move(atoms),
+                    .draft = std::string{draft}});
     }
 
     // A mission comparing how `first` and `second`, shown in that order, read.
@@ -821,12 +602,7 @@ private:
         std::vector<std::vector<double>> keys;
         keys.reserve(drafts.judged);
         for (std::size_t draft = 0; draft < drafts.judged; ++draft) {
-            const auto issues = readings.has_value()
-                                    ? std::ranges::count_if((*readings)[draft],
-                                                            [](const Judged& sentence) {
-                                                                return sentence.issue != Issue::none;
-                                                            })
-                                    : 0;
+            const std::size_t issues = readings.has_value() ? issues_in((*readings)[draft]) : 0;
             keys.push_back({static_cast<double>(issues), static_cast<double>(drafts.warnings[draft]),
                             lost.has_value() ? static_cast<double>((*lost)[draft]) : 0.0});
         }
@@ -995,10 +771,16 @@ Result<json::Json> WriteStage::fingerprint(const StageContext& context) const {
                   prompts_fingerprint(*context.prompts, {kPrompt, kJudgePrompt, kFlowPrompt}));
     RR_TRY_ASSIGN(agents::Army* const army, context.army());
     const agents::Engine* commander = engine_serving(*army, "commander");
-    return json::Json{{"tier", tier.canonical(reason::Stage::write)},
-                      {"prompts", std::move(prompts)},
-                      {"army", army_fingerprint(*army)},
-                      {"holds", commander == nullptr ? 0 : commander->ctx_per_slot}};
+    json::Json key{{"tier", tier.canonical(reason::Stage::write)},
+                   {"prompts", std::move(prompts)},
+                   {"army", army_fingerprint(*army)},
+                   {"holds", commander == nullptr ? 0 : commander->ctx_per_slot}};
+    if (tier.write.judge_top >= 2) {
+        // Whether the judge holds a section's drafts decides whether they are judged.
+        const agents::Engine* judge = engine_serving(*army, "infantry");
+        key["judge_holds"] = judge == nullptr ? 0 : judge->ctx_per_slot;
+    }
+    return key;
 }
 
 Result<StageOutput> WriteStage::run(const StageContext& context) const {

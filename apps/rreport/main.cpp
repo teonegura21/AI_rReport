@@ -79,6 +79,7 @@
 #include <rr/pipeline/job_run.hpp>
 #include <rr/pipeline/outline_stage.hpp>
 #include <rr/pipeline/plan_stage.hpp>
+#include <rr/pipeline/seams_stage.hpp>
 #include <rr/pipeline/source.hpp>
 #include <rr/pipeline/transcript_stage.hpp>
 #include <rr/pipeline/write_stage.hpp>
@@ -460,7 +461,7 @@ std::function<Result<std::chrono::milliseconds>()> video_length_of(db::Database&
 }
 
 // The stages a job runs, so far (plan P20): its source, its transcript, its
-// outline, its atoms, its plan, then its article.
+// outline, its atoms, its plan, its article, then its seams smoothed.
 Result<pipeline::Executor> job_stages(const HubSettings& settings) {
     std::vector<std::unique_ptr<pipeline::Stage>> stages;
     stages.push_back(std::make_unique<pipeline::SourceStage>(
@@ -470,6 +471,7 @@ Result<pipeline::Executor> job_stages(const HubSettings& settings) {
     stages.push_back(std::make_unique<pipeline::AtomizeStage>());
     stages.push_back(std::make_unique<pipeline::PlanStage>());
     stages.push_back(std::make_unique<pipeline::WriteStage>());
+    stages.push_back(std::make_unique<pipeline::SeamsStage>());
     return pipeline::Executor::create(std::move(stages), SystemClock::instance());
 }
 

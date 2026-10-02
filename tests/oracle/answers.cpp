@@ -645,6 +645,14 @@ Answerer flow() {
     };
 }
 
+Answerer seam() {
+    return [](const llm::ChatRequest& request) -> Result<std::string> {
+        RR_TRY_ASSIGN(const std::string first, block_in(request, "first"));
+        RR_TRY_ASSIGN(const std::string second, block_in(request, "second"));
+        return first + "\n\n" + second;
+    };
+}
+
 Result<std::string> excerpt_in(const llm::ChatRequest& request) {
     // A repair's conversation ends with its instruction: the excerpt is in
     // the order's message, before it.
@@ -682,6 +690,7 @@ void teach_stages(Oracle& oracle, std::optional<std::string> script) {
     oracle.teach("write", write());
     oracle.teach("judge", judge());
     oracle.teach("flow", flow());
+    oracle.teach("seam", seam());
 }
 
 }  // namespace rr::oracle

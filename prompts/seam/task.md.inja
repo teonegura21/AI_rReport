@@ -1,0 +1,20 @@
+Answer with the two paragraphs only, in Markdown, a blank line between them.
+Smooth the seam between section {{ number }}, "{{ before }}", and section {{ next }}, "{{ after }}".
+
+Paragraph 1, the end of section {{ number }}. Its atoms:
+<atoms>
+{{ first_atoms }}
+</atoms>
+As written:
+<first>
+{{ first }}
+</first>
+
+Paragraph 2, the start of section {{ next }}. Its atoms:
+<atoms>
+{{ second_atoms }}
+</atoms>
+As written:
+<second>
+{{ second }}
+</second>

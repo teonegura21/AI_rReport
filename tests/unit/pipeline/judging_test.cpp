@@ -38,8 +38,7 @@ TEST(Judging, EverySentenceIsJudgedOnceInOrder) {
         judgment_problems(judged({1, 3, 2}), 3),
         ElementsAre("sentence 3 is judged where sentence 2 should be: judge each sentence once, in order",
                     "sentence 2 is judged where sentence 3 should be: judge each sentence once, in order"));
-    EXPECT_THAT(judgment_problems(judged({1, 2, 4}), 3),
-                ElementsAre("there is no sentence 4: the section has 3"));
+    EXPECT_THAT(judgment_problems(judged({1, 2, 4}), 3), ElementsAre("there is no sentence 4: there are 3"));
     EXPECT_THAT(judgment_problems(judged({1}), 3),
                 ElementsAre("sentences 2 to 3 are not judged: judge every sentence"));
     EXPECT_THAT(judgment_problems(judged({1, 2}), 3),

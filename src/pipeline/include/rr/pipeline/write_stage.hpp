@@ -22,9 +22,10 @@
 //      part. Sections are written side by side, the tier's drafts each.
 //   2. Each draft is checked and sent back with what to do, up to the tier's
 //      repair rounds: a heading; more or fewer paragraphs than the plan's;
-//      an atom told in another paragraph than its own; a sentence that
-//      cites no atom; and every error of Ledger B, held to the section's
-//      atoms (a marker of another section's atom is one).
+//      an atom told in another paragraph than its own, or again in another;
+//      a sentence that cites no atom; and every error of Ledger B, held to
+//      the section's atoms (a marker of another section's atom is one)
+//      (rr/pipeline/drafting.hpp).
 //   3. Of the drafts that pass, Ledger B ranks them (its one warning: the
 //      talk's order), and where the tier asks for a judge (`judge_top`), the
 //      best are read by a model of another family than the writer's: each
@@ -33,7 +34,8 @@
 //      (prompts/flow). The draft kept has the fewest issues read, then the
 //      fewest warnings, then the fewest comparisons lost
 //      (reason::select_lexicographic()); what the judge reads in it is
-//      published as its reading. Without a judge, the first ranked is kept.
+//      published as its reading. Without a judge, or one that holds the
+//      drafts, the first ranked is kept, and it is said.
 //   4. A section the commander does not hold is written in parts, each the
 //      most paragraphs it holds, in order.
 //   5. What no draft passed is told as its atoms say it, a paragraph at a
@@ -47,8 +49,8 @@
 // be resumed once one is set up.
 //
 // Its key holds the tier's write settings; the prompts (the writer's and the
-// judge's); the army and what the commander holds. It samples: the job's
-// salt is in its key.
+// judge's); the army and what the commander holds, and where the tier
+// judges, what the judge holds. It samples: the job's salt is in its key.
 //
 // Thread-safety: immutable.
 #pragma once

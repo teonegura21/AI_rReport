@@ -649,3 +649,28 @@ expect = "OracleAnswers.FlowPrefersTheShorterDraftInEitherOrder"
   from = '''    oracle.teach("flow", flow());
 '''
   to = ''''''
+
+[[mutant]]
+name = "a-seam-is-one-paragraph"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.SeamRewritesBothParagraphsAsWritten"
+  [[mutant.edit]]
+  from = '''        return first + "\n\n" + second;'''
+  to = '''        return first + "\n" + second;'''
+
+[[mutant]]
+name = "a-seam-is-turned-around"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.SeamRewritesBothParagraphsAsWritten"
+  [[mutant.edit]]
+  from = '''        return first + "\n\n" + second;'''
+  to = '''        return second + "\n\n" + first;'''
+
+[[mutant]]
+name = "seam-is-not-taught"
+file = "tests/oracle/answers.cpp"
+expect = "OracleAnswers.SeamRewritesBothParagraphsAsWritten"
+  [[mutant.edit]]
+  from = '''    oracle.teach("seam", seam());
+'''
+  to = ''''''

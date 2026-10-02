@@ -1,4 +1,4 @@
-Check section {{ number }}, "{{ heading }}", sentence by sentence.
+Check {{ what }}, sentence by sentence.
 
 Its atoms:
 <atoms>

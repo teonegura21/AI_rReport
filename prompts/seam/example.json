@@ -1,0 +1,28 @@
+{
+  "shared": {
+    "title": "How bridges stand up",
+    "channel": "Engineering Hour"
+  },
+  "orders": [
+    {
+      "number": 2,
+      "before": "Loading the bridge",
+      "next": 3,
+      "after": "Why arches help",
+      "first_atoms": "A7 [1:02] number: The first bridge the team tried failed at four tons.\nA8 [1:03] opinion, aside: The speaker was surprised that it failed.",
+      "first": "The first bridge the team tried failed at four tons [A7]. That the bridge failed surprised the speaker [A8].",
+      "second_atoms": "A9 [2:40] claim, said by Ada: Arches spread the load. Names: Ada.",
+      "second": "She says that arches spread the load [A9]."
+    },
+    {
+      "number": 3,
+      "before": "Why arches help",
+      "next": 5,
+      "after": "What the tests showed",
+      "first_atoms": "A10 [3:15] hedge, hedged, said by Ada: Ada thinks a stone arch could carry twice the load. Names: Ada.",
+      "first": "Ada thinks a stone arch could carry twice the load [A10].",
+      "second_atoms": "A14 [5:02] number: The arch the team built carried nine tons. To quote: \"nine tons, and it did not even creak\".\nA15 [5:10] fact: The arch was made of pine.",
+      "second": "The arch the team built carried \"nine tons, and it did not even creak\" [A14]. It was made of pine [A15]."
+    }
+  ]
+}

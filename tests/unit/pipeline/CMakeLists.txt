@@ -11,6 +11,7 @@ rr_add_test_suite(pipeline
         plan_stage_test.cpp
         punctuation_test.cpp
         readings_test.cpp
+        seams_stage_test.cpp
         source_test.cpp
         transcript_stage_test.cpp
         windows_test.cpp

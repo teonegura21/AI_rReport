@@ -1,7 +1,8 @@
 // lecture.hpp — a synthetic fifteen-minute lecture, written for the oracle's
 // rules (rr/oracle/answers.hpp): its transcript, source, outline and the
 // ledger and plan the oracle makes of it. What the tests of the stages that
-// read atoms run on: atomize writes the ledger, plan reads it, write reads both.
+// read atoms run on: atomize writes the ledger, plan reads it, write reads both,
+// and seams reads the article the oracle writes of them.
 #pragma once
 
 #include <cstddef>
@@ -222,6 +223,38 @@ inline knowledge::Plan lecture_plan() {
                                  .paragraphs = {oracle_paragraph(18, 20), oracle_paragraph(21, 23),
                                                 oracle_paragraph(24, 26)},
                                  .planned_by = PlannedBy::commander}}};
+}
+
+// The paragraphs the oracle writes of `section` (rr/oracle/answers.hpp):
+// each its atoms' words, each followed by its marker.
+inline std::vector<std::string> oracle_paragraphs(const knowledge::SectionPlan& section,
+                                                  const knowledge::AtomLedger& ledger) {
+    std::vector<std::string> paragraphs;
+    for (const knowledge::Paragraph& paragraph : section.paragraphs) {
+        std::string told;
+        for (const knowledge::AtomId id : paragraph.atoms) {
+            told +=
+                std::format("{}{} [{}]", told.empty() ? "" : " ", ledger.atoms.at(id.number() - 1).text, id);
+        }
+        paragraphs.push_back(std::move(told));
+    }
+    return paragraphs;
+}
+
+// The article the oracle writes of `plan`: each section under its heading.
+inline std::string oracle_article(const knowledge::Plan& plan = lecture_plan(),
+                                  const knowledge::AtomLedger& ledger = lecture_ledger()) {
+    std::string markdown;
+    for (const knowledge::SectionPlan& section : plan.sections) {
+        if (section.paragraphs.empty()) {
+            continue;
+        }
+        markdown += std::format("{}## {}\n", markdown.empty() ? "" : "\n", section.heading);
+        for (const std::string& paragraph : oracle_paragraphs(section, ledger)) {
+            markdown += "\n" + paragraph + "\n";
+        }
+    }
+    return markdown;
 }
 
 }  // namespace rr::pipeline::testing

@@ -36,7 +36,10 @@
 #include <string_view>
 #include <vector>
 
+#include <rr/agents/mission.hpp>
 #include <rr/json/json.hpp>
+#include <rr/pipeline/asking.hpp>
+#include <rr/pipeline/stage.hpp>
 #include <rr/reason/pairwise.hpp>
 
 namespace rr::pipeline {
@@ -81,5 +84,31 @@ struct Judged {
 
 // The preference of a flow judge's checked answer (prompts/flow).
 [[nodiscard]] reason::Preference preference_of(const json::Json& answer);
+
+// The issues `reading` finds: its sentences read as other than none.
+[[nodiscard]] std::size_t issues_in(const std::vector<Judged>& reading);
+
+// What a judge is asked to read: a draft, against its atoms.
+struct ToJudge {
+    std::string id{};     // the mission's
+    std::string what{};   // what it reads: "section 1, \"Weighing radium\""
+    std::string atoms{};  // a line each, as atom_entry() shows them (rr/pipeline/drafting.hpp)
+    std::string draft{};
+};
+
+// A judge stays of another family than the writer it judges: no rung of the
+// ladder hands its mission to the commander, nor to another family
+// (rr/agents/mission.hpp).
+inline constexpr agents::Escalation kJudgeEscalation{
+    .thinking = true, .commander = false, .other_family = false};
+
+// A mission reading `what.draft`'s sentences against `what.atoms`
+// (prompts/judge, its system part `shared`: the video's title and channel),
+// by the infantry, without thinking, its answer checked by
+// judgment_problems(); its seed derived from the job's salt, `stage` and its
+// id. Errors: the prompt's.
+[[nodiscard]] Result<agents::Mission> judge_mission(const StageContext& context, std::string_view stage,
+                                                    const StagePrompt& prompt, const json::Json& shared,
+                                                    ToJudge what);
 
 }  // namespace rr::pipeline

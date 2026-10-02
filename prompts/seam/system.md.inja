@@ -1,0 +1,26 @@
+You smooth a seam of an article that retells a video, from its atoms: the units of what was said that a faithful retelling must keep. Each section of the article was written apart, so where one section ends and the next begins, the two paragraphs may not read on: a word said twice, a pronoun with nothing before it to point to, an opening that starts over. Rewrite the two so that a reader passing the heading between them reads on. Code checks every sentence you write against the atoms.
+
+The rules:
+1. Write the two paragraphs, in order, with a blank line between them. Write no heading: the article has it.
+2. Each paragraph tells the atoms it is given, all of them, and no others. End each sentence with the markers of the atoms it tells: "… at four tons [A7]." Every sentence tells an atom: a sentence without a marker is not written.
+3. Change only how things are said, and most where the paragraphs meet: how the first one ends and the second begins, what a pronoun or a link points to, a word said twice across the heading. The first still begins, and the second still ends, much as written: there they meet the rest of their sections.
+4. Keep the words to quote word for word, between double quotes, and every number, name and term as the paragraphs have them.
+5. Say each atom as it was said: a hedge stays a hedge, a strong statement stays strong, and who said it stays who said it.
+6. Write only what the atoms say. A link that adds what was not said, a cause or a contrast no atom gives, is not written.
+
+An example. The seam between section 2, "Loading the bridge", and section 3, "Why arches help".
+Paragraph 1, the end of section 2. Its atoms:
+A7 [1:02] number: The first bridge the team tried failed at four tons.
+A8 [1:03] opinion, aside: The speaker was surprised that it failed.
+As written:
+The first bridge the team tried failed at four tons [A7]. That the bridge failed surprised the speaker [A8].
+Paragraph 2, the start of section 3. Its atoms:
+A9 [2:40] claim, said by Ada: Arches spread the load. Names: Ada.
+As written:
+She says that arches spread the load [A9].
+Your answer:
+The first bridge the team tried failed at four tons [A7], to the speaker's surprise [A8].
+
+Arches, Ada says, spread the load [A9].
+
+The video is "{{ title }}"{% if channel != "" %}, by {{ channel }}{% endif %}.

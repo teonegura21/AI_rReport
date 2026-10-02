@@ -5,6 +5,7 @@
 // models make injected where a test says.
 #include <rr/pipeline/write_stage.hpp>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <format>
@@ -41,7 +42,6 @@ namespace {
 using knowledge::Atom;
 using knowledge::AtomId;
 using knowledge::AtomLedger;
-using knowledge::Paragraph;
 using knowledge::Plan;
 using knowledge::SectionPlan;
 using ::testing::Contains;
@@ -55,7 +55,9 @@ using testing::lecture_ledger;
 using testing::lecture_outline;
 using testing::lecture_plan;
 using ::testing::Not;
+using testing::oracle_article;
 using testing::oracle_paragraph;
+using testing::oracle_paragraphs;
 using testing::OracleArmy;
 using testing::reworded;
 using testing::source;
@@ -64,36 +66,6 @@ using testing::without;
 using testkit::unwrap;
 
 // --- What the article should be -------------------------------------------------------------
-
-// The paragraphs the oracle writes of `section` (rr/oracle/answers.hpp):
-// each its atoms' words, each followed by its marker.
-std::vector<std::string> oracle_paragraphs(const SectionPlan& section, const AtomLedger& ledger) {
-    std::vector<std::string> paragraphs;
-    for (const Paragraph& paragraph : section.paragraphs) {
-        std::string told;
-        for (const AtomId id : paragraph.atoms) {
-            told +=
-                std::format("{}{} [{}]", told.empty() ? "" : " ", ledger.atoms.at(id.number() - 1).text, id);
-        }
-        paragraphs.push_back(std::move(told));
-    }
-    return paragraphs;
-}
-
-// The article the oracle writes of `plan`: each section under its heading.
-std::string oracle_article(const Plan& plan = lecture_plan(), const AtomLedger& ledger = lecture_ledger()) {
-    std::string markdown;
-    for (const SectionPlan& section : plan.sections) {
-        if (section.paragraphs.empty()) {
-            continue;
-        }
-        markdown += std::format("{}## {}\n", markdown.empty() ? "" : "\n", section.heading);
-        for (const std::string& paragraph : oracle_paragraphs(section, ledger)) {
-            markdown += "\n" + paragraph + "\n";
-        }
-    }
-    return markdown;
-}
 
 // A sentence of 129 bytes whose "\u00e9" spans its 120th and 121st: one a
 // message shows cut, before that character.
@@ -366,6 +338,9 @@ TEST_F(WriteStageTest, EveryRuleADraftBreaksIsSentBackAndRepaired) {
                                 "Maybe the scales are older than the lab. [A3] Its half-life is long. [A4]");
          },
          "A3 is told in paragraph 2: tell it in paragraph 1, as given"},
+        {"an atom told again in another paragraph",
+         replaced("Its half-life is long. [A4]", "Its half-life is long. [A4] Ada weighs radium today. [A1]"),
+         "A1 is told again in paragraph 2: tell it in paragraph 1 only"},
         {"a sentence that tells no atom", replaced("for it. [A2]", "for it. [A2] It was a long day."),
          "the sentence \"It was a long day.\" tells no atom: cite the atoms it tells, or leave it out"},
         {"a long one", replaced("for it. [A2]", std::format("for it. [A2] {}", kLongSentence)),
@@ -615,6 +590,39 @@ TEST_F(WriteStageTest, ASingleDraftIsNotJudged) {
     const StageOutput output = unwrap(run(rig.raise()));
     EXPECT_THAT(rig.requests("judge"), IsEmpty());
     EXPECT_THAT(output.findings, IsEmpty());
+}
+
+TEST_F(WriteStageTest, DraftsTheJudgeDoesNotHoldArePickedByLedgerBAlone) {
+    // An infantry that holds less than any reading of a section, or any
+    // comparison: squad() would refuse the lot, so no section is judged.
+    OracleArmy rig{{}, engines({.infantry_holds = 1'024})};
+    const StageOutput output = unwrap(run(rig.raise()));
+    std::vector<std::string> said;
+    for (const SectionPlan& section : lecture_plan().sections) {
+        said.push_back(
+            std::format("section {}, \"{}\": the drafts are picked by Ledger B alone: they are more "
+                        "than the judge holds at once",
+                        said.size() + 1, section.heading));
+    }
+    EXPECT_EQ(output.findings, said);
+    EXPECT_THAT(asked(rig, "judge"), IsEmpty());
+    EXPECT_THAT(asked(rig, "flow"), IsEmpty());
+    EXPECT_EQ(article_of(output), oracle_article()) << "the first drafts, which Ledger B ranks first";
+}
+
+TEST_F(WriteStageTest, ASectionInPartsTheJudgeDoesNotHoldIsSaidOnce) {
+    // "The samples", in two parts, neither of whose drafts the judge holds.
+    OracleArmy rig{{}, engines({.commander_holds = 2'240, .infantry_holds = 1'024})};
+    const StageOutput output = unwrap(run(rig.raise()));
+    EXPECT_THAT(missions_of(rig), ElementsAre("write-1", "write-2-1", "write-2-2", "write-3"));
+    std::vector<std::string> said;
+    for (const SectionPlan& section : lecture_plan().sections) {
+        said.push_back(
+            std::format("section {}, \"{}\": the drafts are picked by Ledger B alone: they are more "
+                        "than the judge holds at once",
+                        said.size() + 1, section.heading));
+    }
+    EXPECT_EQ(output.findings, said) << "once a section";
 }
 
 TEST_F(WriteStageTest, AJudgeWhoseReadingsFailItsChecksIsNotHandedToTheWriter) {
@@ -911,22 +919,29 @@ TEST_F(WriteStageTest, TheKeyHoldsTheTierThePromptTheArmyAndWhatTheCommanderHold
     const json::Json max = fingerprint();
     EXPECT_EQ(max.at("tier"), unwrap(reason::builtin_tier("max")).canonical(reason::Stage::write));
     const prompt::Library shipped = unwrap(prompt::Library::embedded());
-    for (const std::string_view name : {"write", "judge", "flow"}) {
-        EXPECT_EQ(max.at("prompts").at(std::string{name}).at("label"), std::format("{}@1", name));
+    // The judge's prompt is at its second version: the seams stage's (P20c).
+    const std::array<std::pair<std::string_view, std::string_view>, 3> labels{
+        {{"write", "write@1"}, {"judge", "judge@2"}, {"flow", "flow@1"}}};
+    for (const auto& [name, label] : labels) {
+        EXPECT_EQ(max.at("prompts").at(std::string{name}).at("label"), std::string{label});
         EXPECT_EQ(max.at("prompts").at(std::string{name}).at("hash"), unwrap(shipped.content_hash(name)));
     }
     EXPECT_EQ(max.at("holds"), 32'768);
+    EXPECT_EQ(max.at("judge_holds"), 32'768)
+        << "whether the judge holds the drafts decides whether it reads them";
     EXPECT_EQ(max.at("army").size(), 2U);
 
-    OracleArmy smaller{{}, engines({.commander_holds = 16'384})};
+    OracleArmy smaller{{}, engines({.commander_holds = 16'384, .infantry_holds = 8'192})};
     unwrap(run(smaller.raise()));
     EXPECT_EQ(fingerprint().at("holds"), 16'384);
+    EXPECT_EQ(fingerprint().at("judge_holds"), 8'192);
 
     use_tier("fast");
     OracleArmy fast;
     unwrap(run(fast.raise()));
     EXPECT_NE(fingerprint().at("tier"), max.at("tier"));
     EXPECT_EQ(fingerprint().at("prompts"), max.at("prompts"));
+    EXPECT_FALSE(fingerprint().contains("judge_holds")) << "a tier that does not judge";
 }
 
 }  // namespace

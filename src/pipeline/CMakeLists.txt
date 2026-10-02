@@ -5,8 +5,9 @@
 # `transcript` (captions into numbered sentences, punctuated by the infantry
 # when they are not), `outline` (the video's sections and its brief),
 # `atomize` (Ledger A: what became of every sentence), `plan` (which
-# paragraph tells which atoms) and `write` (the article, every atom told,
-# its drafts read by a judge of another family);
+# paragraph tells which atoms), `write` (the article, every atom told,
+# its drafts read by a judge of another family) and `seams` (the
+# paragraphs where sections meet, rewritten together);
 # the windows a transcript is read in, each as large as its engine holds;
 # and run_job(), a job taken through them and saved
 # (docs/design/pipeline.md). Hub only.
@@ -14,6 +15,7 @@ rr_add_module(pipeline
     SOURCES
         asking.cpp
         atomize_stage.cpp
+        drafting.cpp
         executor.cpp
         grouping.cpp
         job_run.cpp
@@ -23,6 +25,7 @@ rr_add_module(pipeline
         plan_stage.cpp
         punctuation.cpp
         readings.cpp
+        seams_stage.cpp
         source.cpp
         transcript_stage.cpp
         windows.cpp

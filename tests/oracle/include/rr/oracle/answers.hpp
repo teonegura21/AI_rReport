@@ -22,12 +22,15 @@
 //   its sections' descriptions (rr/pipeline/outline_stage.hpp), what each
 //   sentence says (rr/pipeline/atomize_stage.hpp), and how a section is
 //   told (rr/pipeline/plan_stage.hpp), and the article itself
-//   (rr/pipeline/write_stage.hpp), with the judge's readings of it, have no
-//   single right answer either. The oracle answers each by a rule a test can
-//   predict, and that keeps every check: see annotate(), outline(),
-//   describe(), brief(), atomize(), plan(), write(), judge() and flow(). A synthetic video is written for the
-//   rule: its talk turns at a sentence that opens with "Now," or "Next,"; a speaker says "I'm Ada"; its words
-//   for things are acronyms; "Um, so." is a disfluency and "Hello and welcome back." a greeting.
+//   (rr/pipeline/write_stage.hpp), with the judge's readings of it, and its
+//   seams (rr/pipeline/seams_stage.hpp), have no single right answer either.
+//   The oracle answers each by a rule a test can predict, and that keeps
+//   every check: see annotate(), outline(), describe(), brief(), atomize(),
+//   plan(), write(), judge(), flow() and seam(). A synthetic video is
+//   written for the rule: its talk turns at a sentence that opens with
+//   "Now," or "Next,"; a speaker says "I'm Ada"; its words for things are
+//   acronyms; "Um, so." is a disfluency and "Hello and welcome back." a
+//   greeting.
 //
 // Thread-safety: answerers are immutable and safe to call from many threads.
 #pragma once
@@ -118,6 +121,11 @@ namespace rr::oracle {
 // two of a length tie; a rule that holds in either order, so swapping the
 // drafts never turns its preference into a tie.
 [[nodiscard]] Answerer flow();
+
+// Answers seam missions (prompts/seam): the two paragraphs as written, which
+// pass every check a rewrite is held to. A test that wants a seam rewritten
+// changes the answer (a fault).
+[[nodiscard]] Answerer seam();
 
 // Teaches `oracle` every mission kind the pipeline's stages send, punctuating
 // from `script` when there is one.

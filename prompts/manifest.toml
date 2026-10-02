@@ -177,6 +177,10 @@ failure_modes = [
   number = 1
   hash = "dc2fb8ed580d9ca6021b3abc9e66c02624e48a45f9c532e0f6769dccf0e24db4"
   note = "first version"
+  [[prompt.version]]
+  number = 2
+  hash = "e2819bd8be8b30c058f9696ccdb87277ca25cc8a2db35b48fafb53135d59d31e"
+  note = "the task names what it checks, a section or a seam, for the seams stage (P20c)"
 
 [[prompt]]
 name = "flow"
@@ -191,4 +195,19 @@ failure_modes = [
   [[prompt.version]]
   number = 1
   hash = "1f7de5948fdfb2aa6cb8c9d016eb73206feac42db56058ddc0c2386e8a3a3659"
+  note = "first version"
+
+[[prompt]]
+name = "seam"
+purpose = "Rewrite the two paragraphs where two sections of the article meet, so that the article reads on: each paragraph keeping its atoms and markers, only how things are said changed (rr/pipeline/seams_stage.hpp)."
+shared = ["title", "channel"]
+failure_modes = [
+  "an atom moved to the other paragraph, or dropped: the check sends it back",
+  "a link that adds what was not said, a cause or a contrast no atom gives",
+  "a hedge firmed up, or a statement given to another, while rewording",
+  "the paragraphs' far ends rewritten too, opening a new seam within a section",
+]
+  [[prompt.version]]
+  number = 1
+  hash = "fc92f6ec48ab7137591a8304502498806eaf8b6f1592a712978ba79479a28160"
   note = "first version"

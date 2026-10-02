@@ -417,6 +417,21 @@ TEST(OracleAnswers, FlowPrefersTheShorterDraftInEitherOrder) {
     EXPECT_EQ(better("Same.", "Also."), "tie");
 }
 
+TEST(OracleAnswers, SeamRewritesBothParagraphsAsWritten) {
+    Oracle oracle;
+    teach_stages(oracle);
+    const std::string_view first = "The bridge failed at four tons. [A7]";
+    const std::string_view second = "Ada thinks it was young pine. [A8]";
+    EXPECT_EQ(
+        unwrap(oracle.chat(holding_both("seam", "first", first, "second", second), {}, {})).first().content,
+        std::format("{}\n\n{}", first, second))
+        << "a rewrite that passes every check, and changes nothing";
+    EXPECT_ERRC(oracle.chat(holding("seam", "first", first), {}, {}), Errc::invalid_argument)
+        << "no second paragraph";
+    EXPECT_ERRC(oracle.chat(holding("seam", "second", second), {}, {}), Errc::invalid_argument)
+        << "no first paragraph";
+}
+
 TEST(RequestLog, KeepsEveryRequestItPassesOn) {
     Oracle oracle;
     oracle.teach("label",
