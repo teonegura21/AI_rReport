@@ -534,5 +534,110 @@ TEST_F(EndToEnd, AnEvalRunTakesEachReplicateThroughThenScoresAndExportsIt) {
     EXPECT_EQ(cell(both_first, column(both_header, "atoms_told")), "1") << "the code's, kept";
 }
 
+// The lecture under two names: two videos, as an interval needs.
+constexpr std::string_view kTwoVideos = R"toml(
+[[video]]
+id = "weighing-radium"
+title = "Weighing radium"
+url = "https://www.youtube.com/watch?v=abc123XYZ_0"
+type = "talk"
+captions = "manual"
+split = "dev"
+licence = "us-public-domain"
+attribution = "Science Hour"
+
+[[video]]
+id = "radium-again"
+title = "Weighing radium, again"
+url = "https://www.youtube.com/watch?v=abc123XYZ_1"
+type = "talk"
+captions = "manual"
+split = "dev"
+licence = "us-public-domain"
+attribution = "Science Hour"
+)toml";
+
+constexpr std::string_view kGate = R"toml(name = "e2e"
+[[invariant]]
+metric = "sentences_accounted"
+every_entry = 1
+[[invariant]]
+metric = "invalid_markers"
+every_entry = 0
+[[gated]]
+metric = "atoms_told"
+margin = 0.01
+[[gated]]
+metric = "facts_told"
+margin = 0.02
+)toml";
+
+TEST_F(EndToEnd, TwoRunsOfOnePipelineAreComparedAndGatedAndAnAaRunHoldsTheGatesMargins) {
+    const std::filesystem::path eval_dir = home() / "eval";
+    (void)home().write_file("eval/sets/m2.toml", kTwoVideos);
+    (void)home().write_file("eval/gates/e2e.toml", kGate);
+    (void)home().write_file("eval/judges/e2e-v1.toml", panel_for(sha256(component::kModelWeights).hex()));
+    for (const eval::EvalVideo& video : unwrap(eval::read_set(eval_dir, "m2")).videos) {
+        const pipeline::Source source{
+            .origin = pipeline::Origin::web,
+            .video = media::Video{.id = video.url.substr(video.url.find('=') + 1),
+                                  .url = video.url,
+                                  .title = video.title,
+                                  .channel = "Science Hour"},
+            .captions = pipeline::SourceCaptions{.language = "en",
+                                                 .kind = media::CaptionKind::manual,
+                                                 .format = transcript::CaptionFormat::vtt,
+                                                 .content = lecture_captions()}};
+        (void)unwrap(eval::keep_snapshot(eval_dir, video, pipeline::to_json(source),
+                                         std::chrono::system_clock::now()));
+    }
+    const OracleRuntime runtime;
+    const Library library = this->library("eval");
+    const auto eval = [&](std::vector<std::string> command) {
+        command.insert(command.begin(), {"eval", "--eval-dir", eval_dir.string()});
+        return run(command, library, runtime);
+    };
+    const auto asked = [&] { return runtime.commander().completions + runtime.infantry().completions; };
+
+    ASSERT_EQ(eval({"run", "--label", "base", "--replicates", "2"}).status.code, 0);
+    ASSERT_EQ(eval({"score", "--label", "base"}).status.code, 0);
+    const std::int64_t base = asked();
+    ASSERT_EQ(eval({"run", "--label", "cand", "--replicates", "2"}).status.code, 0);
+    EXPECT_EQ(asked(), base) << "the same pipeline under the same salts: every stage run shared";
+    ASSERT_EQ(eval({"score", "--label", "cand"}).status.code, 0);
+
+    const proc::RunResult compared = eval({"compare", "base", "cand", "--gate", "e2e"});
+    ASSERT_EQ(compared.status.code, 0) << compared.stderr_text;
+    EXPECT_THAT(compared.stdout_text, HasSubstr("A: base (m2 dev, tier max, replicates 0 to 1)\n"));
+    EXPECT_THAT(compared.stdout_text,
+                HasSubstr("  atoms_told                    2     1.000     1.000    +0.000   +0.000 "
+                          "to +0.000       0.000   0.000   0.010   no difference\n"));
+
+    const proc::RunResult gated = eval({"gate", "base", "cand", "--gate", "e2e", "--panel", "e2e-v1"});
+    EXPECT_EQ(gated.status.code, 0) << gated.stdout_text << gated.stderr_text;
+    EXPECT_THAT(gated.stdout_text,
+                HasSubstr("sentences_accounted    at least 1.000   passed: kept by 4 entries\n"));
+    EXPECT_THAT(gated.stdout_text,
+                HasSubstr("facts_told             margin 0.020     ignored: the panel e2e-v1 judges it, "
+                          "and no person has calibrated the panel yet: not counted\n"));
+    EXPECT_THAT(gated.stdout_text, HasSubstr("\ngate e2e: passed\n"));
+
+    ASSERT_EQ(eval({"run", "--label", "base-aa", "--replicates", "2", "--first-replicate", "2"}).status.code,
+              0);
+    EXPECT_GT(asked(), base) << "other salts: every sampled stage drawn again";
+    ASSERT_EQ(eval({"score", "--label", "base-aa"}).status.code, 0);
+    const proc::RunResult aa =
+        eval({"gate", "base", "base-aa", "--aa", "--gate", "e2e", "--panel", "e2e-v1"});
+    EXPECT_EQ(aa.status.code, 0) << aa.stdout_text << aa.stderr_text;
+    EXPECT_THAT(aa.stdout_text,
+                HasSubstr("an unchanged pipeline passes every counted gated metric at once 100% of "
+                          "the time (80% at least, ADR-0019)\n"))
+        << "the oracle draws alike under every salt: no noise at all";
+    EXPECT_THAT(aa.stdout_text, HasSubstr("gate e2e: its margins hold\n"));
+    const proc::RunResult shared =
+        eval({"gate", "base", "cand", "--aa", "--gate", "e2e", "--panel", "e2e-v1"});
+    EXPECT_EQ(shared.status.code, 2) << "cand draws under base's salts: no A/A run";
+}
+
 }  // namespace
 }  // namespace rr

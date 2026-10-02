@@ -106,6 +106,32 @@ TEST(Library, JobsMadeAnewByMigration7KeepEveryJobAndWhatRefersToThem) {
     EXPECT_ERRC(dangling, Errc::conflict) << "a job of no row refused: foreign keys on again";
 }
 
+// Migration 0008 gives eval runs their first replicate: every run made
+// before starts at 0, as it did.
+TEST(Library, Migration8StartsEveryRunMadeBeforeAtReplicateZero) {
+    db::Database database = unwrap(db::Database::open({.path = ":memory:"}));
+    ASSERT_EQ(unwrap(database.migrate(migrations().first(7))), 7);
+    unwrap(database.write([](db::WriteTx& tx) -> Result<void> {
+        RR_TRY(
+            tx.execute("INSERT INTO eval_runs (id, label, eval_set, split, tier, replicates, created_at_ms) "
+                       "VALUES ('R', 'base', 'm2', 'dev', 'max', 3, 1)"));
+        return ok();
+    }));
+    ASSERT_GE(migrations().size(), 8U);
+    ASSERT_EQ(unwrap(database.migrate(migrations().first(8))), 8);
+    EXPECT_EQ(unwrap(database.read([](db::ReadTx& tx) {
+                  return tx.query_int("SELECT first_replicate FROM eval_runs WHERE id = 'R'");
+              })),
+              0);
+    const Result<void> negative = database.write([](db::WriteTx& tx) -> Result<void> {
+        RR_TRY(
+            tx.execute("INSERT INTO eval_runs (id, label, eval_set, split, tier, replicates, created_at_ms, "
+                       "first_replicate) VALUES ('S', 'aa', 'm2', 'dev', 'max', 3, 1, -1)"));
+        return ok();
+    });
+    EXPECT_ERRC(negative, Errc::invalid_argument) << "the table's own check";
+}
+
 TEST(Library, RefusesADatabaseFromANewerRreport) {
     const testkit::TempDir dir;
     const std::filesystem::path file = dir / "library.db";

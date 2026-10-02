@@ -42,8 +42,8 @@ The work is cut into thirty phases, each one commit that builds, passes CI and i
 | P22 | End to end through the real executables: every stage at `max` against fake engines that answer as the oracle; a job killed with SIGKILL anywhere and resumed, asking again only what its memo did not keep, to the same article ([testing.md](design/testing.md#end-to-end-killed-and-resumed)) → **runbook R3** | done: `c5ffd9e` |
 | **5. Measurement** | | |
 | P23 | `eval run / score / export`: the set's videos through the article stages, each replicate a job of its own salt, a run taken up where it stopped; each article scored by code, the Fidelity Report's figures by the page's own code, gold's quotes, terms and facts cited, its length, what it cost; the scores kept, and exported as CSV or JSON ([eval.md](design/eval.md#runs-and-scores)) | done: `af96f9b` |
-| P24 | Frozen eval judges: a panel pinning its prompts, its judges' model files and its procedure (`eval/judges/eval-v1.toml`); each article's facts and sentences read by both families, against the video's own words, the evidence quoted and checked; a judgement a job of its own, never read twice unchanged; scores kept beside the code's, reported only until calibrated (P27). Flow, pairwise, comes with P25's `eval compare`, which pairs runs; its prompt is pinned already ([eval.md](design/eval.md#the-judges)) | done: this commit |
-| P25 | Statistics and the gate: `eval compare / gate` → **runbook R4** | |
+| P24 | Frozen eval judges: a panel pinning its prompts, its judges' model files and its procedure (`eval/judges/eval-v1.toml`); each article's facts and sentences read by both families, against the video's own words, the evidence quoted and checked; a judgement a job of its own, never read twice unchanged; scores kept beside the code's, reported only until calibrated (P27). Flow, pairwise, comes with P25's `eval compare`, which pairs runs; its prompt is pinned already ([eval.md](design/eval.md#the-judges)) | done: `e023f00` |
+| P25 | Statistics and the gate: two runs compared video by video, each metric's difference with its paired-bootstrap interval, its standard error and what the videos could see; a candidate gated against its baseline by a reviewed file: invariants on every entry, a non-inferiority margin a metric, inconclusive failing; the margins checked against an A/A run under other salts (`--first-replicate`); then the articles of two runs read pairwise for flow ([eval.md](design/eval.md#comparisons-and-the-gate)) → **runbook R4** | P25a, compare and gate: this commit; P25b, pairwise flow |
 | P26 | `eval report`, `eval sweep` | |
 | P27 | `eval label / calibrate` → **runbooks R5, R6** | |
 | **6. Extras, kept only if the eval shows a gain** | | |
@@ -59,6 +59,6 @@ Some questions need real GPUs and real models. Each runbook says what to run and
 | R1 | P5 | Commander slots, unified KV and context, on 48 and 80 GB pods ([deploy/runpod](../deploy/runpod/README.md)) |
 | R2 | P16 | The eval set: your approval of the candidates, then silver annotations corrected into gold |
 | R3 | P22 | M1's acceptance: three videos ingested at `max`; 100% of sentences accounted for, atom coverage ≥ 97%, no invalid marker, every must-quote verbatim, numbers ≥ 99% |
-| R4 | P25 | Tiers compared with replicates and an A/A noise floor |
+| R4 | P25 | Tiers compared with replicates, and the gate's margins checked against an A/A run |
 | R5 | P27 | Forty labels that calibrate the eval judges |
 | R6 | P27 | Sweeps and the gate on the test split: M2's acceptance, key-fact recall ≥ 90% |

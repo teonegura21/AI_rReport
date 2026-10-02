@@ -1,0 +1,26 @@
+# Mutants of the hub's eval commands that only the real executable shows
+# (P25): each removes one rule of `rreport eval gate` and names the CLI test
+# that must fail without it. The test's target builds rreport first, so a
+# mutant in apps/ reaches the binary it runs.
+# Run: scripts/mutate.py tests/mutants/hub_cli.toml
+# What they found is in docs/design/eval.md, "How the tests were validated".
+
+target = "rr_hub_cli_tests"
+binary = "build/dev/tests/component/rr_hub_cli_tests"
+timeout = 300
+
+[[mutant]]
+name = "an-aa-run-is-not-checked"
+file = "apps/rreport/main.cpp"
+expect = "Hub.TwoRunsAreComparedAndTheGateDecidesOnlyWhatItsNumbersCanSay"
+  [[mutant.edit]]
+  from = '''        if (auto again = eval::check_aa(pair->a, pair->b); !again.has_value()) {'''
+  to = '''        if (auto again = eval::check_aa(pair->a, pair->a); !again.has_value()) {'''
+
+[[mutant]]
+name = "a-failed-gate-exits-0"
+file = "apps/rreport/main.cpp"
+expect = "Hub.TwoRunsAreComparedAndTheGateDecidesOnlyWhatItsNumbersCanSay"
+  [[mutant.edit]]
+  from = '''    return reading.passed() ? kOk : kFailure;'''
+  to = '''    return kOk;'''

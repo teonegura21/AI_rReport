@@ -39,3 +39,11 @@ expect = "EndToEnd.AJobKilledAnywhereResumesAskingOnlyWhatItsMemoDidNotKeep"
   [[mutant.edit]]
   from = '''        if (options.hang_after >= 0 && call > options.hang_after) {'''
   to = '''        if (options.hang_after >= 0 && call > options.hang_after && false) {'''
+
+[[mutant]]
+name = "the-first-replicate-asked-is-not-kept"
+file = "apps/rreport/main.cpp"
+expect = "EndToEnd.TwoRunsOfOnePipelineAreComparedAndGatedAndAnAaRunHoldsTheGatesMargins"
+  [[mutant.edit]]
+  from = '''                         .first_replicate = flags.first_replicate};'''
+  to = '''                         .first_replicate = 0};'''

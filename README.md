@@ -116,6 +116,8 @@ rreport eval run --label baseline      # the dev videos, three times each, at ma
 rreport eval score --label baseline    # each article scored: what it kept, against the gold, and its cost
 rreport eval judge --label baseline    # read by the frozen judges: facts told, sentences the video supports
 rreport eval export --label baseline   # a row per video and replicate (CSV; --format json)
+rreport eval compare baseline candidate   # every metric, video by video, with its 95% interval
+rreport eval gate baseline candidate      # may the candidate replace the baseline? (eval/gates/default.toml)
 ```
 
 ## Repository map

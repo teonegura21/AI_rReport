@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -20,6 +21,7 @@
 #include <rr/core/file_io.hpp>
 #include <rr/core/strings.hpp>
 #include <rr/db/database.hpp>
+#include <rr/eval/metrics.hpp>
 #include <rr/eval/snapshot.hpp>
 #include <rr/knowledge/article.hpp>
 #include <rr/library/library.hpp>
@@ -217,6 +219,25 @@ TEST(Score, WhatTheJobCostIsScoredWithTheVideosLength) {
     EXPECT_THAT(score(scores_of(unknown, nullptr, kCosts), "minutes_per_video_hour"),
                 Optional(DoubleEq(30.0 / (895.0 / 3600.0))))
         << "without its length, where its transcript ends: S30 at 14:55";
+}
+
+// Every metric the code scores is one rr/eval/metrics.hpp knows as the
+// code's, and every one it knows as the code's is scored: a comparison
+// lists, and a gate holds, exactly what is scored.
+TEST(Score, ScoresEveryMetricTheRegistryKnowsAsTheCodesAndNoOther) {
+    const Gold gold = lecture_gold();
+    std::set<std::string, std::less<>> scored;
+    for (const Score& kept : scores_of(lecture_contents(), &gold, kCosts)) {
+        const Metric* metric = find_metric(kept.metric);
+        ASSERT_NE(metric, nullptr) << kept.metric << " is not in rr/eval/metrics.hpp";
+        EXPECT_EQ(metric->family, "code") << kept.metric;
+        scored.insert(kept.metric);
+    }
+    for (const Metric& metric : rr::eval::metrics()) {  // the registry, not this file's helper
+        if (metric.family == "code") {
+            EXPECT_TRUE(scored.contains(metric.name)) << metric.name << " is never scored";
+        }
+    }
 }
 
 TEST(Score, NoArticleIsNothingToScore) {

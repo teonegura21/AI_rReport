@@ -8,6 +8,7 @@
 #include <rr/eval/judgement.hpp>
 
 #include <chrono>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -18,6 +19,7 @@
 #include <rr/core/clock.hpp>
 #include <rr/core/error.hpp>
 #include <rr/db/database.hpp>
+#include <rr/eval/metrics.hpp>
 #include <rr/library/jobs.hpp>
 #include <rr/library/library.hpp>
 #include <rr/library/stage_store.hpp>
@@ -345,6 +347,23 @@ TEST(JudgedScores, CountEachIssueUnderItsOwnName) {
         for (const Score& kept : scores) {
             EXPECT_EQ(kept.value, kept.metric == named ? 1.0 : 0.0)
                 << kept.metric << ", of a sentence read as " << pipeline::to_string(issue);
+        }
+    }
+}
+
+// Every metric the judges score is one rr/eval/metrics.hpp knows as the
+// judges', and every one it knows as theirs is scored.
+TEST(JudgedScores, AreEveryMetricTheRegistryKnowsAsTheJudgesAndNoOther) {
+    std::set<std::string, std::less<>> scored;
+    for (const Score& kept : judged_scores(four_items())) {
+        const Metric* metric = find_metric(kept.metric);
+        ASSERT_NE(metric, nullptr) << kept.metric << " is not in rr/eval/metrics.hpp";
+        EXPECT_EQ(metric->family, "judges") << kept.metric;
+        scored.insert(kept.metric);
+    }
+    for (const Metric& metric : metrics()) {
+        if (metric.family == "judges") {
+            EXPECT_TRUE(scored.contains(metric.name)) << metric.name << " is never scored";
         }
     }
 }

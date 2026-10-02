@@ -56,10 +56,12 @@ TEST(Export, CsvQuotesWhatWouldBreakAField) {
 
 TEST(Export, JsonHoldsTheRunAndEachEntrysScoresByScorer) {
     const json::Json exported = to_json(run(), set(), entries());
-    EXPECT_EQ(
-        exported.at("run"),
-        (json::Json{
-            {"label", "baseline"}, {"set", "m2"}, {"split", "dev"}, {"tier", "max"}, {"replicates", 2}}));
+    EXPECT_EQ(exported.at("run"), (json::Json{{"label", "baseline"},
+                                              {"set", "m2"},
+                                              {"split", "dev"},
+                                              {"tier", "max"},
+                                              {"replicates", 2},
+                                              {"first_replicate", 0}}));
     ASSERT_EQ(exported.at("entries").size(), 3U);
     EXPECT_EQ(exported.at("entries")[0], (json::Json{{"video", "radium-talk"},
                                                      {"replicate", 0},

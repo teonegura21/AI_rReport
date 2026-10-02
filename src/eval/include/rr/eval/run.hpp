@@ -18,7 +18,14 @@
 //   A run is taken up where it stopped: the same label again keeps each job
 //   done, resumes each job not done (its memo answers every call it made),
 //   and makes the jobs still missing. A label never means two runs: asking
-//   it of another set, split, tier or number of replicates is refused.
+//   it of another set, split, tier, number of replicates or first replicate
+//   is refused.
+//
+//   Replicates are numbered from the run's first, 0 unless asked otherwise.
+//   Two runs that share their replicates' numbers share their salts, so a
+//   comparison of them measures the change, not the dice (ADR-0019); an
+//   A/A run, the baseline again with nothing shared, starts after the
+//   baseline's last (migrations/0008_first_replicate.sql).
 //
 // Thread-safety: as db::Database: safe from many threads, one transaction
 //   at a time.
@@ -47,8 +54,9 @@ struct RunSpec {
     std::string label{};     // what compare and gate name it by
     std::string eval_set{};  // the set's name: "m2"
     Split split = Split::dev;
-    std::string tier{};  // fast | thorough | max
-    int replicates = 1;  // at least 1
+    std::string tier{};       // fast | thorough | max
+    int replicates = 1;       // at least 1
+    int first_replicate = 0;  // the first replicate's number, and so its jobs' salt
 
     friend bool operator==(const RunSpec&, const RunSpec&) = default;
 };
@@ -108,9 +116,10 @@ public:
     Runs(db::Database& database, const Clock& clock);
 
     // The run `spec.label` names: made the first time it is asked for, the
-    // same run after. Errors: Errc::invalid_argument for an empty label or
-    // fewer than one replicate; Errc::conflict when the label names a run of
-    // another set, split, tier or number of replicates.
+    // same run after. Errors: Errc::invalid_argument for an empty label,
+    // fewer than one replicate or a first replicate under 0; Errc::conflict
+    // when the label names a run of another set, split, tier, number of
+    // replicates or first replicate.
     [[nodiscard]] Result<EvalRun> open(const RunSpec& spec);
 
     // The run `label` names. Errc::not_found when there is none.
@@ -141,9 +150,9 @@ private:
 };
 
 // What `run` takes through, in order: each of `videos` of the run's split
-// that has a snapshot, once a replicate, replicate by replicate, so a run
-// interrupted early has every video once before any twice; within one, in
-// `videos`' order. An entry's `job` is its own where it has one, and empty
+// that has a snapshot, once a replicate (from the run's first), replicate by
+// replicate, so a run interrupted early has every video once before any
+// twice; within one, in `videos`' order. An entry's `job` is its own where it has one, and empty
 // where none was made yet (start_entry() makes it, when its turn comes).
 struct Planned {
     std::vector<RunEntry> entries{};

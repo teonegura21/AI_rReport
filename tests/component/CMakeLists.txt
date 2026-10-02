@@ -22,6 +22,7 @@ if(RR_BUILD_HUB AND RR_BUILD_RUNTIME)
             hub_cli_test.cpp
         DEPS
             rr::core
+            rr::eval
             rr::fakes
             rr::json
             rr::library

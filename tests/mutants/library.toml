@@ -57,3 +57,19 @@ expect = "JobKind.NamesItsKinds"
   [[mutant.edit]]
   from = '''    {JobKind::judgement, "judgement"},'''
   to = ''''''
+
+[[mutant]]
+name = "migration-8-checks-no-replicate"
+file = "migrations/0008_first_replicate.sql"
+expect = "Library.Migration8StartsEveryRunMadeBeforeAtReplicateZero"
+  [[mutant.edit]]
+  from = '''DEFAULT 0 CHECK (first_replicate >= 0);'''
+  to = '''DEFAULT 0;'''
+
+[[mutant]]
+name = "migration-8-starts-runs-at-one"
+file = "migrations/0008_first_replicate.sql"
+expect = "Library.Migration8StartsEveryRunMadeBeforeAtReplicateZero"
+  [[mutant.edit]]
+  from = '''NOT NULL DEFAULT 0 CHECK'''
+  to = '''NOT NULL DEFAULT 1 CHECK'''

@@ -898,8 +898,8 @@ name = "one-replicate-is-planned"
 file = "src/eval/run.cpp"
 expect = "RunsTest.EachVideoOfTheSplitIsPlannedOnceAReplicateReplicateByReplicate"
   [[mutant.edit]]
-  from = '''replicate < run.spec.replicates; ++replicate) {'''
-  to = '''replicate < 1; ++replicate) {'''
+  from = '''    const int last = run.spec.first_replicate + run.spec.replicates;'''
+  to = '''    const int last = run.spec.first_replicate + 1;'''
 
 [[mutant]]
 name = "a-planned-entry-forgets-its-job"
@@ -1474,3 +1474,406 @@ expect = "Judgement.RoundTripsThroughItsArtifact"
   [[mutant.edit]]
   from = '''reading.reading.has_value() ? json::Json(*reading.reading) : json::Json(nullptr);'''
   to = '''json::Json(nullptr);'''
+
+# --- Comparisons and the gate (stats.cpp, compare.cpp, gate.cpp, metrics.cpp, run.cpp; P25)
+
+[[mutant]]
+name = "replicates-are-summed-not-averaged"
+file = "src/eval/stats.cpp"
+expect = "PerVideo.IsTheMeanOfEachVideosReplicatesThatHaveIt"
+  [[mutant.edit]]
+  from = '''        values.means.emplace(video, kept.first / static_cast<double>(kept.second));'''
+  to = '''        values.means.emplace(video, kept.first);'''
+
+[[mutant]]
+name = "a-video-only-b-scored-is-not-listed"
+file = "src/eval/stats.cpp"
+expect = "Compare.PairsTheVideosBothRunsScoredAndLeavesOutTheRest"
+  [[mutant.edit]]
+  from = '''        if (!in_a.means.contains(video)) {
+            comparison.unpaired.push_back(video);
+        }'''
+  to = '''        (void)in_a.means.contains(video);'''
+
+[[mutant]]
+name = "the-interval-is-of-other-percentiles"
+file = "src/eval/stats.cpp"
+expect = "BootstrapMean.IsTheSameOnEveryMachine"
+  [[mutant.edit]]
+  from = '''percentile(means, 0.025), .high = percentile(means, 0.975)'''
+  to = '''percentile(means, 0.05), .high = percentile(means, 0.95)'''
+
+[[mutant]]
+name = "a-resample-draws-every-video-once"
+file = "src/eval/stats.cpp"
+expect = "BootstrapMean.IsTheSameOnEveryMachine"
+  [[mutant.edit]]
+  from = '''            sum += values[generator() % values.size()];'''
+  to = '''            sum += values[drawn];
+            (void)generator();'''
+
+[[mutant]]
+name = "every-metric-draws-alike"
+file = "src/eval/stats.cpp"
+expect = "Compare.ResamplesTheVideosUnderTheMetricsOwnSeed"
+  [[mutant.edit]]
+  from = '''        comparison.interval = bootstrap_mean(differences, seed_of(metric));'''
+  to = '''        comparison.interval = bootstrap_mean(differences, 0);'''
+
+[[mutant]]
+name = "fnv-multiplies-before-it-mixes"
+file = "src/eval/stats.cpp"
+expect = "SeedOf.IsTheNamesFnv1a"
+  [[mutant.edit]]
+  from = '''        hash ^= static_cast<unsigned char>(character);
+        hash *= kPrime;'''
+  to = '''        hash *= kPrime;
+        hash ^= static_cast<unsigned char>(character);'''
+
+[[mutant]]
+name = "the-standard-error-is-the-deviation"
+file = "src/eval/stats.cpp"
+expect = "Compare.PairsTheVideosBothRunsScoredAndLeavesOutTheRest"
+  [[mutant.edit]]
+  from = '''        comparison.standard_error = standard_deviation(differences) / std::sqrt(videos);'''
+  to = '''        comparison.standard_error = standard_deviation(differences);'''
+
+[[mutant]]
+name = "the-deviation-is-the-populations"
+file = "src/eval/stats.cpp"
+expect = "Compare.PairsTheVideosBothRunsScoredAndLeavesOutTheRest"
+  [[mutant.edit]]
+  from = '''    return std::sqrt(squares / static_cast<double>(values.size() - 1));'''
+  to = '''    return std::sqrt(squares / static_cast<double>(values.size()));'''
+
+[[mutant]]
+name = "detectable-is-the-intervals-half-width"
+file = "src/eval/include/rr/eval/stats.hpp"
+expect = "Compare.PairsTheVideosBothRunsScoredAndLeavesOutTheRest"
+  [[mutant.edit]]
+  from = '''inline constexpr double kDetectable = kZ95 + 0.841621;'''
+  to = '''inline constexpr double kDetectable = kZ95;'''
+
+[[mutant]]
+name = "runs-of-other-scorers-are-compared"
+file = "src/eval/stats.cpp"
+expect = "Compare.RefusesRunsScoredByScorersThatMeasureDifferently"
+  [[mutant.edit]]
+  from = '''    if (!in_a.scorers.empty() && !in_b.scorers.empty() && in_a.scorers != in_b.scorers) {'''
+  to = '''    if (false && !in_a.scorers.empty() && !in_b.scorers.empty() && in_a.scorers != in_b.scorers) {'''
+
+[[mutant]]
+name = "a-run-scored-twice-is-compared"
+file = "src/eval/stats.cpp"
+expect = "Compare.RefusesRunsScoredByScorersThatMeasureDifferently"
+  [[mutant.edit]]
+  from = '''        if (values.scorers.size() > 1) {'''
+  to = '''        if (values.scorers.size() > 2) {'''
+
+[[mutant]]
+name = "an-aa-is-not-centred"
+file = "src/eval/stats.cpp"
+expect = "UnchangedPassRate.CentresEachMetricOnZeroAsAnUnchangedPipelineDiffersByChanceAlone"
+  [[mutant.edit]]
+  from = '''            value -= centre;'''
+  to = '''            value -= 0 * centre;'''
+
+[[mutant]]
+name = "each-metric-draws-its-own-videos"
+file = "src/eval/stats.cpp"
+expect = "UnchangedPassRate.CountsMetricsThatMoveTogetherOnce"
+  [[mutant.edit]]
+  from = '''                sums[index] += centred[index].values[video];'''
+  to = '''                sums[index] += centred[index].values[(video + index) % videos.size()];'''
+
+[[mutant]]
+name = "an-unchanged-pipeline-passes-on-its-mean"
+file = "src/eval/stats.cpp"
+expect = "UnchangedPassRate.IsHowOftenAnUnchangedPipelinePassesItsMargin"
+  [[mutant.edit]]
+  from = '''                return (sums[index] / count) - (kZ95 * one.standard_error) >= -one.margin;'''
+  to = '''                return (sums[index] / count) >= -one.margin;'''
+
+[[mutant]]
+name = "alone-is-not-the-intervals-rule"
+file = "src/eval/stats.cpp"
+expect = "AlonePassRate.IsPhiOfTheMarginInStandardErrorsLessTheIntervalsHalfWidth"
+  [[mutant.edit]]
+  from = '''    const double x = (margin / standard_error) - kZ95;'''
+  to = '''    const double x = margin / standard_error;'''
+
+[[mutant]]
+name = "no-noise-fails-every-margin"
+file = "src/eval/stats.cpp"
+expect = "AlonePassRate.IsPhiOfTheMarginInStandardErrorsLessTheIntervalsHalfWidth"
+  [[mutant.edit]]
+  from = '''        return margin >= 0 ? 1.0 : 0.0;  // no noise: an unchanged pipeline differs by nothing'''
+  to = '''        return 0.0;'''
+
+[[mutant]]
+name = "a-cost-may-be-gated"
+file = "src/eval/gate.cpp"
+expect = "Gate.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (metric.cost) {'''
+  to = '''    if (false && metric.cost) {'''
+
+[[mutant]]
+name = "a-metric-better-neither-way-may-be-gated"
+file = "src/eval/gate.cpp"
+expect = "Gate.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (metric.better == Better::neither) {'''
+  to = '''    if (false && metric.better == Better::neither) {'''
+
+[[mutant]]
+name = "a-negative-margin-is-allowed"
+file = "src/eval/gate.cpp"
+expect = "Gate.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (margin < 0) {'''
+  to = '''    if (margin < -1) {'''
+
+[[mutant]]
+name = "a-metric-may-have-two-margins"
+file = "src/eval/gate.cpp"
+expect = "Gate.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (std::ranges::contains(gate.gated, metric->name, &Gated::metric)) {'''
+  to = '''    if (false && std::ranges::contains(gate.gated, metric->name, &Gated::metric)) {'''
+
+[[mutant]]
+name = "a-metric-may-have-two-invariants"
+file = "src/eval/gate.cpp"
+expect = "Gate.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (std::ranges::contains(gate.invariants, metric->name, &Invariant::metric)) {'''
+  to = '''    if (false && std::ranges::contains(gate.invariants, metric->name, &Invariant::metric)) {'''
+
+[[mutant]]
+name = "a-gate-may-check-nothing"
+file = "src/eval/gate.cpp"
+expect = "Gate.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (gate.invariants.empty() && gate.gated.empty()) {'''
+  to = '''    if (false && gate.invariants.empty() && gate.gated.empty()) {'''
+
+[[mutant]]
+name = "a-gate-file-may-name-another"
+file = "src/eval/gate.cpp"
+expect = "Gate.EveryMistakeIsRefusedNamingItAndWhereItIs"
+  [[mutant.edit]]
+  from = '''    if (gate.name != name) {'''
+  to = '''    if (false && gate.name != name) {'''
+
+[[mutant]]
+name = "at-least-is-at-most"
+file = "src/eval/gate.cpp"
+expect = "Invariants.AreKeptOnlyWhenEveryEntryIsAtLeastAsGood"
+  [[mutant.edit]]
+  from = '''            return value < bound;'''
+  to = '''            return value > bound;'''
+
+[[mutant]]
+name = "an-entry-never-scored-keeps-the-invariant"
+file = "src/eval/gate.cpp"
+expect = "Invariants.AnEntryNeverScoredIsInconclusiveAndOneScoredWithoutTheMetricKeepsIt"
+  [[mutant.edit]]
+  from = '''            unscored.push_back(entry_named(entry.entry));'''
+  to = '''            (void)entry_named(entry.entry);'''
+
+[[mutant]]
+name = "uncalibrated-judges-count"
+file = "src/eval/gate.cpp"
+expect = "Gated.AJudgedMetricIsShownNotCountedUntilItsPanelIsCalibrated"
+  [[mutant.edit]]
+  from = '''    return metric.family != kJudges || panel.calibrated;'''
+  to = '''    return true || metric.family != kJudges || panel.calibrated;'''
+
+[[mutant]]
+name = "any-panel-judges-for-the-gate"
+file = "src/eval/gate.cpp"
+expect = "Invariants.OfAJudgedMetricCountOnceItsPanelIsCalibrated"
+  [[mutant.edit]]
+  from = '''        return metric.family == kJudges ? scoring.scorer == panel.scorer()'''
+  to = '''        return metric.family == kJudges ? scorer_family(scoring.scorer) == metric.family || panel.scorer().empty()'''
+
+[[mutant]]
+name = "another-panels-judgement-is-compared"
+file = "src/eval/gate.cpp"
+expect = "Gated.AJudgedMetricIsShownNotCountedUntilItsPanelIsCalibrated"
+  [[mutant.edit]]
+  from = '''    if (judged && comparison->scorer != panel.scorer()) {'''
+  to = '''    if (false && judged && comparison->scorer != panel.scorer()) {'''
+
+[[mutant]]
+name = "fewer-is-not-better"
+file = "src/eval/gate.cpp"
+expect = "Gated.AMetricBetterLowerIsWorseUpward"
+  [[mutant.edit]]
+  from = '''    return better == Better::lower ? Interval{.low = -interval.high, .high = -interval.low} : interval;'''
+  to = '''    (void)better;
+    return interval;'''
+
+[[mutant]]
+name = "the-gate-reads-the-mean"
+file = "src/eval/gate.cpp"
+expect = "Gated.IsInconclusiveWhenTheIntervalSpansItsMarginAndZero"
+  [[mutant.edit]]
+  from = '''    if (turned.low >= -gated.margin) {'''
+  to = '''    if ((turned.low + turned.high) / 2 >= -gated.margin) {'''
+
+[[mutant]]
+name = "worse-is-inconclusive"
+file = "src/eval/gate.cpp"
+expect = "Gated.FailsAsWorseWhenTheWholeIntervalIsPastItsMarginAndZero"
+  [[mutant.edit]]
+  from = '''    } else if (turned.high < 0) {'''
+  to = '''    } else if (turned.high < -1) {'''
+
+[[mutant]]
+name = "inconclusive-passes"
+file = "src/eval/gate.cpp"
+expect = "Gated.IsInconclusiveWhenTheIntervalSpansItsMarginAndZero"
+  [[mutant.edit]]
+  from = '''        return outcome == Outcome::passed || outcome == Outcome::ignored;'''
+  to = '''        return outcome != Outcome::failed;'''
+
+[[mutant]]
+name = "ignored-fails"
+file = "src/eval/gate.cpp"
+expect = "Gated.AJudgedMetricIsShownNotCountedUntilItsPanelIsCalibrated"
+  [[mutant.edit]]
+  from = '''        return outcome == Outcome::passed || outcome == Outcome::ignored;'''
+  to = '''        return outcome == Outcome::passed;'''
+
+[[mutant]]
+name = "an-aa-may-share-salts"
+file = "src/eval/gate.cpp"
+expect = "CheckAa.AnAaRunIsTheBaselineRunAgainUnderOtherSalts"
+  [[mutant.edit]]
+  from = '''    if (once.first_replicate < again_end && again.first_replicate < once_end) {'''
+  to = '''    if (false && once.first_replicate < again_end && again.first_replicate < once_end) {'''
+
+[[mutant]]
+name = "an-aa-may-be-another-tier"
+file = "src/eval/gate.cpp"
+expect = "CheckAa.AnAaRunIsTheBaselineRunAgainUnderOtherSalts"
+  [[mutant.edit]]
+  from = '''    if (once.eval_set != again.eval_set || once.split != again.split || once.tier != again.tier) {'''
+  to = '''    if (once.eval_set != again.eval_set || once.split != again.split) {'''
+
+[[mutant]]
+name = "margins-hold-at-any-rate"
+file = "src/eval/gate.cpp"
+expect = "AaReading.TheMarginsHoldWhenAnUnchangedPipelinePassesThemFourTimesInFive"
+  [[mutant.edit]]
+  from = '''    return unchanged_passes.has_value() && *unchanged_passes >= kUnchangedPasses &&'''
+  to = '''    return unchanged_passes.has_value() && *unchanged_passes >= 0.0 &&'''
+
+[[mutant]]
+name = "an-inconclusive-aa-holds"
+file = "src/eval/gate.cpp"
+expect = "AaReading.CountsOnlyWhatTheGateCountsAndCannotHoldOnTooFewVideos"
+  [[mutant.edit]]
+  from = '''           !std::ranges::contains(metrics, Outcome::inconclusive, &AaMetric::outcome);'''
+  to = '''           !std::ranges::contains(metrics, Outcome::failed, &AaMetric::outcome);'''
+
+[[mutant]]
+name = "an-aa-interval-off-zero-is-not-listed"
+file = "src/eval/gate.cpp"
+expect = "AaReading.ListsAnAaIntervalThatLeavesOutZero"
+  [[mutant.edit]]
+  from = '''                reading.off_zero.push_back(gated.metric);'''
+  to = '''                (void)gated.metric;'''
+
+[[mutant]]
+name = "fewer-is-worse-on-the-table"
+file = "src/eval/compare.cpp"
+expect = "SeenIn.IsWhatTheIntervalShowsTheWayTheMetricIsBetter"
+  [[mutant.edit]]
+  from = '''        case Better::lower:
+            return up ? Seen::worse : Seen::better;'''
+  to = '''        case Better::lower:
+            return up ? Seen::better : Seen::worse;'''
+
+[[mutant]]
+name = "no-difference-at-all-is-a-difference"
+file = "src/eval/compare.cpp"
+expect = "SeenIn.IsWhatTheIntervalShowsTheWayTheMetricIsBetter"
+  [[mutant.edit]]
+  from = '''    if (!up && interval.high >= 0) {'''
+  to = '''    if (!up && interval.high > 0) {'''
+
+[[mutant]]
+name = "the-gates-margins-are-not-shown"
+file = "src/eval/compare.cpp"
+expect = "CompareRuns.MakesARowForEachMetricEitherRunHasInTheRegistrysOrder"
+  [[mutant.edit]]
+  from = '''            row.margin = held->margin;'''
+  to = '''            (void)held;'''
+
+[[mutant]]
+name = "the-judges-rows-come-first"
+file = "src/eval/compare.cpp"
+expect = "CompareText.GroupsTheRowsByScorerCodeFirstAndSaysWhatWasLeftOut"
+  [[mutant.edit]]
+  from = '''    for (const std::string& scorer : scorers) {'''
+  to = '''    std::ranges::reverse(scorers);
+    for (const std::string& scorer : scorers) {'''
+
+[[mutant]]
+name = "more-atoms-told-is-worse"
+file = "src/eval/metrics.cpp"
+expect = "Metrics.SayWhichWayTheyAreBetter"
+  [[mutant.edit]]
+  from = '''    Metric{.name = "atoms_told", .family = kCode, .better = Better::higher},'''
+  to = '''    Metric{.name = "atoms_told", .family = kCode, .better = Better::lower},'''
+
+[[mutant]]
+name = "minutes-are-no-cost"
+file = "src/eval/metrics.cpp"
+expect = "Metrics.CostsAreTheCodesAndBetterLower"
+  [[mutant.edit]]
+  from = '''    Metric{.name = "minutes", .family = kCode, .better = Better::lower, .cost = true},'''
+  to = '''    Metric{.name = "minutes", .family = kCode, .better = Better::lower},'''
+
+[[mutant]]
+name = "a-longer-article-is-better"
+file = "src/eval/metrics.cpp"
+expect = "Metrics.SayWhichWayTheyAreBetter"
+  [[mutant.edit]]
+  from = '''    Metric{.name = "length_ratio", .family = kCode, .better = Better::neither},'''
+  to = '''    Metric{.name = "length_ratio", .family = kCode, .better = Better::higher},'''
+
+[[mutant]]
+name = "replicates-start-at-zero"
+file = "src/eval/run.cpp"
+expect = "RunsTest.ARunsReplicatesAreNumberedFromItsFirstAsAnAaRunsAre"
+  [[mutant.edit]]
+  from = '''    for (int replicate = run.spec.first_replicate; replicate < last; ++replicate) {'''
+  to = '''    for (int replicate = 0; replicate < last; ++replicate) {'''
+
+[[mutant]]
+name = "the-first-replicate-is-not-read"
+file = "src/eval/run.cpp"
+expect = "RunsTest.ARunsReplicatesAreNumberedFromItsFirstAsAnAaRunsAre"
+  [[mutant.edit]]
+  from = '''                        .first_replicate = static_cast<int>(row.get_int(7))},'''
+  to = '''                        .first_replicate = 0},'''
+
+[[mutant]]
+name = "another-first-replicate-is-the-same-run"
+file = "src/eval/run.cpp"
+expect = "RunsTest.ALabelNamesOneRun"
+  [[mutant.edit]]
+  from = '''    if (asked.first_replicate != run.first_replicate) {'''
+  to = '''    if (false && asked.first_replicate != run.first_replicate) {'''
+
+[[mutant]]
+name = "a-replicate-before-zero-is-allowed"
+file = "src/eval/run.cpp"
+expect = "RunsTest.ARunNeedsALabelAndOneReplicateAtLeast"
+  [[mutant.edit]]
+  from = '''    if (spec.first_replicate < 0) {'''
+  to = '''    if (spec.first_replicate < -1) {'''

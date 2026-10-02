@@ -14,6 +14,7 @@
 #include <rr/core/clock.hpp>
 #include <rr/core/file_io.hpp>
 #include <rr/core/hash.hpp>
+#include <rr/eval/run.hpp>
 #include <rr/fakes/fake_runpod.hpp>
 #include <rr/json/json.hpp>
 #include <rr/library/call_log.hpp>
@@ -508,6 +509,112 @@ TEST_F(Hub, AJudgementIsTakenUpByEvalJudgeAndPagedByTheArticleItJudges) {
     EXPECT_EQ(paged.status.code, 2) << "a judgement has no article of its own";
     EXPECT_THAT(paged.stderr_text, HasSubstr(std::format("`rreport report {}` pages that one", article)));
     EXPECT_THAT(rreport({"jobs"}).stdout_text, HasSubstr("judgement"));
+}
+
+// A gate of one invariant and one margin, and a panel to read judged metrics
+// by, as a person would write them.
+constexpr std::string_view kGate = R"toml(name = "g"
+[[invariant]]
+metric = "invalid_markers"
+every_entry = 0
+[[gated]]
+metric = "atoms_told"
+margin = 0.01
+)toml";
+
+constexpr std::string_view kPanel = R"toml(name = "p"
+procedure = 1
+calibrated = false
+[[prompt]]
+name = "eval_fact"
+version = 1
+hash = "f"
+[[prompt]]
+name = "eval_support"
+version = 1
+hash = "s"
+[[prompt]]
+name = "eval_flow"
+version = 1
+hash = "w"
+[[judge]]
+role = "commander"
+model = "chat"
+sha256 = "c600de0300ae8a0eb3a6c0b8b5561b8b96f16bd2c863c2a66c42de29d391a747"
+)toml";
+
+TEST_F(Hub, TwoRunsAreComparedAndTheGateDecidesOnlyWhatItsNumbersCanSay) {
+    const std::filesystem::path eval_dir = home() / "eval";
+    (void)home().write_file("eval/gates/g.toml", kGate);
+    (void)home().write_file("eval/judges/p.toml", kPanel);
+    {
+        // Three runs of two videos, two replicates each, as `eval run` and
+        // `eval score` would leave them: the baseline; a candidate whose
+        // podcast's second replicate writes a marker of no atom; and the
+        // baseline again under other salts, scoring as it did.
+        db::Database database =
+            unwrap(library::open_database(data_dir() / "libraries" / "default" / "library.db"));
+        library::Jobs jobs{database, SystemClock::instance()};
+        eval::Runs runs{database, SystemClock::instance()};
+        const auto run = [&](std::string label, int first, bool broken) {
+            const eval::EvalRun made = unwrap(runs.open(eval::RunSpec{.label = std::move(label),
+                                                                      .eval_set = "m2",
+                                                                      .tier = "max",
+                                                                      .replicates = 2,
+                                                                      .first_replicate = first}));
+            for (const std::string video : {"lecture", "podcast"}) {
+                for (int replicate = first; replicate < first + 2; ++replicate) {
+                    const eval::RunEntry entry{.video = video,
+                                               .replicate = replicate,
+                                               .job = unwrap(jobs.create("talk.vtt", "max", replicate)).id};
+                    unwrap(runs.add(made.id, entry));
+                    const bool marked = broken && video == "podcast" && replicate == first + 1;
+                    unwrap(runs.keep(made.id, entry,
+                                     eval::Scoring{.scorer = "code@1",
+                                                   .scores = {{.metric = "atoms_told", .value = 0.9},
+                                                              {.metric = "invalid_markers",
+                                                               .value = marked ? 1.0 : 0.0}}}));
+                }
+            }
+        };
+        run("base", 0, false);
+        run("cand", 0, true);
+        run("base-aa", 2, false);
+    }
+    const auto eval = [&](std::vector<std::string> command) {
+        command.insert(command.begin(), {"eval", "--eval-dir", eval_dir.string()});
+        return rreport(command);
+    };
+
+    const proc::RunResult compared = eval({"compare", "base", "cand", "--gate", "g"});
+    ASSERT_EQ(compared.status.code, 0) << compared.stderr_text;
+    EXPECT_THAT(compared.stdout_text, HasSubstr("A: base (m2 dev, tier max, replicates 0 to 1)\n"));
+    EXPECT_THAT(compared.stdout_text, HasSubstr("\ncode@1\n"));
+    EXPECT_THAT(compared.stdout_text, HasSubstr("  invalid_markers"));
+    const proc::RunResult by_video =
+        eval({"compare", "base", "cand", "--gate", "g", "--metric", "invalid_markers"});
+    EXPECT_THAT(by_video.stdout_text,
+                HasSubstr("  podcast                          0.000     0.500    +0.500\n"))
+        << "a video's replicates averaged";
+    EXPECT_EQ(eval({"compare", "base", "nope", "--gate", "g"}).status.code, 2) << "no such run";
+    EXPECT_EQ(eval({"compare", "base", "cand", "--gate", "g", "--metric", "nope"}).status.code, 2);
+
+    const proc::RunResult gated = eval({"gate", "base", "cand", "--gate", "g", "--panel", "p"});
+    EXPECT_EQ(gated.status.code, 1) << gated.stdout_text << gated.stderr_text;
+    EXPECT_THAT(gated.stdout_text, HasSubstr("failed: broken by podcast, replicate 1: 1.000"));
+    EXPECT_THAT(gated.stdout_text, HasSubstr("\ngate g: failed\n"));
+    const proc::RunResult same = eval({"gate", "base", "base-aa", "--gate", "g", "--panel", "p"});
+    EXPECT_EQ(same.status.code, 0) << same.stdout_text;
+    EXPECT_THAT(same.stdout_text, HasSubstr("\ngate g: passed\n"));
+    EXPECT_EQ(eval({"gate", "base", "cand", "--gate", "missing", "--panel", "p"}).status.code, 2);
+    EXPECT_EQ(eval({"gate", "base", "cand", "--gate", "g", "--panel", "missing"}).status.code, 2);
+
+    const proc::RunResult shared = eval({"gate", "base", "cand", "--aa", "--gate", "g", "--panel", "p"});
+    EXPECT_EQ(shared.status.code, 2);
+    EXPECT_THAT(shared.stderr_text, HasSubstr("cand shares salts with base"));
+    const proc::RunResult aa = eval({"gate", "base", "base-aa", "--aa", "--gate", "g", "--panel", "p"});
+    EXPECT_EQ(aa.status.code, 0) << aa.stdout_text << aa.stderr_text;
+    EXPECT_THAT(aa.stdout_text, HasSubstr("gate g: its margins hold\n"));
 }
 
 TEST_F(Hub, TheEvalSaysWhatIsMissing) {

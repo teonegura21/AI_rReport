@@ -11,6 +11,7 @@
 // files require values; a shared reader waits for a third format.
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 #include <format>
 #include <optional>
@@ -87,6 +88,23 @@ public:
         }
         RR_TRY_ASSIGN(const std::int64_t value, integer(key, least, most));
         return std::optional<std::int64_t>{value};
+    }
+
+    // A finite number, whole or not, which must be there: people write
+    // `margin = 0` as readily as `margin = 0.01`.
+    [[nodiscard]] Result<double> number(std::string_view key) {
+        const toml::node* value = node(key);
+        std::optional<double> number;
+        if (const auto* floating = value == nullptr ? nullptr : value->as_floating_point();
+            floating != nullptr) {
+            number = floating->get();
+        } else if (const auto* whole = value == nullptr ? nullptr : value->as_integer(); whole != nullptr) {
+            number = static_cast<double>(whole->get());
+        }
+        if (!number.has_value() || !std::isfinite(*number)) {
+            return wrong(key, "a number");
+        }
+        return *number;
     }
 
     // A true or false, which must be there.

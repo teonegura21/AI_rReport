@@ -31,6 +31,12 @@
 //                     each done job of a run read by the eval's frozen judges:
 //                     which facts its article tells, which of its sentences
 //                     the video supports (P24)
+//   eval compare A B  two runs side by side, every metric: the difference video
+//                     by video, its interval, and what the videos could see
+//                     (P25, ADR-0019)
+//   eval gate A B     whether candidate B may replace baseline A, as
+//                     eval/gates/<gate>.toml says; with --aa, whether the
+//                     gate's margins hold, B being A run again
 //   doctor            check the data directory, the library, the capture tools,
 //                     RunPod and the runtime, and say what to do about problems
 //   bench             measure the pod: its engines, the commander's and the
@@ -75,7 +81,9 @@
 #include <rr/core/version.hpp>
 #include <rr/db/database.hpp>
 #include <rr/eval/annotate.hpp>
+#include <rr/eval/compare.hpp>
 #include <rr/eval/export.hpp>
+#include <rr/eval/gate.hpp>
 #include <rr/eval/gold.hpp>
 #include <rr/eval/judgement.hpp>
 #include <rr/eval/panel.hpp>
@@ -785,7 +793,13 @@ struct EvalFlags {
     int replicates = 3;                        // run: three at least, to see the noise (ADR-0019)
     std::string split{"dev"};                  // run: dev, or test for a gate
     std::string format{"csv"};                 // export: csv or json
-    std::string panel{"eval-v1"};              // judge: the frozen panel (eval/judges/<panel>.toml)
+    std::string panel{"eval-v1"};              // judge, gate: the frozen panel (eval/judges/<panel>.toml)
+    int first_replicate = 0;                   // run: an A/A run starts after its baseline's last
+    std::string baseline;                      // compare, gate: run A, the baseline
+    std::string candidate;                     // compare, gate: run B, the candidate
+    std::string gate{"default"};               // compare, gate: eval/gates/<gate>.toml
+    std::optional<std::string> metric;         // compare: one metric, video by video
+    bool aa = false;                           // gate: B is A run again: check the gate's margins
 };
 
 // The command that does `verb` to `video`, with the flags that differ from
@@ -1030,14 +1044,18 @@ Result<eval::RunSpec> run_spec(const EvalFlags& flags, const eval::EvalSet& set)
                          .eval_set = set.name,
                          .split = split,
                          .tier = flags.tier,
-                         .replicates = flags.replicates};
+                         .replicates = flags.replicates,
+                         .first_replicate = flags.first_replicate};
 }
 
 // The command that takes the run up again, as it was asked.
 std::string resume_run_command(const EvalFlags& flags) {
-    return eval_command(flags, "run",
-                        std::format("--label {} --tier {} --replicates {} --split {}", flags.label,
-                                    flags.tier, flags.replicates, flags.split));
+    std::string asked = std::format("--label {} --tier {} --replicates {} --split {}", flags.label,
+                                    flags.tier, flags.replicates, flags.split);
+    if (flags.first_replicate != EvalFlags{}.first_replicate) {
+        asked += std::format(" --first-replicate {}", flags.first_replicate);
+    }
+    return eval_command(flags, "run", asked);
 }
 
 int eval_run(const Global& global, const EvalFlags& flags, const proc::TerminationSignals& signals) {
@@ -1368,6 +1386,99 @@ int eval_judge(const Global& global, const EvalFlags& flags, const proc::Termina
     return code;
 }
 
+// "base (m2 dev, tier max, replicates 0 to 2)"
+std::string described(const eval::EvalRun& run) {
+    const eval::RunSpec& spec = run.spec;
+    const int last = spec.first_replicate + spec.replicates - 1;
+    return std::format("{} ({} {}, tier {}, {})", spec.label, spec.eval_set, eval::to_string(spec.split),
+                       spec.tier,
+                       spec.replicates == 1 ? std::format("replicate {}", last)
+                                            : std::format("replicates {} to {}", spec.first_replicate, last));
+}
+
+// The two runs `eval compare` and `eval gate` name, and their scores.
+struct RunPair {
+    eval::EvalRun a{};
+    eval::EvalRun b{};
+    std::vector<eval::ScoredEntry> a_scores{};
+    std::vector<eval::ScoredEntry> b_scores{};
+};
+
+Result<RunPair> run_pair(const HubSettings& settings, const EvalFlags& flags) {
+    RR_TRY_ASSIGN(db::Database database, library::open_database(settings.library_database()));
+    const eval::Runs runs{database, SystemClock::instance()};
+    RunPair pair;
+    RR_TRY_ASSIGN(pair.a, runs.find(flags.baseline));
+    RR_TRY_ASSIGN(pair.b, runs.find(flags.candidate));
+    RR_TRY_ASSIGN(pair.a_scores, runs.scores(pair.a.id));
+    RR_TRY_ASSIGN(pair.b_scores, runs.scores(pair.b.id));
+    return pair;
+}
+
+// A run that is not there was asked wrong; a library that cannot be read failed.
+int pair_failed(const Error& error) {
+    return failed(error.code() == Errc::not_found ? kBadConfiguration : kFailure, error);
+}
+
+int eval_compare(const Global& global, const EvalFlags& flags) {
+    auto hub = load(global);
+    if (!hub.has_value()) {
+        return failed(kBadConfiguration, hub.error());
+    }
+    auto gate = eval::read_gate(flags.root, flags.gate);
+    if (!gate.has_value()) {
+        return failed(kBadConfiguration, gate.error());
+    }
+    auto pair = run_pair(hub->settings, flags);
+    if (!pair.has_value()) {
+        return pair_failed(pair.error());
+    }
+    if (flags.metric.has_value()) {
+        auto text = eval::by_video_text(described(pair->a), described(pair->b), pair->a_scores,
+                                        pair->b_scores, *flags.metric);
+        if (!text.has_value()) {
+            return failed(kBadConfiguration, text.error());
+        }
+        (void)std::fputs(text->c_str(), stdout);
+        return kOk;
+    }
+    const std::string text = eval::to_text(described(pair->a), described(pair->b),
+                                           eval::compare_runs(pair->a_scores, pair->b_scores, gate->gated));
+    (void)std::fputs(text.c_str(), stdout);
+    return kOk;
+}
+
+int eval_gate(const Global& global, const EvalFlags& flags) {
+    auto hub = load(global);
+    if (!hub.has_value()) {
+        return failed(kBadConfiguration, hub.error());
+    }
+    auto gate = eval::read_gate(flags.root, flags.gate);
+    if (!gate.has_value()) {
+        return failed(kBadConfiguration, gate.error());
+    }
+    auto panel = eval::read_panel(flags.root, flags.panel);
+    if (!panel.has_value()) {
+        return failed(kBadConfiguration, panel.error());
+    }
+    auto pair = run_pair(hub->settings, flags);
+    if (!pair.has_value()) {
+        return pair_failed(pair.error());
+    }
+    if (flags.aa) {
+        if (auto again = eval::check_aa(pair->a, pair->b); !again.has_value()) {
+            return failed(kBadConfiguration, again.error());
+        }
+        const eval::AaReading reading = eval::read_gate_on_aa(*gate, pair->a_scores, pair->b_scores, *panel);
+        (void)std::fputs(eval::to_text(*gate, reading, described(pair->a), described(pair->b)).c_str(),
+                         stdout);
+        return reading.holds() ? kOk : kFailure;
+    }
+    const eval::GateReading reading = eval::read_gate_on(*gate, pair->a_scores, pair->b_scores, *panel);
+    (void)std::fputs(eval::to_text(*gate, reading, described(pair->a), described(pair->b)).c_str(), stdout);
+    return reading.passed() ? kOk : kFailure;
+}
+
 int show_config(const Global& global, bool origin) {
     const auto config = load_config(global);
     if (!config.has_value()) {
@@ -1467,6 +1578,9 @@ int run(int argc, char** argv) {
     eval_run_command->add_option("--replicates", eval_flags.replicates,
                                  "How many times each video is taken through (default: 3)");
     eval_run_command->add_option("--split", eval_flags.split, "dev, or test for a gate (default: dev)");
+    eval_run_command->add_option("--first-replicate", eval_flags.first_replicate,
+                                 "The first replicate's number, its salt: an A/A run starts after its "
+                                 "baseline's last (default: 0)");
     auto* eval_score_command = eval_group->add_subcommand(
         "score", "Score each done job of a run by code: what it kept, what it cost");
     eval_score_command->add_option("--label", eval_flags.label, "The run")->required();
@@ -1481,6 +1595,22 @@ int run(int argc, char** argv) {
     eval_judge_command->add_option("--label", eval_flags.label, "The run")->required();
     eval_judge_command->add_option("--panel", eval_flags.panel,
                                    "The frozen panel, eval/judges/<panel>.toml (default: eval-v1)");
+    auto* eval_compare_command = eval_group->add_subcommand(
+        "compare", "Two runs side by side, every metric, video by video, with its 95% interval");
+    eval_compare_command->add_option("baseline", eval_flags.baseline, "Run A, the baseline")->required();
+    eval_compare_command->add_option("candidate", eval_flags.candidate, "Run B, the candidate")->required();
+    eval_compare_command->add_option("--gate", eval_flags.gate,
+                                     "Whose margins to show, eval/gates/<gate>.toml (default: default)");
+    eval_compare_command->add_option("--metric", eval_flags.metric, "One metric, video by video");
+    auto* eval_gate_command = eval_group->add_subcommand(
+        "gate", "Whether the candidate may replace the baseline: its invariants and margins (ADR-0019)");
+    eval_gate_command->add_option("baseline", eval_flags.baseline, "Run A, the baseline")->required();
+    eval_gate_command->add_option("candidate", eval_flags.candidate, "Run B, the candidate")->required();
+    eval_gate_command->add_option("--gate", eval_flags.gate, "eval/gates/<gate>.toml (default: default)");
+    eval_gate_command->add_option("--panel", eval_flags.panel,
+                                  "The panel judged metrics must be scored by (default: eval-v1)");
+    eval_gate_command->add_flag("--aa", eval_flags.aa,
+                                "B is A run again under other salts: check whether the gate's margins hold");
 
     auto* doctor_command = app.add_subcommand("doctor", "Check what the hub needs, and say what to do");
 
@@ -1576,6 +1706,12 @@ int run(int argc, char** argv) {
     }
     if (*eval_judge_command) {
         return eval_judge(global, eval_flags, signals);
+    }
+    if (*eval_compare_command) {
+        return eval_compare(global, eval_flags);
+    }
+    if (*eval_gate_command) {
+        return eval_gate(global, eval_flags);
     }
     if (*doctor_command) {
         return doctor(global, signals);

@@ -80,12 +80,13 @@ TEST_F(RunsTest, ALabelNamesOneRun) {
     other.split = Split::test;
     other.tier = "fast";
     other.replicates = 3;
+    other.first_replicate = 3;
     const Result<EvalRun> refused = runs().open(other);
     EXPECT_ERRC(refused, Errc::conflict);
     EXPECT_THAT(
         refused.error().message(),
         HasSubstr("the run 'baseline' is of the set m2, not m3; the split dev, not test; the tier max, "
-                  "not fast; replicates 2, not 3"));
+                  "not fast; replicates 2, not 3; the first replicate 0, not 3"));
 }
 
 TEST_F(RunsTest, ARunNeedsALabelAndOneReplicateAtLeast) {
@@ -96,6 +97,11 @@ TEST_F(RunsTest, ARunNeedsALabelAndOneReplicateAtLeast) {
     EXPECT_ERRC(refused, Errc::invalid_argument);
     EXPECT_THAT(refused.error().message(), HasSubstr("takes each video once at least, not 0 times"))
         << "said by the code, before the table's own check";
+    RunSpec before = spec();
+    before.first_replicate = -1;
+    const Result<EvalRun> negative = runs().open(before);
+    EXPECT_ERRC(negative, Errc::invalid_argument);
+    EXPECT_THAT(negative.error().message(), HasSubstr("replicates are numbered from 0, not -1"));
 }
 
 TEST_F(RunsTest, ARunNotMadeSaysHowToMakeIt) {
@@ -115,6 +121,19 @@ TEST_F(RunsTest, EachVideoOfTheSplitIsPlannedOnceAReplicateReplicateByReplicate)
                     RunEntry{.video = "b-talk", .replicate = 1}, RunEntry{.video = "a-talk", .replicate = 1}))
         << "every video once before any twice, in the set's order; none of the test split";
     EXPECT_THAT(planned.unfetched, ElementsAre("unfetched"));
+}
+
+TEST_F(RunsTest, ARunsReplicatesAreNumberedFromItsFirstAsAnAaRunsAre) {
+    const std::vector<EvalVideo> videos{video("a-talk")};
+    RunSpec again = spec("baseline-aa");
+    again.first_replicate = 2;
+    const EvalRun run = unwrap(runs().open(again));
+    EXPECT_EQ(run.spec.first_replicate, 2);
+    EXPECT_EQ(unwrap(runs().find("baseline-aa")).spec.first_replicate, 2) << "kept";
+    EXPECT_THAT(
+        unwrap(plan_run(root(), run, videos, runs())).entries,
+        ElementsAre(RunEntry{.video = "a-talk", .replicate = 2}, RunEntry{.video = "a-talk", .replicate = 3}))
+        << "salts 2 and 3, none the baseline's 0 and 1";
 }
 
 TEST_F(RunsTest, AnEntryGetsAnArticleJobFromItsSnapshotWhenItsTurnComesAndKeepsIt) {

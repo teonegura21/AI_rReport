@@ -33,7 +33,8 @@ Result<Split> split_from(std::string_view name) {
     return fail(Errc::integrity, std::format("an eval run of the split '{}', which is none", name));
 }
 
-constexpr std::string_view kRunColumns = "id, label, eval_set, split, tier, replicates, created_at_ms";
+constexpr std::string_view kRunColumns =
+    "id, label, eval_set, split, tier, replicates, created_at_ms, first_replicate";
 
 Result<EvalRun> run_of(const db::Row& row) {
     EvalRun run{
@@ -41,7 +42,8 @@ Result<EvalRun> run_of(const db::Row& row) {
         .spec = RunSpec{.label = row.get_text(1),
                         .eval_set = row.get_text(2),
                         .tier = row.get_text(4),
-                        .replicates = static_cast<int>(row.get_int(5))},
+                        .replicates = static_cast<int>(row.get_int(5)),
+                        .first_replicate = static_cast<int>(row.get_int(7))},
         .created_at = std::chrono::system_clock::time_point{std::chrono::milliseconds{row.get_int(6)}}};
     RR_TRY_ASSIGN(run.spec.split, split_from(row.get_text(3)));
     return run;
@@ -77,6 +79,10 @@ std::string differences(const RunSpec& asked, const RunSpec& run) {
     if (asked.replicates != run.replicates) {
         differ("replicates", std::to_string(run.replicates), std::to_string(asked.replicates));
     }
+    if (asked.first_replicate != run.first_replicate) {
+        differ("the first replicate", std::to_string(run.first_replicate),
+               std::to_string(asked.first_replicate));
+    }
     return said;
 }
 
@@ -95,6 +101,10 @@ Result<EvalRun> Runs::open(const RunSpec& spec) {
         return fail(Errc::invalid_argument,
                     std::format("an eval run takes each video once at least, not {} times", spec.replicates));
     }
+    if (spec.first_replicate < 0) {
+        return fail(Errc::invalid_argument,
+                    std::format("replicates are numbered from 0, not {}", spec.first_replicate));
+    }
     return database_->write([&](db::WriteTx& tx) -> Result<EvalRun> {
         RR_TRY_ASSIGN(const std::optional<EvalRun> existing, run_named(tx, spec.label));
         if (existing.has_value()) {
@@ -108,9 +118,9 @@ Result<EvalRun> Runs::open(const RunSpec& spec) {
         const auto now = std::chrono::time_point_cast<std::chrono::milliseconds>(clock_->now());
         EvalRun run{.id = ids_->next(), .spec = spec, .created_at = now};
         RR_TRY(tx.execute(
-            std::format("INSERT INTO eval_runs ({}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)", kRunColumns),
+            std::format("INSERT INTO eval_runs ({}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)", kRunColumns),
             {run.id, spec.label, spec.eval_set, to_string(spec.split), spec.tier, spec.replicates,
-             millis(now)}));
+             millis(now), spec.first_replicate}));
         return run;
     });
 }
@@ -234,7 +244,8 @@ Result<Planned> plan_run(const std::filesystem::path& eval_root, const EvalRun& 
             planned.unfetched.push_back(video.id);
         }
     }
-    for (int replicate = 0; replicate < run.spec.replicates; ++replicate) {
+    const int last = run.spec.first_replicate + run.spec.replicates;
+    for (int replicate = run.spec.first_replicate; replicate < last; ++replicate) {
         for (const EvalVideo* const video : fetched) {
             const auto job = jobs.find(std::pair{video->id, replicate});
             planned.entries.push_back(RunEntry{.video = video->id,

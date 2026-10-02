@@ -124,7 +124,8 @@ json::Json to_json(const EvalRun& run, const EvalSet& set, std::span<const Score
               {"set", run.spec.eval_set},
               {"split", to_string(run.spec.split)},
               {"tier", run.spec.tier},
-              {"replicates", run.spec.replicates}}},
+              {"replicates", run.spec.replicates},
+              {"first_replicate", run.spec.first_replicate}}},
             {"entries", std::move(rows)}};
 }
 

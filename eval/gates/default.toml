@@ -1,0 +1,62 @@
+# The gate a candidate run must pass to replace its baseline (ADR-0019):
+#   rreport eval gate BASELINE CANDIDATE
+# Its margins are checked against an A/A run, the baseline run again under
+# other salts, before they are trusted (runbook R4):
+#   rreport eval run --label BASELINE-aa --first-replicate 3 ...
+#   rreport eval gate BASELINE BASELINE-aa --aa
+# A margin is never widened to let a candidate pass: an inconclusive gate
+# asks for more videos or replicates. docs/design/eval.md has the metrics.
+name = "default"
+
+# What every entry of the candidate, every video and replicate, must be.
+[[invariant]]
+metric = "sentences_accounted"  # Ledger A: every sentence given atoms or a filler label
+every_entry = 1
+
+[[invariant]]
+metric = "invalid_markers"      # no marker that names no atom
+every_entry = 0
+
+[[invariant]]
+metric = "quotes_kept"          # every word the atoms must quote, verbatim where cited
+every_entry = 1
+
+# How much worse than the baseline the candidate may be, at the worse end of
+# the 95% interval of the difference, in each metric's own units: 0.01 is a
+# point of a share. The judges' metrics count once a person has calibrated
+# their panel (runbook R5); until then they are shown, not counted.
+[[gated]]
+metric = "atoms_told"           # Ledger B: atoms the article cites
+margin = 0.01
+
+[[gated]]
+metric = "numbers_kept"         # the atoms' numbers, where cited
+margin = 0.01
+
+[[gated]]
+metric = "gold_quotes_kept"     # gold's must-quotes, verbatim
+margin = 0.02
+
+[[gated]]
+metric = "core_facts_cited"     # gold's core facts the article may tell
+margin = 0.02
+
+[[gated]]
+metric = "facts_told"           # facts a reader learns (judged)
+margin = 0.02
+
+[[gated]]
+metric = "core_facts_told"      # core facts a reader learns (judged)
+margin = 0.02
+
+[[gated]]
+metric = "sentences_supported"  # sentences the video supports (judged)
+margin = 0.02
+
+[[gated]]
+metric = "contradicts"          # sentences saying the opposite (judged)
+margin = 0.01
+
+[[gated]]
+metric = "misattributes"        # sentences giving words to the wrong speaker (judged)
+margin = 0.01
